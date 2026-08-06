@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#111923" />
+    <meta name="description" content="《雪脊余火》3D 生存玩法原型" />
+    <title>雪脊余火 · 玩法原型</title>
+  </head>
+  <body>
+    <div id="game-root">
+      <div id="render-root" aria-label="3D 游戏画面"></div>
+
+      <div id="hud" class="hidden" aria-live="polite">
+        <section class="objective-chip">
+          <span class="eyebrow" id="day-label">第 1 天</span>
+          <strong id="objective">收集木头，选择今晚的营地</strong>
+        </section>
+
+        <section class="status-strip" aria-label="生存状态">
+          <div class="meter health"><span>生命</span><i><b id="health-bar"></b></i><em id="health-value">100</em></div>
+          <div class="meter warmth"><span>温暖</span><i><b id="warmth-bar"></b></i><em id="warmth-value">85</em></div>
+          <div class="meter hunger"><span>饱食</span><i><b id="hunger-bar"></b></i><em id="hunger-value">82</em></div>
+          <button id="eat-button" class="inventory-button" type="button" aria-label="食用野果">野果 <b id="berry-count">0</b></button>
+        </section>
+
+        <div class="clock" id="clock"><span id="phase-label">白昼</span><b id="time-label">00:50</b></div>
+        <canvas id="radar" width="160" height="160" aria-label="营地雷达"></canvas>
+        <div id="prompt" class="prompt hidden"></div>
+        <div id="toast" class="toast hidden"></div>
+        <button id="sound-button" class="sound-button" type="button" aria-label="切换声音">声音 开</button>
+
+        <div id="touch-controls">
+          <div id="joystick" class="joystick" aria-label="移动摇杆"><i></i></div>
+          <div class="action-buttons">
+            <button id="attack-button" class="round-button attack" type="button">攻击</button>
+            <button id="action-button" class="round-button action" type="button" aria-label="上下文行动">行动</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="intro" class="overlay">
+        <div class="intro-card">
+          <p class="eyebrow">可玩机制原型</p>
+          <h1>雪脊余火</h1>
+          <p class="tagline">白天搬运与封口，夜晚守火与猎狼。</p>
+          <div class="verb-row" aria-label="核心玩法">
+            <span><b>1</b>搜木与野果</span>
+            <span><b>2</b>选山坳封入口</span>
+            <span><b>3</b>守住逐渐熄灭的火</span>
+          </div>
+          <button id="start-button" class="primary-button" type="button">踏入雪原</button>
+          <p class="controls-copy">
+            <span class="desktop-copy">键盘：WASD / 方向键移动 · E 拿放或添柴 · 空格攻击 · F 吃野果<br />鼠标：点击地面移动</span>
+            <span class="touch-copy">左侧摇杆移动 · 右下“行动”会自动变为拿起、放置、添柴或采集</span>
+          </p>
+        </div>
+      </div>
+
+      <div id="game-over" class="overlay hidden">
+        <div class="intro-card game-over-card">
+          <p class="eyebrow">雪原记住了你的足迹</p>
+          <h2>余火熄灭</h2>
+          <p id="result-copy"></p>
+          <button id="restart-button" class="primary-button" type="button">再守一夜</button>
+        </div>
+      </div>
+
+      <div id="unsupported" class="overlay hidden">
+        <div class="intro-card"><h2>无法启动 3D 画面</h2><p>请启用 WebGL，或尝试更新后的浏览器。</p></div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

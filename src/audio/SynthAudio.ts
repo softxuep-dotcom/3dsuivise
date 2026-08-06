@@ -1,0 +1,108 @@
+import type { GameEvent } from "../game/simulation/types";
+
+export class SynthAudio {
+  enabled = true;
+  private context: AudioContext | null = null;
+  private master: GainNode | null = null;
+
+  async unlock(): Promise<void> {
+    if (!this.context) {
+      this.context = new AudioContext();
+      this.master = this.context.createGain();
+      this.master.gain.value = 0.18;
+      this.master.connect(this.context.destination);
+    }
+    if (this.context.state === "suspended") await this.context.resume();
+  }
+
+  toggle(): boolean {
+    this.enabled = !this.enabled;
+    if (this.master && this.context) {
+      this.master.gain.setTargetAtTime(this.enabled ? 0.18 : 0, this.context.currentTime, 0.02);
+    }
+    return this.enabled;
+  }
+
+  handle(event: GameEvent): void {
+    if (!this.enabled || !this.context || !this.master) return;
+    switch (event.type) {
+      case "pickup":
+        this.tone(event.kind === "berry" ? 620 : 360, 0.08, "sine", 0.6, 1.25);
+        break;
+      case "drop":
+        this.tone(event.kind === "stone" ? 95 : 150, 0.1, "triangle", 0.85, 0.7);
+        break;
+      case "feed-fire":
+        this.noise(0.28, 0.7);
+        this.tone(240, 0.18, "sine", 0.45, 1.55);
+        break;
+      case "eat":
+        this.tone(480, 0.11, "sine", 0.4, 1.2);
+        break;
+      case "attack":
+        this.noise(0.08, 0.38);
+        break;
+      case "wolf-hit":
+        this.tone(110, 0.12, "sawtooth", 0.65, 0.55);
+        break;
+      case "wolf-killed":
+        this.tone(170, 0.28, "triangle", 0.8, 0.45);
+        break;
+      case "player-hit":
+        this.tone(75, 0.22, "sawtooth", 0.9, 0.45);
+        break;
+      case "barrier-hit":
+        this.tone(120, 0.07, "square", 0.3, 0.8);
+        break;
+      case "phase":
+        this.phaseCue(event.phase === "night");
+        break;
+      case "game-over":
+        this.tone(170, 0.7, "triangle", 0.75, 0.35);
+        break;
+      case "message":
+        break;
+    }
+  }
+
+  private tone(frequency: number, duration: number, type: OscillatorType, volume: number, endRatio: number): void {
+    if (!this.context || !this.master) return;
+    const now = this.context.currentTime;
+    const oscillator = this.context.createOscillator();
+    const gain = this.context.createGain();
+    oscillator.type = type;
+    oscillator.frequency.setValueAtTime(frequency, now);
+    oscillator.frequency.exponentialRampToValueAtTime(Math.max(20, frequency * endRatio), now + duration);
+    gain.gain.setValueAtTime(0.001, now);
+    gain.gain.exponentialRampToValueAtTime(Math.max(0.001, volume), now + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+    oscillator.connect(gain).connect(this.master);
+    oscillator.start(now);
+    oscillator.stop(now + duration + 0.02);
+  }
+
+  private noise(duration: number, volume: number): void {
+    if (!this.context || !this.master) return;
+    const samples = Math.ceil(this.context.sampleRate * duration);
+    const buffer = this.context.createBuffer(1, samples, this.context.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let index = 0; index < samples; index += 1) data[index] = (Math.random() * 2 - 1) * (1 - index / samples);
+    const source = this.context.createBufferSource();
+    const filter = this.context.createBiquadFilter();
+    const gain = this.context.createGain();
+    filter.type = "lowpass";
+    filter.frequency.value = 680;
+    gain.gain.value = volume;
+    source.buffer = buffer;
+    source.connect(filter).connect(gain).connect(this.master);
+    source.start();
+  }
+
+  private phaseCue(night: boolean): void {
+    if (!this.context) return;
+    const notes = night ? [220, 164, 110] : [220, 330, 440];
+    notes.forEach((frequency, index) => {
+      window.setTimeout(() => this.tone(frequency, 0.32, "triangle", 0.55, night ? 0.8 : 1.08), index * 120);
+    });
+  }
+}
