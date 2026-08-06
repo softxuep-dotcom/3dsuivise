@@ -50,6 +50,10 @@ export class SynthAudio {
         this.tone(260, 0.18, "triangle", 0.45, 1.5);
         window.setTimeout(() => this.tone(390, 0.22, "triangle", 0.4, 1.25), 90);
         break;
+      case "craft-weapon":
+        this.tone(190, 0.1, "square", 0.42, 1.7);
+        window.setTimeout(() => this.tone(520, 0.24, "triangle", 0.38, 1.18), 100);
+        break;
       case "rest":
         if (event.active) this.tone(210, 0.14, "sine", 0.16, 0.85);
         break;

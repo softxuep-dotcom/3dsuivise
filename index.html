@@ -21,6 +21,7 @@
           <div class="meter health"><span>生命</span><i><b id="health-bar"></b></i><em id="health-value">100</em></div>
           <div class="meter warmth"><span>温暖</span><i><b id="warmth-bar"></b></i><em id="warmth-value">85</em></div>
           <div class="meter hunger"><span>饱食</span><i><b id="hunger-bar"></b></i><em id="hunger-value">82</em></div>
+          <div class="combat-line"><span>攻击 <b id="attack-value">28</b></span><span>防御 <b id="defense-value">2</b></span></div>
           <div class="hud-actions">
             <button id="eat-button" class="inventory-button" type="button" aria-label="快速食用野果">野果 <b id="berry-count">0</b></button>
             <button id="backpack-button" class="inventory-button backpack-button" type="button" aria-label="打开背包">背包 <b id="bag-usage">0/8</b></button>
@@ -28,6 +29,10 @@
         </section>
 
         <div class="clock" id="clock"><span id="phase-label">白昼</span><b id="time-label">00:50</b></div>
+        <section id="enemy-chip" class="enemy-chip hidden" aria-label="附近敌人">
+          <div><strong id="enemy-name">小狼</strong><span id="enemy-stats">攻10 · 防1</span></div>
+          <i><b id="enemy-health-bar"></b></i><em id="enemy-health-value">58/58</em>
+        </section>
         <canvas id="radar" width="160" height="160" aria-label="营地雷达"></canvas>
         <div id="prompt" class="prompt hidden"></div>
         <div id="rest-indicator" class="rest-indicator hidden">休息中 · 生命 +1/秒</div>
@@ -49,9 +54,9 @@
           <h1>雪脊余火</h1>
           <p class="tagline">横屏生存：白天搬运与封口，夜晚守火与猎狼。</p>
           <div class="verb-row" aria-label="核心玩法">
-            <span><b>1</b>搜木与野果</span>
-            <span><b>2</b>选山坳封入口</span>
-            <span><b>3</b>守住逐渐熄灭的火</span>
+            <span><b>1</b>搜木、食物与铁</span>
+            <span><b>2</b>搬大石封入口</span>
+            <span><b>3</b>挖铁制矛守火</span>
           </div>
           <button id="start-button" class="primary-button" type="button">踏入雪原</button>
           <p class="controls-copy">
@@ -70,6 +75,12 @@
           <div class="equipment-row">
             <div><span>双手</span><strong id="hands-status">空闲</strong></div>
             <div><span>衣物</span><strong id="coat-status">粗布衣</strong></div>
+            <div><span>武器</span><strong id="weapon-status">木棒</strong></div>
+          </div>
+          <div class="stat-row" aria-label="人物属性">
+            <span>生命 <b id="stat-health">100</b></span>
+            <span>攻击 <b id="stat-attack">28</b></span>
+            <span>防御 <b id="stat-defense">2</b></span>
           </div>
           <div id="inventory-grid" class="inventory-grid" aria-label="背包格子">
             <button class="inventory-slot" data-slot="0" type="button"></button>
@@ -81,8 +92,11 @@
             <button class="inventory-slot" data-slot="6" type="button"></button>
             <button class="inventory-slot" data-slot="7" type="button"></button>
           </div>
-          <button id="craft-coat-button" class="craft-button" type="button">制作基础皮衣 · 需要4张狼皮</button>
-          <p class="inventory-help">点击野果或熟肉食用；靠近燃烧的篝火后点击生肉即可烤熟。圆木和石块只能用双手搬运。</p>
+          <div class="craft-list" aria-label="制作配方">
+            <button id="craft-coat-button" class="craft-button" type="button">基础皮衣 · 狼皮4 · 防御+4</button>
+            <button id="craft-spear-button" class="craft-button" type="button">粗铁矛 · 铁矿3 + 狼皮1 · 需燃烧篝火</button>
+          </div>
+          <p class="inventory-help">配方材料满足后点击制作；生肉可在火边烤熟。圆木和大石仍由双手搬运，大石一块即可封住窄口。</p>
         </div>
       </div>
 

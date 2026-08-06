@@ -13,6 +13,7 @@ const ITEM_PRESENTATION: Record<InventoryItemKind, { glyph: string; name: string
   "raw-meat": { glyph: "肉", name: "生狼肉" },
   "cooked-meat": { glyph: "熟", name: "熟狼肉" },
   "wolf-hide": { glyph: "皮", name: "狼皮" },
+  "iron-ore": { glyph: "铁", name: "铁矿" },
 };
 
 export class HudController {
@@ -27,6 +28,8 @@ export class HudController {
   private readonly healthValue = required<HTMLElement>("health-value");
   private readonly warmthValue = required<HTMLElement>("warmth-value");
   private readonly hungerValue = required<HTMLElement>("hunger-value");
+  private readonly attackValue = required<HTMLElement>("attack-value");
+  private readonly defenseValue = required<HTMLElement>("defense-value");
   private readonly berryCount = required<HTMLElement>("berry-count");
   private readonly bagUsage = required<HTMLElement>("bag-usage");
   private readonly eatButton = required<HTMLButtonElement>("eat-button");
@@ -35,6 +38,11 @@ export class HudController {
   private readonly phaseLabel = required<HTMLElement>("phase-label");
   private readonly timeLabel = required<HTMLElement>("time-label");
   private readonly clock = required<HTMLElement>("clock");
+  private readonly enemyChip = required<HTMLElement>("enemy-chip");
+  private readonly enemyName = required<HTMLElement>("enemy-name");
+  private readonly enemyStats = required<HTMLElement>("enemy-stats");
+  private readonly enemyHealthBar = required<HTMLElement>("enemy-health-bar");
+  private readonly enemyHealthValue = required<HTMLElement>("enemy-health-value");
   private readonly prompt = required<HTMLElement>("prompt");
   private readonly restIndicator = required<HTMLElement>("rest-indicator");
   private readonly actionButton = required<HTMLButtonElement>("action-button");
@@ -43,7 +51,12 @@ export class HudController {
   private readonly resultCopy = required<HTMLElement>("result-copy");
   private readonly handsStatus = required<HTMLElement>("hands-status");
   private readonly coatStatus = required<HTMLElement>("coat-status");
+  private readonly weaponStatus = required<HTMLElement>("weapon-status");
+  private readonly statHealth = required<HTMLElement>("stat-health");
+  private readonly statAttack = required<HTMLElement>("stat-attack");
+  private readonly statDefense = required<HTMLElement>("stat-defense");
   private readonly craftButton = required<HTMLButtonElement>("craft-coat-button");
+  private readonly craftSpearButton = required<HTMLButtonElement>("craft-spear-button");
   private readonly slots: HTMLButtonElement[];
   private toastTimer = 0;
   private lastHudUpdate = 0;
@@ -63,6 +76,10 @@ export class HudController {
     required<HTMLButtonElement>("inventory-close").addEventListener("click", () => this.closeInventory());
     this.craftButton.addEventListener("click", () => {
       this.simulation.craftLeatherCoat();
+      this.updateInventory();
+    });
+    this.craftSpearButton.addEventListener("click", () => {
+      this.simulation.craftIronSpear();
       this.updateInventory();
     });
   }
@@ -101,21 +118,36 @@ export class HudController {
     this.setMeter(this.healthBar, this.healthValue, player.health);
     this.setMeter(this.warmthBar, this.warmthValue, player.warmth);
     this.setMeter(this.hungerBar, this.hungerValue, player.hunger);
+    this.healthBar.closest(".meter")?.classList.toggle("critical", player.health < 30);
+    this.warmthBar.closest(".meter")?.classList.toggle("critical", player.warmth < 25);
+    this.hungerBar.closest(".meter")?.classList.toggle("critical", player.hunger < 20);
+    this.attackValue.textContent = String(player.attack);
+    this.defenseValue.textContent = String(player.defense);
     const berries = this.simulation.getInventoryCount("berry");
     this.berryCount.textContent = String(berries);
-    this.eatButton.disabled = berries <= 0 || (player.hunger >= 99 && player.health >= 100);
+    this.eatButton.disabled = berries <= 0 || (player.hunger >= 99 && player.health >= player.maxHealth);
     this.bagUsage.textContent = `${player.inventory.filter(Boolean).length}/8`;
     this.objective.textContent = this.simulation.getObjective();
-    this.dayLabel.textContent = `第 ${this.simulation.day} 天 · 猎杀 ${player.kills} · 狼 ${this.simulation.wolves.filter((wolf) => wolf.mode !== "dead").length}`;
+    this.dayLabel.textContent = `第 ${this.simulation.day} 天 · ${this.simulation.getCurrentLocationLabel()} · 猎杀 ${player.kills} · 狼 ${this.simulation.wolves.filter((wolf) => wolf.mode !== "dead").length}`;
     this.phaseLabel.textContent = this.simulation.phase === "day" ? "白昼" : "黑夜";
     this.clock.classList.toggle("night", this.simulation.phase === "night");
     const seconds = Math.max(0, Math.ceil(this.simulation.phaseTime));
     this.timeLabel.textContent = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
     this.restIndicator.classList.toggle("hidden", !player.resting);
+    this.restIndicator.textContent = player.hunger < 40 ? "休息中 · 生命 +0.6/秒" : "休息中 · 生命 +1/秒";
+
+    const threat = this.simulation.getNearestThreat();
+    this.enemyChip.classList.toggle("hidden", !threat);
+    if (threat) {
+      this.enemyName.textContent = threat.kind === "large" ? "大狼" : "小狼";
+      this.enemyStats.textContent = `攻${threat.attack} · 防${threat.defense}`;
+      this.enemyHealthBar.style.width = `${clamp(threat.health / threat.maxHealth, 0, 1) * 100}%`;
+      this.enemyHealthValue.textContent = `${Math.max(0, Math.ceil(threat.health))}/${threat.maxHealth}`;
+    }
 
     const hint = this.simulation.getInteractionHint();
     const touchLayout = matchMedia("(pointer: coarse)").matches || window.innerWidth <= 760;
-    const actionLabels = { pickup: "拿起", drop: "放置", feed: "添柴", berry: "采集", none: "行动" } as const;
+    const actionLabels = { pickup: "拿起", drop: "放置", feed: "添柴", berry: "采集", mine: "采矿", none: "行动" } as const;
     this.actionButton.textContent = actionLabels[hint.action];
     if (hint.action === "none") {
       this.prompt.classList.add("hidden");
@@ -165,11 +197,18 @@ export class HudController {
       slot.innerHTML = `<span class="item-glyph">${presentation.glyph}</span><span class="item-name">${presentation.name}</span><b class="item-count">${stack.count}</b>`;
       slot.setAttribute("aria-label", `${presentation.name} ${stack.count}个`);
     });
-    this.handsStatus.textContent = player.carrying === "wood" ? "圆木" : player.carrying === "stone" ? "石块" : "空闲";
-    this.coatStatus.textContent = player.hasLeatherCoat ? "基础皮衣 · 保暖+30%" : "粗布衣";
+    this.handsStatus.textContent = player.carrying === "wood" ? "圆木" : player.carrying === "stone" ? "大石" : "空闲";
+    this.coatStatus.textContent = player.hasLeatherCoat ? "基础皮衣 · 防御+4" : "粗布衣";
+    this.weaponStatus.textContent = player.weapon === "iron-spear" ? "粗铁矛 · 攻击+18" : "木棒";
+    this.statHealth.textContent = `${Math.round(player.health)}/${player.maxHealth}`;
+    this.statAttack.textContent = String(player.attack);
+    this.statDefense.textContent = String(player.defense);
     const hides = this.simulation.getInventoryCount("wolf-hide");
-    this.craftButton.textContent = player.hasLeatherCoat ? "基础皮衣已装备" : `制作基础皮衣 · 狼皮 ${hides}/4`;
+    const ore = this.simulation.getInventoryCount("iron-ore");
+    this.craftButton.textContent = player.hasLeatherCoat ? "基础皮衣已装备" : `基础皮衣 · 狼皮 ${hides}/4 · 防御+4`;
     this.craftButton.disabled = player.hasLeatherCoat || hides < 4;
+    this.craftSpearButton.textContent = player.weapon === "iron-spear" ? "粗铁矛已装备" : `粗铁矛 · 铁矿 ${ore}/3 + 狼皮 ${hides}/1 · 需燃烧篝火`;
+    this.craftSpearButton.disabled = player.weapon === "iron-spear" || ore < 3 || hides < 1;
   }
 
   private setMeter(bar: HTMLElement, valueLabel: HTMLElement, rawValue: number): void {
@@ -226,7 +265,8 @@ export class HudController {
       const y = (wolf.z - player.z) * worldScale;
       if (Math.hypot(x, y) > center - 7) continue;
       context.fillStyle = wolf.mode === "chase" ? "#ff5347" : wolf.mode === "retreating" ? "rgba(150, 190, 198, .55)" : "rgba(225, 115, 99, .62)";
-      context.fillRect(x - 1.5, y - 1.5, 3, 3);
+      const wolfSize = wolf.kind === "large" ? 4.5 : 3;
+      context.fillRect(x - wolfSize / 2, y - wolfSize / 2, wolfSize, wolfSize);
     }
 
     context.rotate(Math.atan2(player.facing.z, player.facing.x) + Math.PI / 2);

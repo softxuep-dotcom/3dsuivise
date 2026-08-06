@@ -6,8 +6,12 @@ export interface Vec2 {
 export type Phase = "day" | "night";
 export type CarryKind = "wood" | "stone";
 export type GroundItemKind = CarryKind;
-export type InventoryItemKind = "berry" | "raw-meat" | "cooked-meat" | "wolf-hide";
+export type InventoryItemKind = "berry" | "raw-meat" | "cooked-meat" | "wolf-hide" | "iron-ore";
+export type WeaponKind = "wood-club" | "iron-spear";
+export type WolfKind = "small" | "large";
 export type WolfMode = "entering" | "patrol" | "chase" | "raid" | "retreating" | "dead";
+export type CampKind = "windy-ridge" | "deep-cave" | "abandoned-camp";
+export type LandmarkKind = "deadwood" | "wreck" | "monolith";
 
 export interface InventoryStack {
   kind: InventoryItemKind;
@@ -26,13 +30,15 @@ export interface WorldDrop extends Vec2 {
 
 export interface CircleObstacle extends Vec2 {
   radius: number;
-  kind: "wall" | "tree";
+  kind: "wall" | "tree" | "landmark";
 }
 
 export interface CampDefinition extends Vec2 {
   id: number;
   entranceAngle: number;
+  entranceWidth: number;
   radius: number;
+  kind: CampKind;
 }
 
 export interface TreeDefinition extends Vec2 {
@@ -64,6 +70,19 @@ export interface BerryPatch extends Vec2 {
   regrowAt: number;
 }
 
+export interface IronNode extends Vec2 {
+  id: number;
+  ore: number;
+  rotation: number;
+}
+
+export interface LandmarkDefinition extends Vec2 {
+  id: number;
+  kind: LandmarkKind;
+  rotation: number;
+  scale: number;
+}
+
 export interface CampState {
   id: number;
   fuel: number;
@@ -72,11 +91,15 @@ export interface CampState {
 export interface PlayerState extends Vec2 {
   facing: Vec2;
   health: number;
+  maxHealth: number;
+  attack: number;
+  defense: number;
   warmth: number;
   hunger: number;
   inventory: Array<InventoryStack | null>;
   carrying: CarryKind | null;
   hasLeatherCoat: boolean;
+  weapon: WeaponKind;
   resting: boolean;
   idleTime: number;
   attackCooldown: number;
@@ -87,8 +110,12 @@ export interface PlayerState extends Vec2 {
 
 export interface WolfState extends Vec2 {
   id: number;
+  kind: WolfKind;
   facing: Vec2;
   health: number;
+  maxHealth: number;
+  attack: number;
+  defense: number;
   mode: WolfMode;
   raider: boolean;
   anchor: Vec2;
@@ -109,6 +136,8 @@ export interface WorldDefinition {
   hills: HillDefinition[];
   initialItems: GroundItem[];
   initialBerries: BerryPatch[];
+  ironNodes: IronNode[];
+  landmarks: LandmarkDefinition[];
   startCampId: number;
 }
 
@@ -120,6 +149,7 @@ export type GameEvent =
   | { type: "eat"; kind: "berry" | "cooked-meat" }
   | { type: "cook" }
   | { type: "craft-coat" }
+  | { type: "craft-weapon" }
   | { type: "rest"; active: boolean }
   | { type: "attack" }
   | { type: "wolf-hit"; wolfId: number }
@@ -131,7 +161,7 @@ export type GameEvent =
   | { type: "game-over" };
 
 export interface InteractionHint {
-  action: "pickup" | "drop" | "feed" | "berry" | "none";
+  action: "pickup" | "drop" | "feed" | "berry" | "mine" | "none";
   text: string;
 }
 
@@ -142,4 +172,5 @@ export const INVENTORY_STACK_LIMITS: Record<InventoryItemKind, number> = {
   "raw-meat": 3,
   "cooked-meat": 3,
   "wolf-hide": 4,
+  "iron-ore": 6,
 };

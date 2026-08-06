@@ -16,11 +16,13 @@ import {
 import { NavigationGrid } from "./NavigationGrid";
 import type {
   BerryPatch,
+  CampKind,
   CampDefinition,
   CampState,
   GameEvent,
   GroundItem,
   InteractionHint,
+  IronNode,
   InventoryItemKind,
   Phase,
   PlayerState,
@@ -33,7 +35,7 @@ import { INVENTORY_CAPACITY, INVENTORY_STACK_LIMITS } from "./types";
 
 const PLAYER_RADIUS = 0.72;
 const WOLF_RADIUS = 0.68;
-const FIRST_DAY_DURATION = 90;
+const FIRST_DAY_DURATION = 55;
 const FIRST_NIGHT_DURATION = 105;
 const LATER_DAY_DURATION = 120;
 const SECOND_NIGHT_DURATION = 120;
@@ -41,11 +43,18 @@ const LATER_NIGHT_DURATION = 135;
 const MAX_WOLVES = 120;
 const DROP_LIFETIME = 180;
 
+const CAMP_LABELS: Record<CampKind, string> = {
+  "windy-ridge": "风口高地",
+  "deep-cave": "深山洞",
+  "abandoned-camp": "废弃营地",
+};
+
 export class GameSimulation {
   readonly world: WorldDefinition;
   readonly camps: CampState[];
   readonly items: GroundItem[];
   readonly berries: BerryPatch[];
+  readonly ironNodes: IronNode[];
   readonly player: PlayerState;
   readonly wolves: WolfState[] = [];
   readonly drops: WorldDrop[] = [];
@@ -68,6 +77,8 @@ export class GameSimulation {
   private navigationCountdown = 0;
   private objectiveStage = 0;
   private gameOverSent = false;
+  private duskWarningSent = false;
+  private largeWolfAnnounced = false;
 
   constructor(world: WorldDefinition) {
     this.world = world;
@@ -87,16 +98,21 @@ export class GameSimulation {
     this.camps = world.camps.map((camp) => ({ id: camp.id, fuel: camp.id === world.startCampId ? 42 : 0 }));
     this.items = world.initialItems.map((item) => ({ ...item }));
     this.berries = world.initialBerries.map((patch) => ({ ...patch }));
+    this.ironNodes = world.ironNodes.map((node) => ({ ...node }));
     this.player = {
       x: startCamp.x,
       z: startCamp.z + 1.5,
       facing: { x: 0.7, z: 0.7 },
       health: 100,
-      warmth: 85,
+      maxHealth: 100,
+      attack: 28,
+      defense: 2,
+      warmth: 90,
       hunger: 82,
       inventory: Array.from({ length: INVENTORY_CAPACITY }, () => null),
       carrying: null,
       hasLeatherCoat: false,
+      weapon: "wood-club",
       resting: false,
       idleTime: 0,
       attackCooldown: 0,
@@ -182,23 +198,42 @@ export class GameSimulation {
       berryPatch.berries -= 1;
       if (berryPatch.berries === 0) berryPatch.regrowAt = this.elapsed + 180;
       this.events.push({ type: "pickup", kind: "berry" });
+      return;
+    }
+
+    const ironNode = this.findNearestIron(2.8);
+    if (ironNode) {
+      if (!this.addInventory("iron-ore", 1)) {
+        this.events.push({ type: "message", text: "背包已满" });
+        return;
+      }
+      ironNode.ore -= 1;
+      this.events.push({ type: "pickup", kind: "iron-ore" });
+      this.events.push({ type: "message", text: "获得铁矿 · 可在燃烧的篝火旁制作粗铁矛" });
     }
   }
 
   requestAttack(): void {
     if (!this.running || this.player.attackCooldown > 0 || this.player.carrying) return;
     this.noteActivity();
-    this.player.attackCooldown = 0.5;
+    this.player.attackCooldown = this.player.weapon === "iron-spear" ? 0.58 : 0.5;
     this.player.attackFlash = 0.22;
     this.events.push({ type: "attack" });
     let hit = false;
 
+    const attackRange = this.player.weapon === "iron-spear" ? 3.8 : 3.1;
+    const assistedTarget = this.wolves
+      .filter((wolf) => wolf.mode !== "dead" && distanceSquared(this.player, wolf) <= attackRange * attackRange)
+      .sort((a, b) => distanceSquared(this.player, a) - distanceSquared(this.player, b))[0];
+    if (assistedTarget) this.player.facing = direction(this.player, assistedTarget);
     for (const wolf of this.wolves) {
-      if (wolf.mode === "dead" || distanceSquared(this.player, wolf) > 3.1 * 3.1) continue;
+      if (wolf.mode === "dead" || distanceSquared(this.player, wolf) > attackRange * attackRange) continue;
       const towardWolf = direction(this.player, wolf);
       if (dot(this.player.facing, towardWolf) < -0.15) continue;
       const wasRetreating = wolf.mode === "retreating";
-      wolf.health -= 38;
+      const conditionMultiplier = this.player.hunger < 15 || this.player.warmth < 20 ? 0.8 : 1;
+      const damage = Math.max(1, Math.round(this.player.attack * conditionMultiplier) - wolf.defense);
+      wolf.health -= damage;
       wolf.hurtFlash = 0.18;
       if (wolf.health <= 0) wolf.mode = "dead";
       else if (!wasRetreating) wolf.mode = "chase";
@@ -230,18 +265,18 @@ export class GameSimulation {
     if (!stack) return;
     this.noteActivity();
     if (stack.kind === "berry") {
-      if (this.player.hunger >= 99 && this.player.health >= 100) return;
+      if (this.player.hunger >= 99 && this.player.health >= this.player.maxHealth) return;
       this.removeFromSlot(index, 1);
-      this.player.hunger = clamp(this.player.hunger + 22, 0, 100);
-      this.player.health = clamp(this.player.health + 5, 0, 100);
+      this.player.hunger = clamp(this.player.hunger + 18, 0, 100);
+      this.player.health = clamp(this.player.health + 3, 0, this.player.maxHealth);
       this.events.push({ type: "eat", kind: "berry" });
       return;
     }
     if (stack.kind === "cooked-meat") {
-      if (this.player.hunger >= 99 && this.player.health >= 100) return;
+      if (this.player.hunger >= 99 && this.player.health >= this.player.maxHealth) return;
       this.removeFromSlot(index, 1);
-      this.player.hunger = clamp(this.player.hunger + 45, 0, 100);
-      this.player.health = clamp(this.player.health + 10, 0, 100);
+      this.player.hunger = clamp(this.player.hunger + 38, 0, 100);
+      this.player.health = clamp(this.player.health + 8, 0, this.player.maxHealth);
       this.events.push({ type: "eat", kind: "cooked-meat" });
       return;
     }
@@ -256,6 +291,10 @@ export class GameSimulation {
       this.events.push({ type: "message", text: "生肉已经烤熟" });
       return;
     }
+    if (stack.kind === "iron-ore") {
+      this.events.push({ type: "message", text: this.player.weapon === "iron-spear" ? "已经装备粗铁矛" : "3块铁矿和1张狼皮可制作粗铁矛" });
+      return;
+    }
     this.events.push({ type: "message", text: this.player.hasLeatherCoat ? "已经穿着基础皮衣" : "收集4张狼皮可制作基础皮衣" });
   }
 
@@ -268,8 +307,29 @@ export class GameSimulation {
     this.noteActivity();
     this.removeInventory("wolf-hide", 4);
     this.player.hasLeatherCoat = true;
+    this.player.defense += 4;
     this.events.push({ type: "craft-coat" });
-    this.events.push({ type: "message", text: "基础皮衣完成 · 夜间寒冷流失降低30%" });
+    this.events.push({ type: "message", text: "基础皮衣完成 · 防御+4，寒冷流失降低35%" });
+    return true;
+  }
+
+  craftIronSpear(): boolean {
+    if (!this.running || this.player.weapon === "iron-spear") return false;
+    if (!this.findNearestLitCamp(5.2)) {
+      this.events.push({ type: "message", text: "粗铁矛必须在燃烧的篝火旁制作" });
+      return false;
+    }
+    if (this.getInventoryCount("iron-ore") < 3 || this.getInventoryCount("wolf-hide") < 1) {
+      this.events.push({ type: "message", text: "粗铁矛需要3块铁矿和1张狼皮" });
+      return false;
+    }
+    this.noteActivity();
+    this.removeInventory("iron-ore", 3);
+    this.removeInventory("wolf-hide", 1);
+    this.player.weapon = "iron-spear";
+    this.player.attack += 18;
+    this.events.push({ type: "craft-weapon" });
+    this.events.push({ type: "message", text: "粗铁矛完成 · 攻击+18" });
     return true;
   }
 
@@ -281,11 +341,12 @@ export class GameSimulation {
     if (this.player.carrying) {
       const camp = this.findNearestCamp(4.3);
       if (camp && this.player.carrying === "wood") return { action: "feed", text: "添入圆木 · 篝火延长95秒" };
-      return { action: "drop", text: `放下${this.player.carrying === "wood" ? "圆木" : "石块"} · 多件组合才能封口` };
+      return { action: "drop", text: `放下${this.player.carrying === "wood" ? "圆木" : "大石"}${this.player.carrying === "stone" ? " · 一块即可封住窄口" : ""}` };
     }
     const item = this.findNearestItem(2.5);
-    if (item) return { action: "pickup", text: `双手搬起${item.kind === "wood" ? "圆木" : "石块"}` };
+    if (item) return { action: "pickup", text: `双手搬起${item.kind === "wood" ? "圆木" : "大石"}` };
     if (this.findNearestBerry(2.7)) return { action: "berry", text: "采集野果到背包" };
+    if (this.findNearestIron(2.8)) return { action: "mine", text: "敲取铁矿 · 篝火旁可制作粗铁矛" };
     return { action: "none", text: "" };
   }
 
@@ -308,7 +369,7 @@ export class GameSimulation {
       if (this.day === 1) return Math.min(1, this.phaseTime / fade);
       return Math.min(1, this.phaseTime / fade, elapsedInPhase / fade);
     }
-    return 1 - Math.min(1, this.phaseTime / fade, elapsedInPhase / fade);
+    return 1 - Math.min(1, this.phaseTime / fade);
   }
 
   getNearestLitCamp(): { camp: CampDefinition; fuel: number; distance: number } | null {
@@ -322,20 +383,47 @@ export class GameSimulation {
     return closest;
   }
 
+  getCurrentLocationLabel(): string {
+    const camp = this.findNearestCamp(14);
+    return camp ? CAMP_LABELS[camp.kind] : "荒山雪原";
+  }
+
+  getNearestThreat(): WolfState | null {
+    let nearest: WolfState | null = null;
+    let best = 24 * 24;
+    for (const wolf of this.wolves) {
+      if (wolf.mode === "dead" || wolf.mode === "retreating") continue;
+      const value = distanceSquared(this.player, wolf);
+      if (value >= best) continue;
+      nearest = wolf;
+      best = value;
+    }
+    return nearest;
+  }
+
   getObjective(): string {
     if (!this.clockStarted) return "移动或拿起圆木，开始第一天";
-    if (this.player.resting) return "休息中 · 生命每秒恢复1点";
+    if (this.player.resting) return this.player.hunger < 40 ? "休息中 · 饥饿使恢复降至0.6/秒" : "休息中 · 生命每秒恢复1点";
+    if (this.player.warmth <= 0) return "体温归零 · 生命正在快速流失";
+    if (this.player.hunger <= 0) return "饥饿归零 · 生命正在流失";
+    if (this.player.warmth < 25) return "体温过低 · 移动与攻击减弱";
+    if (this.player.hunger < 20) return "严重饥饿 · 无法休息且攻击减弱";
+    if (this.phase === "day" && this.day === 1 && this.phaseTime <= 14) return "天快黑了 · 用入口大石封住缺口";
     if (this.phase === "night") {
       const lit = this.getNearestLitCamp();
-      if (!lit) return "找到篝火并添柴，寒冷正在伤害你";
+      if (!lit && this.player.warmth <= 0) return "体温归零 · 寒冷正在伤害你";
+      if (!lit) return "篝火熄灭 · 体温正在下降";
       if (lit.fuel < 25) return "火快灭了：再搬一根圆木";
       return "守住火光；狼死亡会掉落肉和皮";
     }
     const retreatingWolves = this.wolves.filter((wolf) => wolf.mode === "retreating").length;
     if (retreatingWolves > 0) return `天亮了 · ${retreatingWolves}只狼正在撤离`;
+    if (this.objectiveStage === 0) return "拿起身边的圆木";
+    if (this.objectiveStage === 1) return "把圆木送到篝火旁添柴";
+    if (this.objectiveStage === 2) return "找到入口旁的大石并搬到缺口中央";
     if (!this.player.hasLeatherCoat && this.getInventoryCount("wolf-hide") > 0) return "收集4张狼皮制作基础皮衣";
-    if (this.getInventoryCount("berry") === 0) return "搜集圆木、石块与野果";
-    return "选择营地，添柴并用多件物资封住入口";
+    if (this.getInventoryCount("berry") === 0) return "搜集木材、野果与铁矿";
+    return "选择有利山坳，补充食物并准备武器";
   }
 
   private updatePlayerMovement(delta: number, rawMovement: Vec2, isMoving: boolean): void {
@@ -343,27 +431,30 @@ export class GameSimulation {
     this.noteActivity();
     const movement = normalize(rawMovement);
     this.player.facing = movement;
-    const carryingPenalty = this.player.carrying === "stone" ? 0.68 : this.player.carrying ? 0.82 : 1;
-    const speed = 8.2 * carryingPenalty;
+    const carryingPenalty = this.player.carrying === "stone" ? 0.54 : this.player.carrying ? 0.82 : 1;
+    const conditionPenalty = this.player.warmth < 25 || this.player.hunger < 12 ? 0.84 : 1;
+    const speed = 8.2 * carryingPenalty * conditionPenalty;
     this.moveEntity(this.player, movement.x * speed * delta, movement.z * speed * delta, PLAYER_RADIUS, true);
   }
 
   private updateNeeds(delta: number): void {
-    this.player.hunger = clamp(this.player.hunger - delta * 0.09, 0, 100);
+    this.player.hunger = clamp(this.player.hunger - delta * 0.12, 0, 100);
     const nearFire = this.camps.some((camp) => {
       if (camp.fuel <= 0) return false;
       return distanceSquared(this.player, this.world.camps[camp.id]) < 8.2 * 8.2;
     });
     if (nearFire) {
-      this.player.warmth = clamp(this.player.warmth + delta * 5.4, 0, 100);
+      this.player.warmth = clamp(this.player.warmth + delta * 6.2, 0, 100);
     } else if (this.phase === "night") {
-      const coatMultiplier = this.player.hasLeatherCoat ? 0.7 : 1;
-      this.player.warmth = clamp(this.player.warmth - delta * 0.74 * coatMultiplier, 0, 100);
+      const shelter = this.findNearestCamp(13.2);
+      const shelterMultiplier = shelter?.kind === "deep-cave" ? 0.58 : shelter?.kind === "windy-ridge" ? 1.25 : 0.9;
+      const coatMultiplier = this.player.hasLeatherCoat ? 0.65 : 1;
+      this.player.warmth = clamp(this.player.warmth - delta * 1.15 * shelterMultiplier * coatMultiplier, 0, 100);
     } else {
       this.player.warmth = clamp(this.player.warmth + delta * 0.32, 0, 100);
     }
-    if (this.player.hunger <= 0) this.player.health -= delta * 2.2;
-    if (this.player.warmth <= 0) this.player.health -= delta * 4.2;
+    if (this.player.hunger <= 0) this.player.health -= delta * 2.6;
+    if (this.player.warmth <= 0) this.player.health -= delta * 3.8;
   }
 
   private updateRest(delta: number): void {
@@ -374,12 +465,13 @@ export class GameSimulation {
     });
     const temperatureAllowsRest = this.phase === "day" || this.player.warmth > 30;
     const canRest = this.player.idleTime >= 5
-      && this.player.health < 100
-      && this.player.hunger > 0
+      && this.player.health < this.player.maxHealth
+      && this.player.hunger >= 20
       && temperatureAllowsRest
       && !nearbyThreat;
     this.setResting(canRest);
-    if (this.player.resting) this.player.health = clamp(this.player.health + delta, 0, 100);
+    const healingRate = this.player.hunger < 40 ? 0.6 : 1;
+    if (this.player.resting) this.player.health = clamp(this.player.health + delta * healingRate, 0, this.player.maxHealth);
   }
 
   private setResting(active: boolean): void {
@@ -493,7 +585,7 @@ export class GameSimulation {
     if (wolf.mode === "chase" && playerDistance < 1.75) {
       if (wolf.attackCooldown <= 0) {
         wolf.attackCooldown = 1.15;
-        const damage = 9 + this.day * 0.65;
+        const damage = Math.max(1, wolf.attack - this.player.defense);
         this.player.health -= damage;
         this.player.hurtFlash = 0.3;
         this.noteActivity();
@@ -511,7 +603,8 @@ export class GameSimulation {
     if (blockingItem) {
       if (wolf.attackCooldown <= 0) {
         wolf.attackCooldown = 0.95;
-        blockingItem.hp -= wolf.raider ? 18 : 13;
+        const barrierDamage = Math.round(wolf.attack * (wolf.kind === "large" ? 1.45 : 1.05));
+        blockingItem.hp -= barrierDamage;
         this.events.push({ type: "barrier-hit", itemId: blockingItem.id });
         if (blockingItem.hp <= 0) blockingItem.active = false;
       }
@@ -559,17 +652,17 @@ export class GameSimulation {
     wolf.health = 0;
     wolf.deathTimer = 0.8;
     this.player.kills += 1;
-    this.createDrop(wolf, "raw-meat", -0.65);
-    this.createDrop(wolf, "wolf-hide", 0.65);
+    this.createDrop(wolf, "raw-meat", -0.65, wolf.kind === "large" ? 2 : 1);
+    this.createDrop(wolf, "wolf-hide", 0.65, wolf.kind === "large" ? 2 : 1);
     this.events.push({ type: "wolf-killed", wolfId: wolf.id });
   }
 
-  private createDrop(position: Vec2, kind: InventoryItemKind, angleOffset: number): void {
+  private createDrop(position: Vec2, kind: InventoryItemKind, angleOffset: number, count = 1): void {
     const angle = Math.atan2(this.player.z - position.z, this.player.x - position.x) + angleOffset;
     const drop: WorldDrop = {
       id: this.dropId++,
       kind,
-      count: 1,
+      count,
       x: position.x + Math.cos(angle) * 0.9,
       z: position.z + Math.sin(angle) * 0.9,
       active: true,
@@ -583,37 +676,58 @@ export class GameSimulation {
 
   private spawnWolf(): void {
     const half = this.world.size / 2 - 2;
+    const tutorialWolf = this.day === 1 && this.spawnedThisNight === 0;
     const side = Math.floor(this.random() * 4);
     const along = (this.random() - 0.5) * (this.world.size - 12);
-    const spawn = side === 0 ? { x: -half, z: along }
+    const edgeSpawn = side === 0 ? { x: -half, z: along }
       : side === 1 ? { x: half, z: along }
       : side === 2 ? { x: along, z: -half }
       : { x: along, z: half };
-    const camp = this.world.camps[Math.floor(this.random() * this.world.camps.length)];
+    const camp = tutorialWolf
+      ? this.world.camps[this.world.startCampId]
+      : this.world.camps[Math.floor(this.random() * this.world.camps.length)];
+    const spawn = tutorialWolf ? {
+      x: camp.x + Math.cos(camp.entranceAngle) * (camp.radius + 18),
+      z: camp.z + Math.sin(camp.entranceAngle) * (camp.radius + 18),
+    } : edgeSpawn;
     const anchorAngle = this.random() * TAU;
     const anchorDistance = 12 + this.random() * 10;
     const raiderChance = Math.min(0.35, 0.16 + (this.day - 1) * 0.06);
-    const raider = this.random() < raiderChance;
+    const raider = tutorialWolf || this.random() < raiderChance;
+    const largeChance = Math.min(0.58, 0.22 + (this.day - 1) * 0.09);
+    const kind = tutorialWolf || this.random() >= largeChance ? "small" : "large";
+    const maxHealth = tutorialWolf ? 28 : kind === "large" ? 112 : 58;
+    const attack = tutorialWolf ? 5 : kind === "large" ? 16 + Math.min(4, this.day - 1) : 10 + Math.min(3, Math.floor((this.day - 1) * 0.7));
+    const defense = tutorialWolf ? 0 : kind === "large" ? 5 : 1;
     const anchor = {
       x: camp.x + Math.cos(anchorAngle) * anchorDistance,
       z: camp.z + Math.sin(anchorAngle) * anchorDistance,
     };
     this.wolves.push({
       id: this.wolfId++,
+      kind,
       ...spawn,
       facing: direction(spawn, anchor),
-      health: 72,
+      health: maxHealth,
+      maxHealth,
+      attack,
+      defense,
       mode: raider ? "raid" : "entering",
       raider,
       anchor,
       patrolAngle: this.random() * TAU,
-      speed: 3.2 + this.random() * 0.9,
+      speed: tutorialWolf ? 3.05 : kind === "large" ? 2.85 + this.random() * 0.55 : 3.65 + this.random() * 0.75,
       attackCooldown: this.random(),
       lostTimer: 0,
       hurtFlash: 0,
       deathTimer: 0,
       dropsCreated: false,
     });
+    if (tutorialWolf) this.events.push({ type: "message", text: "侦察小狼正在逼近 · 面向它攻击" });
+    if (kind === "large" && !this.largeWolfAnnounced) {
+      this.largeWolfAnnounced = true;
+      this.events.push({ type: "message", text: "发现大狼 · 生命、防御和破坏力都更高" });
+    }
   }
 
   private wolfCanSeePlayer(wolf: WolfState): boolean {
@@ -632,7 +746,7 @@ export class GameSimulation {
       if (segmentIntersectsEllipse(start, end, hill, 0.25)) return true;
     }
     for (const item of this.items) {
-      if (item.active && item.placed && segmentIntersectsCircle(start, end, item, item.kind === "stone" ? 0.85 : 0.65)) return true;
+      if (item.active && item.placed && segmentIntersectsCircle(start, end, item, item.kind === "stone" ? 1.48 : 0.65)) return true;
     }
     return false;
   }
@@ -664,8 +778,8 @@ export class GameSimulation {
       const itemDistance = distance(wolf, item);
       if (itemDistance > 2.3) continue;
       if (dot(desired, direction(wolf, item)) < 0.35) continue;
-      const clusterSize = this.items.filter((other) => other.active && other.placed && distanceSquared(item, other) < 3.6 * 3.6).length;
-      if (clusterSize < 3) continue;
+      const clusterSize = this.items.filter((other) => other.active && other.placed && distanceSquared(item, other) < 4.2 * 4.2).length;
+      if (item.kind === "wood" && clusterSize < 2) continue;
       if (itemDistance < closestDistance) {
         closest = item;
         closestDistance = itemDistance;
@@ -721,13 +835,28 @@ export class GameSimulation {
   }
 
   private updateObjectives(): void {
+    if (!this.duskWarningSent && this.phase === "day" && this.day === 1 && this.phaseTime <= 14) {
+      this.duskWarningSent = true;
+      this.events.push({ type: "message", text: "天色正在变暗 · 入口的大石一块就能封住窄口" });
+    }
     if (this.objectiveStage === 0 && this.player.carrying) {
       this.objectiveStage = 1;
-      this.events.push({ type: "message", text: "圆木可添柴，也能与其他物资组合成路障" });
+      this.events.push({ type: "message", text: "圆木用于添火；入口旁的大石负责封路" });
     } else if (this.objectiveStage === 1 && this.camps.some((camp) => camp.fuel > 90)) {
       this.objectiveStage = 2;
-      this.events.push({ type: "message", text: "火已续上；至少用3件物体组成封锁" });
+      this.events.push({ type: "message", text: "火已续上 · 把入口的大石搬到缺口中央" });
+    } else if (this.objectiveStage === 2 && this.world.camps.some((camp) => this.isEntranceBlocked(camp))) {
+      this.objectiveStage = 3;
+      this.events.push({ type: "message", text: "封口完成 · 石头会挡路并承受狼的攻击" });
     }
+  }
+
+  private isEntranceBlocked(camp: CampDefinition): boolean {
+    const entrance = {
+      x: camp.x + Math.cos(camp.entranceAngle) * camp.radius,
+      z: camp.z + Math.sin(camp.entranceAngle) * camp.radius,
+    };
+    return this.items.some((item) => item.active && item.placed && item.kind === "stone" && distanceSquared(item, entrance) < 3.6 * 3.6);
   }
 
   private addInventory(kind: InventoryItemKind, count: number): boolean {
@@ -815,6 +944,20 @@ export class GameSimulation {
     return nearest;
   }
 
+  private findNearestIron(maxDistance: number): IronNode | null {
+    let nearest: IronNode | null = null;
+    let best = maxDistance * maxDistance;
+    for (const node of this.ironNodes) {
+      if (node.ore <= 0) continue;
+      const value = distanceSquared(this.player, node);
+      if (value < best) {
+        nearest = node;
+        best = value;
+      }
+    }
+    return nearest;
+  }
+
   private dropCarriedItem(): void {
     const kind = this.player.carrying;
     if (!kind) return;
@@ -836,7 +979,7 @@ export class GameSimulation {
     item.x = dropPosition.x;
     item.z = dropPosition.z;
     item.kind = kind;
-    item.hp = kind === "stone" ? 95 : 70;
+    item.hp = kind === "stone" ? 220 : 70;
     item.placed = true;
     item.active = true;
     item.rotation = Math.atan2(this.player.facing.z, this.player.facing.x);
@@ -862,7 +1005,7 @@ export class GameSimulation {
       if (!collideWithItems) continue;
       for (const item of this.items) {
         if (!item.active || !item.placed) continue;
-        this.pushOutsideCircle(entity, radius, item, item.kind === "stone" ? 0.75 : 0.62);
+        this.pushOutsideCircle(entity, radius, item, item.kind === "stone" ? 1.48 : 0.62);
       }
     }
   }

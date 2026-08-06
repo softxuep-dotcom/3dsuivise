@@ -117,6 +117,22 @@ button { font: inherit; }
 .warmth i b { background: linear-gradient(90deg, #e7782e, #ffc05e); }
 .hunger i b { background: linear-gradient(90deg, #62a84f, #a6d966); }
 .meter em { color: #bcd0d7; font-size: 10px; font-style: normal; text-align: right; }
+.meter.critical { color: #ff9b85; }
+.meter.critical i { box-shadow: 0 0 0 1px rgba(255, 99, 74, .45), 0 0 10px rgba(226, 67, 47, .24); }
+
+.combat-line {
+  display: flex;
+  justify-content: space-between;
+  margin: 1px 0 6px;
+  padding: 5px 7px;
+  border-radius: 7px;
+  background: rgba(255,255,255,.045);
+  color: #a9bdc4;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.combat-line b { color: #f2d29e; }
 
 .inventory-button {
   width: 100%;
@@ -162,6 +178,27 @@ button { font: inherit; }
 
 .clock b { min-width: 42px; color: #d8eef5; font-variant-numeric: tabular-nums; }
 .clock.night { border-color: rgba(118, 150, 211, .45); background: rgba(10, 15, 33, .86); }
+
+.enemy-chip {
+  position: absolute;
+  z-index: 5;
+  top: 66px;
+  left: 50%;
+  width: 176px;
+  padding: 7px 10px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(224, 103, 85, .42);
+  border-radius: 10px;
+  background: rgba(30, 18, 21, .84);
+  backdrop-filter: blur(7px);
+}
+
+.enemy-chip > div { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 10px; }
+.enemy-chip strong { color: #ffd0c4; }
+.enemy-chip span { color: #c99e96; }
+.enemy-chip i { display: block; height: 5px; overflow: hidden; border-radius: 5px; background: rgba(255,255,255,.12); }
+.enemy-chip i b { display: block; width: 100%; height: 100%; background: linear-gradient(90deg, #a8302f, #ed6758); }
+.enemy-chip em { display: block; margin-top: 3px; color: #bba9a6; font-size: 9px; font-style: normal; text-align: right; }
 
 #radar {
   left: max(18px, env(safe-area-inset-left));
@@ -369,7 +406,7 @@ button { font: inherit; }
 
 .equipment-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 10px;
   margin-bottom: 14px;
 }
@@ -387,6 +424,24 @@ button { font: inherit; }
 
 .equipment-row span { color: #91a9b1; }
 .equipment-row strong { color: #f1e7d1; }
+
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: -4px 0 14px;
+}
+
+.stat-row span {
+  padding: 7px;
+  border-radius: 8px;
+  background: rgba(124, 151, 157, .08);
+  color: #8fa8af;
+  font-size: 10px;
+  text-align: center;
+}
+
+.stat-row b { color: #f2d29e; }
 
 .inventory-grid {
   display: grid;
@@ -420,6 +475,8 @@ button { font: inherit; }
   color: #f0d4ac;
 }
 
+.craft-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
 .craft-button:disabled { opacity: .4; cursor: default; }
 .inventory-help { margin: 12px 4px 0; color: #849ba5; font-size: 10px; line-height: 1.6; text-align: center; }
 
@@ -443,9 +500,11 @@ button { font: inherit; }
 
   .meter { grid-template-columns: 28px 1fr; gap: 5px; margin-bottom: 5px; font-size: 9px; }
   .meter em { display: none; }
+  .combat-line { margin-bottom: 4px; padding: 3px 5px; font-size: 9px; }
   .inventory-button { padding: 4px 6px; font-size: 10px; }
   .hud-actions { gap: 4px; }
   .clock { top: 84px; padding: 5px 10px; }
+  .enemy-chip { top: 116px; width: 154px; padding: 5px 8px; }
   #radar { top: 80px; left: 10px; width: 90px; height: 90px; }
   .sound-button { top: 181px; right: 10px; bottom: auto; padding: 5px 8px; }
   .prompt { bottom: 135px; font-size: 11px; }
@@ -545,10 +604,12 @@ button { font: inherit; }
   .backpack-card h2 { font-size: 24px; }
   .equipment-row { gap: 6px; margin-bottom: 8px; }
   .equipment-row > div { padding: 6px 9px; }
+  .stat-row { gap: 5px; margin-bottom: 8px; }
   .inventory-grid { gap: 6px; }
   .inventory-slot { min-height: 52px; padding: 5px; }
   .inventory-slot .item-glyph { font-size: 19px; }
   .craft-button { margin-top: 8px; padding: 8px; }
+  .craft-list { gap: 5px; }
   .inventory-help { margin-top: 6px; line-height: 1.35; }
 }
 
