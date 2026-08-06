@@ -1,6 +1,6 @@
 import type { GameSimulation } from "../game/simulation/GameSimulation";
 import { clamp } from "../game/simulation/geometry";
-import type { GameEvent } from "../game/simulation/types";
+import type { GameEvent, InventoryItemKind } from "../game/simulation/types";
 
 const required = <T extends HTMLElement>(id: string): T => {
   const element = document.getElementById(id);
@@ -8,11 +8,20 @@ const required = <T extends HTMLElement>(id: string): T => {
   return element as T;
 };
 
+const ITEM_PRESENTATION: Record<InventoryItemKind, { glyph: string; name: string }> = {
+  berry: { glyph: "●", name: "野果" },
+  "raw-meat": { glyph: "肉", name: "生狼肉" },
+  "cooked-meat": { glyph: "熟", name: "熟狼肉" },
+  "wolf-hide": { glyph: "皮", name: "狼皮" },
+};
+
 export class HudController {
   private readonly simulation: GameSimulation;
   private readonly hud = required<HTMLElement>("hud");
   private readonly intro = required<HTMLElement>("intro");
   private readonly gameOver = required<HTMLElement>("game-over");
+  private readonly inventoryOverlay = required<HTMLElement>("inventory-overlay");
+  private readonly rotateOverlay = required<HTMLElement>("rotate-overlay");
   private readonly healthBar = required<HTMLElement>("health-bar");
   private readonly warmthBar = required<HTMLElement>("warmth-bar");
   private readonly hungerBar = required<HTMLElement>("hunger-bar");
@@ -20,6 +29,7 @@ export class HudController {
   private readonly warmthValue = required<HTMLElement>("warmth-value");
   private readonly hungerValue = required<HTMLElement>("hunger-value");
   private readonly berryCount = required<HTMLElement>("berry-count");
+  private readonly bagUsage = required<HTMLElement>("bag-usage");
   private readonly eatButton = required<HTMLButtonElement>("eat-button");
   private readonly objective = required<HTMLElement>("objective");
   private readonly dayLabel = required<HTMLElement>("day-label");
@@ -27,20 +37,63 @@ export class HudController {
   private readonly timeLabel = required<HTMLElement>("time-label");
   private readonly clock = required<HTMLElement>("clock");
   private readonly prompt = required<HTMLElement>("prompt");
+  private readonly restIndicator = required<HTMLElement>("rest-indicator");
   private readonly actionButton = required<HTMLButtonElement>("action-button");
   private readonly toast = required<HTMLElement>("toast");
   private readonly radar = required<HTMLCanvasElement>("radar");
   private readonly resultCopy = required<HTMLElement>("result-copy");
+  private readonly handsStatus = required<HTMLElement>("hands-status");
+  private readonly coatStatus = required<HTMLElement>("coat-status");
+  private readonly craftButton = required<HTMLButtonElement>("craft-coat-button");
+  private readonly slots: HTMLButtonElement[];
   private toastTimer = 0;
   private lastHudUpdate = 0;
+  private inventoryOpen = false;
+  private portraitBlocked = false;
 
   constructor(simulation: GameSimulation) {
     this.simulation = simulation;
+    this.slots = [...document.querySelectorAll<HTMLButtonElement>(".inventory-slot")];
+    this.slots.forEach((slot) => {
+      slot.addEventListener("click", () => {
+        const index = Number(slot.dataset.slot);
+        this.simulation.useInventorySlot(index);
+        this.updateInventory();
+      });
+    });
+    required<HTMLButtonElement>("backpack-button").addEventListener("click", () => this.toggleInventory());
+    required<HTMLButtonElement>("inventory-close").addEventListener("click", () => this.closeInventory());
+    this.craftButton.addEventListener("click", () => {
+      this.simulation.craftLeatherCoat();
+      this.updateInventory();
+    });
   }
 
   showGame(): void {
     this.intro.classList.add("hidden");
     this.hud.classList.remove("hidden");
+  }
+
+  isGameplayBlocked(): boolean {
+    return this.inventoryOpen || this.portraitBlocked;
+  }
+
+  toggleInventory(): void {
+    if (this.portraitBlocked || !this.simulation.running) return;
+    this.inventoryOpen = !this.inventoryOpen;
+    this.inventoryOverlay.classList.toggle("hidden", !this.inventoryOpen);
+    if (this.inventoryOpen) this.updateInventory();
+  }
+
+  closeInventory(): void {
+    this.inventoryOpen = false;
+    this.inventoryOverlay.classList.add("hidden");
+  }
+
+  setPortraitBlocked(blocked: boolean): void {
+    this.portraitBlocked = blocked;
+    this.rotateOverlay.classList.toggle("hidden", !blocked);
+    if (blocked) this.closeInventory();
   }
 
   update(deltaSeconds: number): void {
@@ -56,24 +109,21 @@ export class HudController {
     this.setMeter(this.healthBar, this.healthValue, player.health);
     this.setMeter(this.warmthBar, this.warmthValue, player.warmth);
     this.setMeter(this.hungerBar, this.hungerValue, player.hunger);
-    this.berryCount.textContent = String(player.berries);
-    this.eatButton.disabled = player.berries <= 0 || player.hunger >= 99;
+    const berries = this.simulation.getInventoryCount("berry");
+    this.berryCount.textContent = String(berries);
+    this.eatButton.disabled = berries <= 0 || (player.hunger >= 99 && player.health >= 100);
+    this.bagUsage.textContent = `${player.inventory.filter(Boolean).length}/8`;
     this.objective.textContent = this.simulation.getObjective();
-    this.dayLabel.textContent = `第 ${this.simulation.day} 天 · 已猎杀 ${player.kills}`;
+    this.dayLabel.textContent = `第 ${this.simulation.day} 天 · 猎杀 ${player.kills} · 狼 ${this.simulation.wolves.filter((wolf) => wolf.mode !== "dead").length}`;
     this.phaseLabel.textContent = this.simulation.phase === "day" ? "白昼" : "黑夜";
     this.clock.classList.toggle("night", this.simulation.phase === "night");
     const seconds = Math.max(0, Math.ceil(this.simulation.phaseTime));
     this.timeLabel.textContent = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+    this.restIndicator.classList.toggle("hidden", !player.resting);
 
     const hint = this.simulation.getInteractionHint();
     const touchLayout = matchMedia("(pointer: coarse)").matches || window.innerWidth <= 760;
-    const actionLabels = {
-      pickup: "拿起",
-      drop: "放置",
-      feed: "添柴",
-      berry: "采集",
-      none: "行动",
-    } as const;
+    const actionLabels = { pickup: "拿起", drop: "放置", feed: "添柴", berry: "采集", none: "行动" } as const;
     this.actionButton.textContent = actionLabels[hint.action];
     if (hint.action === "none") {
       this.prompt.classList.add("hidden");
@@ -82,6 +132,7 @@ export class HudController {
       this.prompt.innerHTML = `<kbd>${key}</kbd>${hint.text}`;
       this.prompt.classList.remove("hidden");
     }
+    if (this.inventoryOpen) this.updateInventory();
     this.drawRadar();
   }
 
@@ -90,13 +141,43 @@ export class HudController {
     if (event.type === "phase") {
       this.showToast(event.phase === "night" ? `第 ${event.day} 夜 · 狼群正在进入` : `第 ${event.day} 天 · 抓紧补给`, 3.4);
     }
-    if (event.type === "game-over") this.showGameOver();
+    if (event.type === "pickup" && (event.kind === "raw-meat" || event.kind === "wolf-hide")) {
+      this.showToast(event.kind === "raw-meat" ? "获得生狼肉" : "获得狼皮", 1.4);
+    }
+    if (event.type === "game-over") {
+      this.closeInventory();
+      this.showGameOver();
+    }
   }
 
   showToast(text: string, seconds = 2.3): void {
     this.toast.textContent = text;
     this.toast.classList.remove("hidden");
     this.toastTimer = seconds;
+  }
+
+  private updateInventory(): void {
+    const player = this.simulation.player;
+    this.slots.forEach((slot, index) => {
+      const stack = player.inventory[index];
+      if (!stack) {
+        slot.innerHTML = "";
+        slot.classList.add("empty");
+        slot.disabled = true;
+        slot.setAttribute("aria-label", `空格 ${index + 1}`);
+        return;
+      }
+      const presentation = ITEM_PRESENTATION[stack.kind];
+      slot.classList.remove("empty");
+      slot.disabled = false;
+      slot.innerHTML = `<span class="item-glyph">${presentation.glyph}</span><span class="item-name">${presentation.name}</span><b class="item-count">${stack.count}</b>`;
+      slot.setAttribute("aria-label", `${presentation.name} ${stack.count}个`);
+    });
+    this.handsStatus.textContent = player.carrying === "wood" ? "圆木" : player.carrying === "stone" ? "石块" : "空闲";
+    this.coatStatus.textContent = player.hasLeatherCoat ? "基础皮衣 · 保暖+30%" : "粗布衣";
+    const hides = this.simulation.getInventoryCount("wolf-hide");
+    this.craftButton.textContent = player.hasLeatherCoat ? "基础皮衣已装备" : `制作基础皮衣 · 狼皮 ${hides}/4`;
+    this.craftButton.disabled = player.hasLeatherCoat || hides < 4;
   }
 
   private setMeter(bar: HTMLElement, valueLabel: HTMLElement, rawValue: number): void {

@@ -15,6 +15,10 @@ const simulation = new GameSimulation(world);
 const audio = new SynthAudio();
 const hud = new HudController(simulation);
 
+const runGameplayAction = (action: () => void): void => {
+  if (!hud.isGameplayBlocked()) action();
+};
+
 try {
   renderer = new GameRenderer(renderRoot, world, simulation);
 } catch (error) {
@@ -24,21 +28,34 @@ try {
 }
 
 const input = new InputController({
-  onAction: () => simulation.requestInteraction(),
-  onAttack: () => simulation.requestAttack(),
-  onEat: () => simulation.consumeBerry(),
+  onAction: () => runGameplayAction(() => simulation.requestInteraction()),
+  onAttack: () => runGameplayAction(() => simulation.requestAttack()),
+  onEat: () => runGameplayAction(() => simulation.consumeBerry()),
+  onInventory: () => hud.toggleInventory(),
 });
 input.bindCanvas(renderer.canvas, (x, y) => renderer.screenToWorld(x, y));
 
 let started = false;
 let previousTime = performance.now();
 let hiddenAt = 0;
+const portraitMedia = window.matchMedia(
+  "(pointer: coarse) and (orientation: portrait), (max-width: 760px) and (orientation: portrait)",
+);
+
+const syncOrientation = (): void => {
+  hud.setPortraitBlocked(portraitMedia.matches);
+};
+
+portraitMedia.addEventListener("change", syncOrientation);
+syncOrientation();
 
 document.getElementById("start-button")?.addEventListener("click", async () => {
   await audio.unlock();
   started = true;
   simulation.start();
   hud.showGame();
+  const orientation = screen.orientation as ScreenOrientation & { lock?: (value: string) => Promise<void> };
+  void orientation.lock?.("landscape").catch(() => undefined);
 });
 
 document.getElementById("restart-button")?.addEventListener("click", () => window.location.reload());
@@ -62,7 +79,7 @@ const frame = (now: number): void => {
   const delta = Math.min((now - previousTime) / 1000, 0.05);
   previousTime = now;
   if (!document.hidden) {
-    if (started) simulation.update(delta, input.getMovement(simulation.player));
+    if (started && !hud.isGameplayBlocked()) simulation.update(delta, input.getMovement(simulation.player));
     const events = simulation.drainEvents();
     for (const event of events) {
       audio.handle(event);

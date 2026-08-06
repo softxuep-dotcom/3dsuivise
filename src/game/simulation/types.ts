@@ -6,7 +6,23 @@ export interface Vec2 {
 export type Phase = "day" | "night";
 export type CarryKind = "wood" | "stone";
 export type GroundItemKind = CarryKind;
+export type InventoryItemKind = "berry" | "raw-meat" | "cooked-meat" | "wolf-hide";
 export type WolfMode = "entering" | "patrol" | "chase" | "raid" | "dead";
+
+export interface InventoryStack {
+  kind: InventoryItemKind;
+  count: number;
+}
+
+export interface WorldDrop extends Vec2 {
+  id: number;
+  kind: InventoryItemKind;
+  count: number;
+  active: boolean;
+  createdAt: number;
+  expiresAt: number;
+  burstAngle: number;
+}
 
 export interface CircleObstacle extends Vec2 {
   radius: number;
@@ -58,8 +74,11 @@ export interface PlayerState extends Vec2 {
   health: number;
   warmth: number;
   hunger: number;
-  berries: number;
+  inventory: Array<InventoryStack | null>;
   carrying: CarryKind | null;
+  hasLeatherCoat: boolean;
+  resting: boolean;
+  idleTime: number;
   attackCooldown: number;
   attackFlash: number;
   hurtFlash: number;
@@ -79,6 +98,7 @@ export interface WolfState extends Vec2 {
   lostTimer: number;
   hurtFlash: number;
   deathTimer: number;
+  dropsCreated: boolean;
 }
 
 export interface WorldDefinition {
@@ -93,10 +113,14 @@ export interface WorldDefinition {
 }
 
 export type GameEvent =
-  | { type: "pickup"; kind: CarryKind | "berry" }
+  | { type: "pickup"; kind: CarryKind | InventoryItemKind }
   | { type: "drop"; kind: CarryKind }
+  | { type: "loot-drop"; kind: InventoryItemKind; dropId: number }
   | { type: "feed-fire"; campId: number }
-  | { type: "eat" }
+  | { type: "eat"; kind: "berry" | "cooked-meat" }
+  | { type: "cook" }
+  | { type: "craft-coat" }
+  | { type: "rest"; active: boolean }
   | { type: "attack" }
   | { type: "wolf-hit"; wolfId: number }
   | { type: "wolf-killed"; wolfId: number }
@@ -110,3 +134,12 @@ export interface InteractionHint {
   action: "pickup" | "drop" | "feed" | "berry" | "none";
   text: string;
 }
+
+export const INVENTORY_CAPACITY = 8;
+
+export const INVENTORY_STACK_LIMITS: Record<InventoryItemKind, number> = {
+  berry: 6,
+  "raw-meat": 3,
+  "cooked-meat": 3,
+  "wolf-hide": 4,
+};

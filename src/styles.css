@@ -130,6 +130,18 @@ button { font: inherit; }
   pointer-events: auto;
 }
 
+.hud-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.backpack-button {
+  color: #eef6f8;
+  border-color: rgba(150, 204, 221, .35);
+  background: rgba(47, 92, 108, .48);
+}
+
 .inventory-button:active { transform: translateY(1px); }
 .inventory-button:disabled { opacity: .45; cursor: default; }
 
@@ -216,6 +228,22 @@ button { font: inherit; }
   letter-spacing: .04em;
 }
 
+.rest-indicator {
+  position: absolute;
+  z-index: 6;
+  top: 18%;
+  left: 50%;
+  padding: 9px 14px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(151, 218, 191, .35);
+  border-radius: 999px;
+  background: rgba(22, 55, 50, .82);
+  color: #c7f0df;
+  font-size: 12px;
+  font-weight: 800;
+  backdrop-filter: blur(7px);
+}
+
 .overlay {
   position: fixed;
   z-index: 20;
@@ -299,6 +327,119 @@ button { font: inherit; }
 .touch-copy { display: none; }
 .game-over-card p:not(.eyebrow) { margin: 18px 0 24px; color: #c3d3d8; line-height: 1.7; }
 
+.inventory-overlay {
+  z-index: 35;
+  background: rgba(5, 10, 14, .68);
+  overflow: auto;
+}
+
+.backpack-card {
+  width: min(560px, 92vw);
+  padding: 24px;
+  border: 1px solid rgba(221, 239, 245, .2);
+  border-radius: 20px;
+  background: linear-gradient(150deg, rgba(20, 33, 42, .98), rgba(10, 18, 24, .98));
+  box-shadow: 0 35px 100px rgba(0,0,0,.5);
+}
+
+.backpack-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.backpack-card h2 {
+  margin: 0;
+  color: #f5f3e9;
+  font-size: 32px;
+  letter-spacing: .12em;
+}
+
+.close-button,
+.craft-button {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: #e9f3f5;
+  background: rgba(255,255,255,.07);
+  cursor: pointer;
+}
+
+.close-button { padding: 8px 14px; }
+
+.equipment-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.equipment-row > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255,255,255,.035);
+  font-size: 12px;
+}
+
+.equipment-row span { color: #91a9b1; }
+.equipment-row strong { color: #f1e7d1; }
+
+.inventory-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 9px;
+}
+
+.inventory-slot {
+  position: relative;
+  min-height: 82px;
+  padding: 8px;
+  border: 1px solid rgba(207, 229, 236, .18);
+  border-radius: 12px;
+  background: rgba(2, 9, 13, .38);
+  color: #f2f6f7;
+  cursor: pointer;
+}
+
+.inventory-slot:not(:empty):hover { border-color: rgba(255, 168, 79, .65); background: rgba(255, 146, 57, .08); }
+.inventory-slot.empty { cursor: default; opacity: .56; }
+.inventory-slot .item-glyph { display: block; margin-bottom: 3px; color: #ffb35c; font-size: 24px; font-weight: 900; }
+.inventory-slot .item-name { display: block; color: #bcd0d6; font-size: 10px; }
+.inventory-slot .item-count { position: absolute; right: 8px; bottom: 6px; font-size: 13px; font-weight: 900; }
+
+.craft-button {
+  width: 100%;
+  margin-top: 14px;
+  padding: 11px;
+  border-color: rgba(196, 151, 91, .4);
+  background: rgba(108, 72, 39, .44);
+  color: #f0d4ac;
+}
+
+.craft-button:disabled { opacity: .4; cursor: default; }
+.inventory-help { margin: 12px 4px 0; color: #849ba5; font-size: 10px; line-height: 1.6; text-align: center; }
+
+.rotate-overlay { z-index: 60; background: #0a1218; }
+.rotate-card { max-width: 340px; text-align: center; }
+.rotate-card h2 { margin: 8px 0; font-size: 28px; }
+.rotate-card p { margin: 0; color: #9bb0b8; font-size: 13px; line-height: 1.6; }
+.phone-icon {
+  display: grid;
+  width: 70px;
+  height: 108px;
+  margin: 0 auto 18px;
+  place-items: center;
+  border: 3px solid #d9ebf0;
+  border-radius: 13px;
+  color: var(--ember);
+  font-size: 36px;
+  transform: rotate(90deg);
+}
+
 #touch-controls { display: none; }
 
 @media (pointer: coarse), (max-width: 760px) {
@@ -320,6 +461,7 @@ button { font: inherit; }
   .meter { grid-template-columns: 28px 1fr; gap: 5px; margin-bottom: 5px; font-size: 9px; }
   .meter em { display: none; }
   .inventory-button { padding: 4px 6px; font-size: 10px; }
+  .hud-actions { gap: 4px; }
   .clock { top: 84px; padding: 5px 10px; }
   #radar { top: 80px; left: 10px; width: 90px; height: 90px; }
   .sound-button { top: 181px; right: 10px; bottom: auto; padding: 5px 8px; }
@@ -392,12 +534,39 @@ button { font: inherit; }
   .controls-copy { margin-top: 13px; font-size: 10px; }
 }
 
+@media (pointer: coarse) and (orientation: landscape) {
+  .objective-chip { max-width: 38vw; }
+  .status-strip { width: 190px; }
+  #radar { top: 76px; width: 84px; height: 84px; }
+  .prompt { bottom: 100px; }
+  .joystick { width: 94px; height: 94px; }
+  .joystick i { top: 28px; left: 28px; width: 38px; height: 38px; }
+  .round-button.attack { width: 70px; height: 70px; }
+  .round-button.action { width: 62px; height: 62px; }
+  .backpack-card { width: min(620px, 86vw); padding: 18px 22px; }
+  .inventory-slot { min-height: 68px; }
+}
+
 @media (max-height: 520px) {
   .intro-card { padding-top: 18px; padding-bottom: 16px; }
   .intro-card h1 { font-size: 38px; }
   .tagline { margin: 7px 0 10px; }
   .verb-row { margin: 10px 0 14px; }
   #radar { display: none; }
+  .backpack-card {
+    max-height: calc(100vh - 12px);
+    padding: 12px 16px;
+    overflow-y: auto;
+  }
+  .backpack-card header { margin-bottom: 8px; }
+  .backpack-card h2 { font-size: 24px; }
+  .equipment-row { gap: 6px; margin-bottom: 8px; }
+  .equipment-row > div { padding: 6px 9px; }
+  .inventory-grid { gap: 6px; }
+  .inventory-slot { min-height: 52px; padding: 5px; }
+  .inventory-slot .item-glyph { font-size: 19px; }
+  .craft-button { margin-top: 8px; padding: 8px; }
+  .inventory-help { margin-top: 6px; line-height: 1.35; }
 }
 
 @media (prefers-reduced-motion: reduce) {

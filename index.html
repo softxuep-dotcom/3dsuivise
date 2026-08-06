@@ -21,12 +21,16 @@
           <div class="meter health"><span>生命</span><i><b id="health-bar"></b></i><em id="health-value">100</em></div>
           <div class="meter warmth"><span>温暖</span><i><b id="warmth-bar"></b></i><em id="warmth-value">85</em></div>
           <div class="meter hunger"><span>饱食</span><i><b id="hunger-bar"></b></i><em id="hunger-value">82</em></div>
-          <button id="eat-button" class="inventory-button" type="button" aria-label="食用野果">野果 <b id="berry-count">0</b></button>
+          <div class="hud-actions">
+            <button id="eat-button" class="inventory-button" type="button" aria-label="快速食用野果">野果 <b id="berry-count">0</b></button>
+            <button id="backpack-button" class="inventory-button backpack-button" type="button" aria-label="打开背包">背包 <b id="bag-usage">0/8</b></button>
+          </div>
         </section>
 
         <div class="clock" id="clock"><span id="phase-label">白昼</span><b id="time-label">00:50</b></div>
         <canvas id="radar" width="160" height="160" aria-label="营地雷达"></canvas>
         <div id="prompt" class="prompt hidden"></div>
+        <div id="rest-indicator" class="rest-indicator hidden">休息中 · 生命 +1/秒</div>
         <div id="toast" class="toast hidden"></div>
         <button id="sound-button" class="sound-button" type="button" aria-label="切换声音">声音 开</button>
 
@@ -43,7 +47,7 @@
         <div class="intro-card">
           <p class="eyebrow">可玩机制原型</p>
           <h1>雪脊余火</h1>
-          <p class="tagline">白天搬运与封口，夜晚守火与猎狼。</p>
+          <p class="tagline">横屏生存：白天搬运与封口，夜晚守火与猎狼。</p>
           <div class="verb-row" aria-label="核心玩法">
             <span><b>1</b>搜木与野果</span>
             <span><b>2</b>选山坳封入口</span>
@@ -51,9 +55,42 @@
           </div>
           <button id="start-button" class="primary-button" type="button">踏入雪原</button>
           <p class="controls-copy">
-            <span class="desktop-copy">键盘：WASD / 方向键移动 · E 拿放或添柴 · 空格攻击 · F 吃野果<br />鼠标：点击地面移动</span>
-            <span class="touch-copy">左侧摇杆移动 · 右下“行动”会自动变为拿起、放置、添柴或采集</span>
+            <span class="desktop-copy">键盘：WASD / 方向键移动 · E 拿放或添柴 · 空格攻击 · B/Tab 背包<br />鼠标：点击地面移动</span>
+            <span class="touch-copy">请横屏游玩 · 左侧摇杆移动 · 右下攻击/行动 · 右上打开背包</span>
           </p>
+        </div>
+      </div>
+
+      <div id="inventory-overlay" class="overlay inventory-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="inventory-title">
+        <div class="backpack-card">
+          <header>
+            <div><span class="eyebrow">8格背包 · 游戏已暂停</span><h2 id="inventory-title">行囊</h2></div>
+            <button id="inventory-close" class="close-button" type="button" aria-label="关闭背包">关闭</button>
+          </header>
+          <div class="equipment-row">
+            <div><span>双手</span><strong id="hands-status">空闲</strong></div>
+            <div><span>衣物</span><strong id="coat-status">粗布衣</strong></div>
+          </div>
+          <div id="inventory-grid" class="inventory-grid" aria-label="背包格子">
+            <button class="inventory-slot" data-slot="0" type="button"></button>
+            <button class="inventory-slot" data-slot="1" type="button"></button>
+            <button class="inventory-slot" data-slot="2" type="button"></button>
+            <button class="inventory-slot" data-slot="3" type="button"></button>
+            <button class="inventory-slot" data-slot="4" type="button"></button>
+            <button class="inventory-slot" data-slot="5" type="button"></button>
+            <button class="inventory-slot" data-slot="6" type="button"></button>
+            <button class="inventory-slot" data-slot="7" type="button"></button>
+          </div>
+          <button id="craft-coat-button" class="craft-button" type="button">制作基础皮衣 · 需要4张狼皮</button>
+          <p class="inventory-help">点击野果或熟肉食用；靠近燃烧的篝火后点击生肉即可烤熟。圆木和石块只能用双手搬运。</p>
+        </div>
+      </div>
+
+      <div id="rotate-overlay" class="overlay rotate-overlay hidden">
+        <div class="rotate-card">
+          <div class="phone-icon">↻</div>
+          <h2>请旋转设备</h2>
+          <p>《雪脊余火》采用横屏视野，旋转后游戏会自动继续。</p>
         </div>
       </div>
 

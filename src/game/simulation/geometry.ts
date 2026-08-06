@@ -1,4 +1,4 @@
-import type { Vec2 } from "./types";
+import type { HillDefinition, Vec2 } from "./types";
 
 export const TAU = Math.PI * 2;
 
@@ -52,6 +52,46 @@ export function segmentIntersectsCircle(start: Vec2, end: Vec2, center: Vec2, ra
   const ox = nearestX - center.x;
   const oz = nearestZ - center.z;
   return ox * ox + oz * oz <= radius * radius;
+}
+
+export function toEllipseLocal(point: Vec2, ellipse: HillDefinition): Vec2 {
+  const dx = point.x - ellipse.x;
+  const dz = point.z - ellipse.z;
+  const cosine = Math.cos(-ellipse.rotation);
+  const sine = Math.sin(-ellipse.rotation);
+  return {
+    x: dx * cosine - dz * sine,
+    z: dx * sine + dz * cosine,
+  };
+}
+
+export function fromEllipseLocal(point: Vec2, ellipse: HillDefinition): Vec2 {
+  const cosine = Math.cos(ellipse.rotation);
+  const sine = Math.sin(ellipse.rotation);
+  return {
+    x: ellipse.x + point.x * cosine - point.z * sine,
+    z: ellipse.z + point.x * sine + point.z * cosine,
+  };
+}
+
+export function pointInEllipse(point: Vec2, ellipse: HillDefinition, padding = 0): boolean {
+  const local = toEllipseLocal(point, ellipse);
+  const radiusX = Math.max(0.1, ellipse.scaleX * 0.9 + padding);
+  const radiusZ = Math.max(0.1, ellipse.scaleZ * 0.9 + padding);
+  return (local.x * local.x) / (radiusX * radiusX) + (local.z * local.z) / (radiusZ * radiusZ) < 1;
+}
+
+export function segmentIntersectsEllipse(start: Vec2, end: Vec2, ellipse: HillDefinition, padding = 0): boolean {
+  const localStart = toEllipseLocal(start, ellipse);
+  const localEnd = toEllipseLocal(end, ellipse);
+  const radiusX = Math.max(0.1, ellipse.scaleX * 0.9 + padding);
+  const radiusZ = Math.max(0.1, ellipse.scaleZ * 0.9 + padding);
+  return segmentIntersectsCircle(
+    { x: localStart.x / radiusX, z: localStart.z / radiusZ },
+    { x: localEnd.x / radiusX, z: localEnd.z / radiusZ },
+    { x: 0, z: 0 },
+    1,
+  );
 }
 
 export function mulberry32(seed: number): () => number {

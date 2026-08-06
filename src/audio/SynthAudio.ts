@@ -39,6 +39,20 @@ export class SynthAudio {
       case "eat":
         this.tone(480, 0.11, "sine", 0.4, 1.2);
         break;
+      case "loot-drop":
+        this.tone(event.kind === "wolf-hide" ? 280 : 190, 0.1, "triangle", 0.35, 1.4);
+        break;
+      case "cook":
+        this.noise(0.18, 0.34);
+        this.tone(310, 0.22, "sine", 0.35, 1.35);
+        break;
+      case "craft-coat":
+        this.tone(260, 0.18, "triangle", 0.45, 1.5);
+        window.setTimeout(() => this.tone(390, 0.22, "triangle", 0.4, 1.25), 90);
+        break;
+      case "rest":
+        if (event.active) this.tone(210, 0.14, "sine", 0.16, 0.85);
+        break;
       case "attack":
         this.noise(0.08, 0.38);
         break;

@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import type { GameSimulation } from "../game/simulation/GameSimulation";
 import { clamp, lerp } from "../game/simulation/geometry";
-import type { CampDefinition, GroundItem, Vec2, WolfState, WorldDefinition } from "../game/simulation/types";
+import type { CampDefinition, GroundItem, Vec2, WolfState, WorldDefinition, WorldDrop } from "../game/simulation/types";
 
 interface CampView {
   flame: THREE.Group;
@@ -35,10 +35,12 @@ export class GameRenderer {
   private readonly carriedWood: THREE.Object3D;
   private readonly carriedStone: THREE.Object3D;
   private readonly club: THREE.Mesh;
+  private readonly playerCoat: THREE.Group;
   private readonly campViews = new Map<number, CampView>();
   private readonly itemViews = new Map<number, THREE.Object3D>();
   private readonly berryViews = new Map<number, THREE.Object3D>();
   private readonly wolfViews = new Map<number, WolfView>();
+  private readonly dropViews = new Map<number, THREE.Object3D>();
   private readonly hemisphere: THREE.HemisphereLight;
   private readonly sun: THREE.DirectionalLight;
   private readonly fireLight = new THREE.PointLight(0xff8b38, 0, 22, 2);
@@ -52,7 +54,7 @@ export class GameRenderer {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.6));
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
@@ -87,6 +89,7 @@ export class GameRenderer {
     this.carriedWood = player.carriedWood;
     this.carriedStone = player.carriedStone;
     this.club = player.club;
+    this.playerCoat = player.coat;
     this.scene.add(this.playerGroup);
     this.snow = this.buildSnow();
     this.scene.add(this.snow);
@@ -110,6 +113,7 @@ export class GameRenderer {
     this.syncItems();
     this.syncBerries();
     this.syncWolves(delta);
+    this.syncDrops();
     this.syncFires();
     this.syncDayNight();
     this.updateCamera(delta);
@@ -303,7 +307,13 @@ export class GameRenderer {
     }
   }
 
-  private buildPlayer(): { group: THREE.Group; carriedWood: THREE.Object3D; carriedStone: THREE.Object3D; club: THREE.Mesh } {
+  private buildPlayer(): {
+    group: THREE.Group;
+    carriedWood: THREE.Object3D;
+    carriedStone: THREE.Object3D;
+    club: THREE.Mesh;
+    coat: THREE.Group;
+  } {
     const group = new THREE.Group();
     const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.56, 1.05, 4, 7), this.playerBodyMaterial);
     body.position.y = 1.27;
@@ -326,6 +336,19 @@ export class GameRenderer {
     pack.castShadow = true;
     group.add(pack);
 
+    const coat = new THREE.Group();
+    const coatMaterial = makeMaterial(0x6b3f2d, 1);
+    const coatBody = new THREE.Mesh(new THREE.ConeGeometry(0.78, 1.55, 7, 1, true), coatMaterial);
+    coatBody.position.set(0, 1.16, 0);
+    coatBody.rotation.z = Math.PI;
+    coatBody.castShadow = true;
+    const collar = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.13, 5, 8), makeMaterial(0x9b7254, 1));
+    collar.position.set(0, 1.82, 0);
+    collar.rotation.x = Math.PI / 2;
+    coat.add(coatBody, collar);
+    coat.visible = false;
+    group.add(coat);
+
     const club = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.14, 1.55, 6), makeMaterial(0x59402e, 1));
     club.position.set(0.55, 1.12, -0.46);
     club.rotation.z = -0.35;
@@ -342,7 +365,7 @@ export class GameRenderer {
     carriedStone.scale.setScalar(0.85);
     carriedStone.visible = false;
     group.add(carriedStone);
-    return { group, carriedWood, carriedStone, club };
+    return { group, carriedWood, carriedStone, club, coat };
   }
 
   private buildSnow(): THREE.Points {
@@ -363,17 +386,21 @@ export class GameRenderer {
 
   private syncPlayer(delta: number): void {
     const player = this.simulation.player;
-    this.playerGroup.position.set(player.x, Math.sin(this.time * 9) * 0.025, player.z);
+    const restingHeight = player.resting ? -0.5 : 0;
+    const idleBob = player.resting ? Math.sin(this.time * 2) * 0.012 : Math.sin(this.time * 9) * 0.025;
+    this.playerGroup.position.set(player.x, restingHeight + idleBob, player.z);
     const angle = -Math.atan2(player.facing.z, player.facing.x);
     this.playerGroup.rotation.y = angle;
     const attackProgress = player.attackFlash > 0 ? 1 - player.attackFlash / 0.22 : 0;
     this.club.rotation.z = -0.35 - Math.sin(attackProgress * Math.PI) * 1.7;
     this.carriedWood.visible = player.carrying === "wood";
     this.carriedStone.visible = player.carrying === "stone";
+    this.playerCoat.visible = player.hasLeatherCoat;
     const hurt = player.hurtFlash > 0;
     this.playerBodyMaterial.color.setHex(hurt ? 0xe4544d : 0x2f7b8d);
     if (hurt) this.cameraShake = Math.max(this.cameraShake, 0.13);
-    this.playerGroup.scale.y = lerp(this.playerGroup.scale.y, player.attackFlash > 0 ? 0.93 : 1, delta * 15);
+    const targetScaleY = player.resting ? 0.74 : player.attackFlash > 0 ? 0.93 : 1;
+    this.playerGroup.scale.y = lerp(this.playerGroup.scale.y, targetScaleY, delta * 15);
   }
 
   private syncItems(): void {
@@ -393,7 +420,7 @@ export class GameRenderer {
       if (!item.active) continue;
       view.position.set(item.x, item.kind === "wood" ? 0.35 : 0.48, item.z);
       view.rotation.y = item.rotation;
-      const damageScale = clamp(item.hp / (item.kind === "stone" ? 130 : 70), 0.55, 1);
+      const damageScale = clamp(item.hp / (item.kind === "stone" ? 95 : 70), 0.55, 1);
       view.scale.setScalar(item.placed ? damageScale : 1);
     }
   }
@@ -458,6 +485,52 @@ export class GameRenderer {
     }
   }
 
+  private syncDrops(): void {
+    const liveIds = new Set<number>();
+    for (const drop of this.simulation.drops) {
+      if (!drop.active) continue;
+      liveIds.add(drop.id);
+      let view = this.dropViews.get(drop.id);
+      if (!view) {
+        view = this.createDropView(drop);
+        this.dropViews.set(drop.id, view);
+        this.scene.add(view);
+      }
+      const age = this.simulation.elapsed - drop.createdAt;
+      const burst = clamp(age / 0.42, 0, 1);
+      const hop = Math.sin(burst * Math.PI) * 1.15;
+      view.position.set(drop.x, 0.25 + hop, drop.z);
+      view.rotation.y = drop.burstAngle + this.time * 0.8;
+      const timeLeft = drop.expiresAt - this.simulation.elapsed;
+      view.visible = timeLeft > 20 || Math.floor(this.time * 7) % 2 === 0;
+    }
+    for (const [id, view] of this.dropViews) {
+      if (liveIds.has(id)) continue;
+      this.scene.remove(view);
+      this.dropViews.delete(id);
+    }
+  }
+
+  private createDropView(drop: WorldDrop): THREE.Object3D {
+    if (drop.kind === "wolf-hide") {
+      const hide = new THREE.Mesh(new THREE.CircleGeometry(0.62, 5), makeMaterial(0x7a4931, 1));
+      hide.rotation.x = -Math.PI / 2;
+      hide.scale.set(1.25, 0.82, 1);
+      hide.castShadow = true;
+      return hide;
+    }
+    const group = new THREE.Group();
+    const meat = new THREE.Mesh(new THREE.DodecahedronGeometry(0.42, 0), makeMaterial(0x9e3f3d, 0.9));
+    meat.scale.set(1.25, 0.65, 0.9);
+    meat.castShadow = true;
+    group.add(meat);
+    const bone = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.82, 6), makeMaterial(0xd7c8ad, 1));
+    bone.rotation.z = Math.PI / 2;
+    bone.position.y = 0.08;
+    group.add(bone);
+    return group;
+  }
+
   private createWolfView(wolf: WolfState): WolfView {
     const group = new THREE.Group();
     const bodyMaterial = makeMaterial(wolf.raider ? 0x384550 : 0x56656b, 0.95);
@@ -495,7 +568,7 @@ export class GameRenderer {
       view.glow.visible = lit;
       if (!lit) continue;
       const flutter = 0.86 + Math.sin(this.time * 12 + camp.id * 2.3) * 0.12 + Math.sin(this.time * 19) * 0.05;
-      const fuelScale = clamp(fuel / 18, 0.42, 1);
+      const fuelScale = clamp(fuel / 70, 0.42, 1);
       view.flame.scale.set(flutter * fuelScale, (1.05 / flutter) * fuelScale, flutter * fuelScale);
       view.glow.material.opacity = 0.07 + fuelScale * 0.07;
       const value = (camp.x - this.simulation.player.x) ** 2 + (camp.z - this.simulation.player.z) ** 2;

@@ -1,4 +1,4 @@
-import { angleDifference, distance, mulberry32, TAU } from "../simulation/geometry";
+import { angleDifference, distance, mulberry32, pointInEllipse, TAU } from "../simulation/geometry";
 import type {
   BerryPatch,
   CampDefinition,
@@ -71,6 +71,7 @@ export function createWorld(seed = 71291): WorldDefinition {
     attempts += 1;
     const point = { x: (random() - 0.5) * 192, z: (random() - 0.5) * 192 };
     if (!awayFromCamps(point, camps, 3)) continue;
+    if (hills.some((hill) => pointInEllipse(point, hill, 1.4))) continue;
     if (trees.some((tree) => distance(point, tree) < 8)) continue;
     trees.push({ id: trees.length, ...point, rotation: random() * TAU, scale: 0.75 + random() * 0.55 });
     walls.push({ ...point, radius: 1.05, kind: "tree" });
@@ -83,7 +84,7 @@ export function createWorld(seed = 71291): WorldDefinition {
       kind,
       x,
       z,
-      hp: kind === "stone" ? 130 : 70,
+      hp: kind === "stone" ? 95 : 70,
       placed: false,
       active: true,
       rotation: random() * TAU,
@@ -103,7 +104,9 @@ export function createWorld(seed = 71291): WorldDefinition {
     let point = { x: 0, z: 0 };
     for (let guard = 0; guard < 30; guard += 1) {
       point = { x: (random() - 0.5) * 196, z: (random() - 0.5) * 196 };
-      if (walls.every((wall) => distance(point, wall) > wall.radius + 1.2)) break;
+      const clearsWalls = walls.every((wall) => distance(point, wall) > wall.radius + 1.2);
+      const clearsHills = hills.every((hill) => !pointInEllipse(point, hill, 1.2));
+      if (clearsWalls && clearsHills) break;
     }
     addItem(kind, point.x, point.z);
   }
@@ -115,6 +118,7 @@ export function createWorld(seed = 71291): WorldDefinition {
   while (initialBerries.length < 32) {
     const point = { x: (random() - 0.5) * 196, z: (random() - 0.5) * 196 };
     if (!awayFromCamps(point, camps, -2)) continue;
+    if (hills.some((hill) => pointInEllipse(point, hill, 1))) continue;
     if (initialBerries.some((berry) => distance(point, berry) < 6)) continue;
     initialBerries.push({ id: initialBerries.length, ...point, berries: 2, regrowAt: 0 });
   }

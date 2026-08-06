@@ -5,6 +5,7 @@ interface InputCallbacks {
   onAction: () => void;
   onAttack: () => void;
   onEat: () => void;
+  onInventory: () => void;
 }
 
 export class InputController {
@@ -64,7 +65,7 @@ export class InputController {
   }
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
-    const gameKeys = ["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "KeyE", "KeyF", "Space"];
+    const gameKeys = ["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "KeyE", "KeyF", "KeyB", "Tab", "Space"];
     if (gameKeys.includes(event.code)) event.preventDefault();
     if (event.repeat) {
       this.keys.add(event.code);
@@ -74,6 +75,7 @@ export class InputController {
     if (event.code === "KeyE") this.callbacks.onAction();
     if (event.code === "Space") this.callbacks.onAttack();
     if (event.code === "KeyF") this.callbacks.onEat();
+    if (event.code === "KeyB" || event.code === "Tab") this.callbacks.onInventory();
   };
 
   private readonly onKeyUp = (event: KeyboardEvent): void => {
