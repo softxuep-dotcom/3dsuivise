@@ -1,0 +1,42 @@
+{
+  "size": 220,
+  "resolution": 128,
+  "seed": 71291,
+  "maxWalkableSlope": 0.78,
+  "camps": [
+    { "x": -82, "z": -82, "entranceAngle": 0.78, "kind": "windy-ridge", "elevation": 3.6 },
+    { "x": -20, "z": -92, "entranceAngle": 1.35, "kind": "deep-cave", "elevation": -1.35 },
+    { "x": 58, "z": -82, "entranceAngle": 2.3, "kind": "abandoned-camp", "elevation": 0.65 },
+    { "x": -91, "z": -35, "entranceAngle": 0.15, "kind": "deep-cave", "elevation": -0.7 },
+    { "x": -30, "z": -30, "entranceAngle": -0.55, "kind": "abandoned-camp", "elevation": 0.8 },
+    { "x": 34, "z": -40, "entranceAngle": 2.85, "kind": "windy-ridge", "elevation": 4.8 },
+    { "x": 88, "z": -16, "entranceAngle": 3.1, "kind": "deep-cave", "elevation": -1.15 },
+    { "x": -78, "z": 26, "entranceAngle": -0.2, "kind": "abandoned-camp", "elevation": 0.25 },
+    { "x": -19, "z": 22, "entranceAngle": 1.05, "kind": "windy-ridge", "elevation": 4.15 },
+    { "x": 48, "z": 18, "entranceAngle": 2.55, "kind": "deep-cave", "elevation": -1.45 },
+    { "x": -46, "z": 76, "entranceAngle": -1.15, "kind": "abandoned-camp", "elevation": 1.15 },
+    { "x": 49, "z": 75, "entranceAngle": -2.35, "kind": "windy-ridge", "elevation": 5.05 }
+  ],
+  "ridges": [
+    { "x": -102, "z": -70, "scaleX": 16, "scaleZ": 8, "height": 5.4, "rotation": 0.45 },
+    { "x": -70, "z": -103, "scaleX": 12, "scaleZ": 7, "height": 4.8, "rotation": 1.15 },
+    { "x": 12, "z": -104, "scaleX": 20, "scaleZ": 7, "height": 4.2, "rotation": 0.05 },
+    { "x": 88, "z": -101, "scaleX": 18, "scaleZ": 9, "height": 5.3, "rotation": -0.35 },
+    { "x": 104, "z": -58, "scaleX": 9, "scaleZ": 18, "height": 5.8, "rotation": 0.1 },
+    { "x": 105, "z": 44, "scaleX": 10, "scaleZ": 24, "height": 6.1, "rotation": -0.15 },
+    { "x": 84, "z": 100, "scaleX": 21, "scaleZ": 8, "height": 5.7, "rotation": 0.25 },
+    { "x": 9, "z": 106, "scaleX": 27, "scaleZ": 8, "height": 4.9, "rotation": -0.08 },
+    { "x": -78, "z": 103, "scaleX": 23, "scaleZ": 9, "height": 5.3, "rotation": -0.28 },
+    { "x": -105, "z": 62, "scaleX": 9, "scaleZ": 22, "height": 5.5, "rotation": 0.18 },
+    { "x": -58, "z": -61, "scaleX": 13, "scaleZ": 6, "height": 3.4, "rotation": -0.55 },
+    { "x": 4, "z": -66, "scaleX": 15, "scaleZ": 7, "height": 3.1, "rotation": 0.7 },
+    { "x": 72, "z": -50, "scaleX": 13, "scaleZ": 6, "height": 3.6, "rotation": -0.65 },
+    { "x": -60, "z": -5, "scaleX": 16, "scaleZ": 7, "height": 3.5, "rotation": 0.45 },
+    { "x": 14, "z": -5, "scaleX": 13, "scaleZ": 6, "height": 2.9, "rotation": -0.3 },
+    { "x": 76, "z": 42, "scaleX": 14, "scaleZ": 7, "height": 3.7, "rotation": 0.6 },
+    { "x": -48, "z": 48, "scaleX": 13, "scaleZ": 6, "height": 3.2, "rotation": -0.45 },
+    { "x": 15, "z": 55, "scaleX": 17, "scaleZ": 7, "height": 3.6, "rotation": 0.25 },
+    { "x": -96, "z": -8, "scaleX": 9, "scaleZ": 15, "height": 4.1, "rotation": 0.1 },
+    { "x": 53, "z": -14, "scaleX": 11, "scaleZ": 6, "height": 3.0, "rotation": -0.8 }
+  ]
+}

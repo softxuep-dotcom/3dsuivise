@@ -11,7 +11,20 @@ if (!renderRoot) throw new Error("Missing render root");
 
 let renderer: GameRenderer;
 const world = createWorld();
+if (import.meta.env.DEV) {
+  const previewCampValue = new URLSearchParams(window.location.search).get("camp");
+  if (previewCampValue !== null) {
+    const previewCamp = Number(previewCampValue);
+    if (Number.isInteger(previewCamp) && previewCamp >= 0 && previewCamp < world.camps.length) {
+      world.startCampId = previewCamp;
+    }
+  }
+}
 const simulation = new GameSimulation(world);
+if (import.meta.env.DEV && new URLSearchParams(window.location.search).get("night") === "1") {
+  simulation.phase = "night";
+  simulation.phaseTime = 105;
+}
 const audio = new SynthAudio();
 const hud = new HudController(simulation);
 

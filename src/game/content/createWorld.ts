@@ -1,4 +1,5 @@
-import { angleDifference, distance, mulberry32, pointInEllipse, TAU } from "../simulation/geometry";
+import { angleDifference, distance, mulberry32, TAU } from "../simulation/geometry";
+import { isTerrainWalkable, terrainSlopeAt } from "../terrain/TerrainModel";
 import type {
   BerryPatch,
   CampKind,
@@ -12,19 +13,18 @@ import type {
   Vec2,
   WorldDefinition,
 } from "../simulation/types";
+import mapBlueprint from "./mapBlueprint.json";
 
-const CAMP_LAYOUT: Array<[number, number, number]> = [
-  [-82, -82, 0.78], [-20, -92, 1.35], [58, -82, 2.3],
-  [-91, -35, 0.15], [-30, -30, -0.55], [34, -40, 2.85], [88, -16, 3.1],
-  [-78, 26, -0.2], [-19, 22, 1.05], [48, 18, 2.55],
-  [-46, 76, -1.15], [49, 75, -2.35],
-];
+interface MapBlueprint {
+  size: number;
+  resolution: number;
+  seed: number;
+  maxWalkableSlope: number;
+  camps: Array<{ x: number; z: number; entranceAngle: number; kind: CampKind; elevation: number }>;
+  ridges: Array<Omit<HillDefinition, "id">>;
+}
 
-const CAMP_KINDS: CampKind[] = [
-  "windy-ridge", "deep-cave", "abandoned-camp", "deep-cave",
-  "abandoned-camp", "windy-ridge", "deep-cave", "abandoned-camp",
-  "windy-ridge", "deep-cave", "abandoned-camp", "windy-ridge",
-];
+const BLUEPRINT = mapBlueprint as MapBlueprint;
 
 const CAMP_ENTRANCE_WIDTH: Record<CampKind, number> = {
   "deep-cave": 0.19,
@@ -38,20 +38,22 @@ function awayFromCamps(point: Vec2, camps: CampDefinition[], padding: number): b
 
 export function createWorld(seed = 71291): WorldDefinition {
   const random = mulberry32(seed);
-  const size = 220;
-  const camps: CampDefinition[] = CAMP_LAYOUT.map(([x, z, entranceAngle], id) => ({
+  const size = BLUEPRINT.size;
+  const terrain = {
+    resolution: BLUEPRINT.resolution,
+    seed: BLUEPRINT.seed,
+    maxWalkableSlope: BLUEPRINT.maxWalkableSlope,
+  };
+  const camps: CampDefinition[] = BLUEPRINT.camps.map((source, id) => ({
     id,
-    x,
-    z,
-    entranceAngle,
-    entranceWidth: CAMP_ENTRANCE_WIDTH[CAMP_KINDS[id]],
+    ...source,
+    entranceWidth: CAMP_ENTRANCE_WIDTH[source.kind],
     radius: 11,
-    kind: CAMP_KINDS[id],
   }));
 
   const walls: CircleObstacle[] = [];
   for (const camp of camps) {
-    const segments = 22;
+    const segments = camp.kind === "deep-cave" ? 18 : camp.kind === "abandoned-camp" ? 15 : 13;
     for (let index = 0; index < segments; index += 1) {
       const angle = (index / segments) * TAU;
       if (angleDifference(angle, camp.entranceAngle) < camp.entranceWidth) continue;
@@ -59,28 +61,14 @@ export function createWorld(seed = 71291): WorldDefinition {
       walls.push({
         x: camp.x + Math.cos(angle) * (camp.radius + uneven),
         z: camp.z + Math.sin(angle) * (camp.radius + uneven),
-        radius: 1.35 + random() * 0.45,
+        radius: 1.55 + random() * 0.7,
         kind: "wall",
       });
     }
   }
 
-  const hills: HillDefinition[] = [];
-  for (let id = 0; id < 42; id += 1) {
-    const point = {
-      x: (random() - 0.5) * (size - 18),
-      z: (random() - 0.5) * (size - 18),
-    };
-    if (!awayFromCamps(point, camps, 7)) continue;
-    hills.push({
-      id,
-      ...point,
-      scaleX: 4 + random() * 7,
-      scaleZ: 3 + random() * 6,
-      height: 1.1 + random() * 2.2,
-      rotation: random() * TAU,
-    });
-  }
+  const hills: HillDefinition[] = BLUEPRINT.ridges.map((ridge, id) => ({ id, ...ridge }));
+  const terrainWorld = { camps, hills, terrain };
 
   const trees: TreeDefinition[] = [];
   let attempts = 0;
@@ -88,7 +76,7 @@ export function createWorld(seed = 71291): WorldDefinition {
     attempts += 1;
     const point = { x: (random() - 0.5) * 192, z: (random() - 0.5) * 192 };
     if (!awayFromCamps(point, camps, 3)) continue;
-    if (hills.some((hill) => pointInEllipse(point, hill, 1.4))) continue;
+    if (!isTerrainWalkable(terrainWorld, point) || terrainSlopeAt(terrainWorld, point) > 0.42) continue;
     if (trees.some((tree) => distance(point, tree) < 8)) continue;
     trees.push({ id: trees.length, ...point, rotation: random() * TAU, scale: 0.75 + random() * 0.55 });
     walls.push({ ...point, radius: 1.05, kind: "tree" });
@@ -139,7 +127,7 @@ export function createWorld(seed = 71291): WorldDefinition {
     for (let guard = 0; guard < 30; guard += 1) {
       point = { x: (random() - 0.5) * 196, z: (random() - 0.5) * 196 };
       const clearsWalls = walls.every((wall) => distance(point, wall) > wall.radius + 1.2);
-      const clearsHills = hills.every((hill) => !pointInEllipse(point, hill, 1.2));
+      const clearsHills = isTerrainWalkable(terrainWorld, point);
       if (clearsWalls && clearsHills) break;
     }
     addItem(kind, point.x, point.z);
@@ -152,7 +140,7 @@ export function createWorld(seed = 71291): WorldDefinition {
   while (initialBerries.length < 32) {
     const point = { x: (random() - 0.5) * 196, z: (random() - 0.5) * 196 };
     if (!awayFromCamps(point, camps, -2)) continue;
-    if (hills.some((hill) => pointInEllipse(point, hill, 1))) continue;
+    if (!isTerrainWalkable(terrainWorld, point)) continue;
     if (initialBerries.some((berry) => distance(point, berry) < 6)) continue;
     initialBerries.push({ id: initialBerries.length, ...point, berries: 2, regrowAt: 0 });
   }
@@ -163,7 +151,7 @@ export function createWorld(seed = 71291): WorldDefinition {
     attempts += 1;
     const point = { x: (random() - 0.5) * 188, z: (random() - 0.5) * 188 };
     if (!awayFromCamps(point, camps, 3)) continue;
-    if (hills.some((hill) => pointInEllipse(point, hill, 1.25))) continue;
+    if (!isTerrainWalkable(terrainWorld, point) || terrainSlopeAt(terrainWorld, point) > 0.52) continue;
     if (ironNodes.some((node) => distance(point, node) < 10)) continue;
     ironNodes.push({
       id: ironNodes.length,
@@ -179,7 +167,7 @@ export function createWorld(seed = 71291): WorldDefinition {
     attempts += 1;
     const point = { x: (random() - 0.5) * 190, z: (random() - 0.5) * 190 };
     if (!awayFromCamps(point, camps, 5)) continue;
-    if (hills.some((hill) => pointInEllipse(point, hill, 1.5))) continue;
+    if (!isTerrainWalkable(terrainWorld, point) || terrainSlopeAt(terrainWorld, point) > 0.48) continue;
     if (landmarks.some((landmark) => distance(point, landmark) < 12)) continue;
     const index = landmarks.length;
     const kind = index % 5 < 2 ? "deadwood" : index % 5 < 4 ? "monolith" : "wreck";
@@ -198,6 +186,7 @@ export function createWorld(seed = 71291): WorldDefinition {
 
   return {
     size,
+    terrain,
     camps,
     walls,
     trees,

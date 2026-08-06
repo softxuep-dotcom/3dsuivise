@@ -41,5 +41,10 @@ Desktop.ini
 # Local agent and temporary metadata
 .codex/
 .claude/
+.tools/
 tmp/
 temp/
+
+# Local Blender authoring backups
+*.blend1
+*.blend2

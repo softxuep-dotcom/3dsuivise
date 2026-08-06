@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import type { GameSimulation } from "../game/simulation/GameSimulation";
-import { clamp, lerp } from "../game/simulation/geometry";
+import { clamp, lerp, mulberry32 } from "../game/simulation/geometry";
 import type { CampDefinition, GroundItem, Vec2, WolfState, WorldDefinition, WorldDrop } from "../game/simulation/types";
+import { terrainHeightAt, terrainMoistureAt, terrainSlopeAt, terrainSnowAt } from "../game/terrain/TerrainModel";
 
 interface CampView {
   flame: THREE.Group;
@@ -17,6 +18,11 @@ const makeMaterial = (color: THREE.ColorRepresentation, roughness = 0.9): THREE.
   new THREE.MeshStandardMaterial({ color, roughness, flatShading: true })
 );
 
+const smoothTerrainBlend = (edge0: number, edge1: number, value: number): number => {
+  const t = clamp((value - edge0) / Math.max(0.0001, edge1 - edge0), 0, 1);
+  return t * t * (3 - 2 * t);
+};
+
 export class GameRenderer {
   readonly canvas: HTMLCanvasElement;
 
@@ -27,7 +33,7 @@ export class GameRenderer {
   private readonly renderer: THREE.WebGLRenderer;
   private readonly raycaster = new THREE.Raycaster();
   private readonly pointer = new THREE.Vector2();
-  private readonly groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  private readonly terrainMesh: THREE.Mesh;
   private readonly worldPoint = new THREE.Vector3();
   private readonly cameraFocus = new THREE.Vector3();
   private readonly playerGroup: THREE.Group;
@@ -79,10 +85,12 @@ export class GameRenderer {
     this.sun.shadow.camera.far = 130;
     this.scene.add(this.sun, this.fireLight);
 
-    this.buildGround();
-    this.buildHills();
+    this.terrainMesh = this.buildGround();
+    this.buildCampTrails();
+    this.buildRockOutcrops();
     this.buildCampWalls();
     this.buildTrees();
+    this.buildGroundCover();
     this.buildLandmarks();
     this.buildCamps();
     this.buildBerryPatches();
@@ -99,7 +107,7 @@ export class GameRenderer {
     this.snow = this.buildSnow();
     this.scene.add(this.snow);
 
-    this.cameraFocus.set(simulation.player.x, 0, simulation.player.z);
+    this.cameraFocus.set(simulation.player.x, this.worldHeight(simulation.player.x, simulation.player.z), simulation.player.z);
     this.resize();
     window.addEventListener("resize", this.resize);
     this.canvas.addEventListener("webglcontextlost", (event) => {
@@ -134,7 +142,9 @@ export class GameRenderer {
       -((clientY - rect.top) / rect.height) * 2 + 1,
     );
     this.raycaster.setFromCamera(this.pointer, this.camera);
-    if (!this.raycaster.ray.intersectPlane(this.groundPlane, this.worldPoint)) return null;
+    const hit = this.raycaster.intersectObject(this.terrainMesh, false)[0];
+    if (!hit) return null;
+    this.worldPoint.copy(hit.point);
     return { x: this.worldPoint.x, z: this.worldPoint.z };
   }
 
@@ -151,54 +161,190 @@ export class GameRenderer {
     this.renderer.setSize(width, height, false);
   };
 
-  private buildGround(): void {
-    const geometry = new THREE.PlaneGeometry(this.world.size + 8, this.world.size + 8, 1, 1);
-    const material = makeMaterial(0x77776a, 1);
+  private buildGround(): THREE.Mesh {
+    const size = this.world.size + 8;
+    const segments = this.world.terrain.resolution;
+    const geometry = new THREE.PlaneGeometry(size, size, segments, segments);
+    const positions = geometry.getAttribute("position") as THREE.BufferAttribute;
+    const colors = new Float32Array(positions.count * 3);
+    const dryGrass = new THREE.Color(0x77775c);
+    const dampGrass = new THREE.Color(0x59664e);
+    const soil = new THREE.Color(0x756550);
+    const rock = new THREE.Color(0x666b67);
+    const snow = new THREE.Color(0xc3cbc4);
+    const color = new THREE.Color();
+    for (let index = 0; index < positions.count; index += 1) {
+      const x = positions.getX(index);
+      const z = -positions.getY(index);
+      const point = { x, z };
+      const height = terrainHeightAt(this.world, point);
+      const slope = terrainSlopeAt(this.world, point, 1.15);
+      const moisture = terrainMoistureAt(this.world, point);
+      const snowAmount = terrainSnowAt(this.world, point);
+      color.copy(dryGrass).lerp(dampGrass, moisture * 0.72);
+      const camp = this.world.camps.find((candidate) => Math.hypot(x - candidate.x, z - candidate.z) < candidate.radius - 0.6);
+      if (camp) color.lerp(soil, camp.kind === "windy-ridge" ? 0.28 : camp.kind === "deep-cave" ? 0.72 : 0.58);
+      color.lerp(rock, smoothTerrainBlend(0.42, 0.86, slope));
+      color.lerp(snow, snowAmount * 0.9);
+      const variation = 0.93 + Math.sin(x * 0.71 + z * 0.37) * 0.025 + Math.sin(z * 1.13) * 0.018;
+      color.multiplyScalar(variation);
+      positions.setZ(index, height);
+      colors[index * 3] = color.r;
+      colors[index * 3 + 1] = color.g;
+      colors[index * 3 + 2] = color.b;
+    }
+    geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    geometry.computeVertexNormals();
+    geometry.computeBoundingSphere();
+    const material = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 1,
+      metalness: 0,
+      vertexColors: true,
+      map: this.createGroundTexture(),
+    });
     const ground = new THREE.Mesh(geometry, material);
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     this.scene.add(ground);
 
     const edgeMaterial = makeMaterial(0x4b514c, 1);
-    const edge = new THREE.Mesh(new THREE.BoxGeometry(this.world.size + 12, 2.5, this.world.size + 12), edgeMaterial);
-    edge.position.y = -1.35;
+    const edge = new THREE.Mesh(new THREE.BoxGeometry(this.world.size + 12, 5.5, this.world.size + 12), edgeMaterial);
+    edge.position.y = -3.4;
     edge.receiveShadow = true;
     this.scene.add(edge);
-
-    const snowMaterial = makeMaterial(0xbfc9c3, 1);
-    for (let index = 0; index < 26; index += 1) {
-      const angle = index * 2.399;
-      const radius = 15 + (index % 9) * 9.2;
-      const patch = new THREE.Mesh(new THREE.CircleGeometry(3.5 + (index % 5) * 1.15, 9), snowMaterial);
-      patch.position.set(Math.cos(angle) * radius, 0.018, Math.sin(angle) * radius);
-      patch.rotation.x = -Math.PI / 2;
-      patch.rotation.z = angle * 0.37;
-      patch.scale.set(1.7, 0.72 + (index % 3) * 0.18, 1);
-      patch.receiveShadow = true;
-      this.scene.add(patch);
-    }
+    return ground;
   }
 
-  private buildHills(): void {
-    const geometry = new THREE.SphereGeometry(1, 10, 6);
-    const material = makeMaterial(0x6b7068, 1);
-    const snowMaterial = makeMaterial(0xaebbb5, 1);
-    for (const hill of this.world.hills) {
-      const mound = new THREE.Mesh(geometry, material);
-      mound.position.set(hill.x, -0.55, hill.z);
-      mound.rotation.y = hill.rotation;
-      mound.scale.set(hill.scaleX, hill.height, hill.scaleZ);
-      mound.receiveShadow = true;
-      mound.castShadow = true;
-      this.scene.add(mound);
-
-      const cap = new THREE.Mesh(geometry, snowMaterial);
-      cap.position.set(hill.x - 0.15, 0.02 + hill.height * 0.22, hill.z - 0.15);
-      cap.rotation.y = hill.rotation;
-      cap.scale.set(hill.scaleX * 0.56, hill.height * 0.48, hill.scaleZ * 0.56);
-      cap.receiveShadow = true;
-      this.scene.add(cap);
+  private createGroundTexture(): THREE.CanvasTexture {
+    const canvas = document.createElement("canvas");
+    canvas.width = 128;
+    canvas.height = 128;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Unable to create terrain texture");
+    const image = context.createImageData(canvas.width, canvas.height);
+    const random = mulberry32(this.world.terrain.seed + 9187);
+    for (let index = 0; index < canvas.width * canvas.height; index += 1) {
+      const grain = 202 + Math.floor(random() * 38);
+      image.data[index * 4] = grain;
+      image.data[index * 4 + 1] = grain - 4 + Math.floor(random() * 7);
+      image.data[index * 4 + 2] = grain - 13 + Math.floor(random() * 8);
+      image.data[index * 4 + 3] = 255;
     }
+    context.putImageData(image, 0, 0);
+    context.globalAlpha = 0.18;
+    context.strokeStyle = "#70745d";
+    for (let index = 0; index < 90; index += 1) {
+      const x = random() * 128;
+      const y = random() * 128;
+      context.beginPath();
+      context.moveTo(x, y);
+      context.lineTo(x + 1 + random() * 3, y - 1 - random() * 3);
+      context.stroke();
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(24, 24);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = Math.min(4, this.renderer.capabilities.getMaxAnisotropy());
+    return texture;
+  }
+
+  private buildCampTrails(): void {
+    const positions: number[] = [];
+    const indices: number[] = [];
+    const segments = 18;
+    const length = 29;
+    const halfWidth = 1.55;
+    for (const camp of this.world.camps) {
+      const forward = { x: Math.cos(camp.entranceAngle), z: Math.sin(camp.entranceAngle) };
+      const side = { x: -forward.z, z: forward.x };
+      const startVertex = positions.length / 3;
+      for (let index = 0; index <= segments; index += 1) {
+        const t = index / segments;
+        const along = camp.radius - 3 + t * length;
+        const bend = Math.sin(t * Math.PI) * Math.sin(camp.id * 2.17) * 2.1;
+        const centerX = camp.x + forward.x * along + side.x * bend;
+        const centerZ = camp.z + forward.z * along + side.z * bend;
+        const width = halfWidth * (0.18 + Math.sin(t * Math.PI) * 0.82);
+        for (const direction of [-1, 1]) {
+          const x = centerX + side.x * width * direction;
+          const z = centerZ + side.z * width * direction;
+          positions.push(x, this.worldHeight(x, z) + 0.035, z);
+        }
+        if (index === segments) continue;
+        const row = startVertex + index * 2;
+        indices.push(row, row + 2, row + 1, row + 1, row + 2, row + 3);
+      }
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    const material = new THREE.MeshStandardMaterial({
+      color: 0x746044,
+      roughness: 1,
+      transparent: true,
+      opacity: 0.58,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+    });
+    const trails = new THREE.Mesh(geometry, material);
+    trails.receiveShadow = true;
+    this.scene.add(trails);
+  }
+
+  private createGrassTuftGeometry(): THREE.BufferGeometry {
+    const positions: number[] = [];
+    for (let blade = 0; blade < 3; blade += 1) {
+      const angle = (blade / 3) * Math.PI;
+      const sideX = Math.cos(angle) * 0.18;
+      const sideZ = Math.sin(angle) * 0.18;
+      const leanX = Math.sin(angle * 1.7) * 0.08;
+      const leanZ = Math.cos(angle * 1.3) * 0.08;
+      positions.push(
+        -sideX, 0, -sideZ,
+        sideX, 0, sideZ,
+        leanX, 0.78, leanZ,
+      );
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    geometry.computeVertexNormals();
+    return geometry;
+  }
+
+  private buildRockOutcrops(): void {
+    const count = this.world.hills.length * 3;
+    const mesh = new THREE.InstancedMesh(
+      new THREE.DodecahedronGeometry(1, 0),
+      makeMaterial(0x5d635f, 1),
+      count,
+    );
+    const matrix = new THREE.Matrix4();
+    const rotation = new THREE.Quaternion();
+    const scale = new THREE.Vector3();
+    const position = new THREE.Vector3();
+    let instance = 0;
+    for (const hill of this.world.hills) {
+      for (let rockIndex = 0; rockIndex < 3; rockIndex += 1) {
+        const along = (rockIndex - 1) * hill.scaleX * 0.18;
+        const x = hill.x + Math.cos(hill.rotation) * along + Math.sin(hill.rotation) * (rockIndex % 2 ? 1.1 : -0.8);
+        const z = hill.z + Math.sin(hill.rotation) * along - Math.cos(hill.rotation) * (rockIndex % 2 ? 1.1 : -0.8);
+        const height = 0.9 + (hill.id % 4) * 0.28 + rockIndex * 0.16;
+        position.set(x, this.worldHeight(x, z) + height * 0.42, z);
+        rotation.setFromEuler(new THREE.Euler(hill.id * 0.23, hill.rotation + rockIndex * 0.8, rockIndex * 0.34));
+        scale.set(1.2 + rockIndex * 0.32, height, 0.9 + (hill.id % 3) * 0.22);
+        matrix.compose(position, rotation, scale);
+        mesh.setMatrixAt(instance++, matrix);
+      }
+    }
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    this.scene.add(mesh);
   }
 
   private buildCampWalls(): void {
@@ -212,7 +358,7 @@ export class GameRenderer {
     const position = new THREE.Vector3();
     wallData.forEach((wall, index) => {
       const height = 1.5 + ((index * 17) % 9) * 0.08;
-      position.set(wall.x, height * 0.52 - 0.12, wall.z);
+      position.set(wall.x, this.worldHeight(wall.x, wall.z) + height * 0.52 - 0.12, wall.z);
       rotation.setFromEuler(new THREE.Euler(index * 0.73, index * 0.41, index * 0.27));
       scale.set(wall.radius, height, wall.radius * 0.9);
       matrix.compose(position, rotation, scale);
@@ -235,12 +381,13 @@ export class GameRenderer {
     const scale = new THREE.Vector3();
     const position = new THREE.Vector3();
     this.world.trees.forEach((tree, index) => {
-      position.set(tree.x, 1.65 * tree.scale, tree.z);
+      const terrainY = this.worldHeight(tree.x, tree.z);
+      position.set(tree.x, terrainY + 1.65 * tree.scale, tree.z);
       rotation.setFromAxisAngle(new THREE.Vector3(0, 1, 0), tree.rotation);
       scale.setScalar(tree.scale);
       matrix.compose(position, rotation, scale);
       trunks.setMatrixAt(index, matrix);
-      position.y = 3.55 * tree.scale;
+      position.y = terrainY + 3.55 * tree.scale;
       matrix.compose(position, rotation, scale);
       branches.setMatrixAt(index, matrix);
     });
@@ -249,13 +396,83 @@ export class GameRenderer {
     this.scene.add(trunks, branches);
   }
 
+  private buildGroundCover(): void {
+    const random = mulberry32(this.world.terrain.seed + 4403);
+    const collect = (targetCount: number, maxSlope: number, moistureBias: number): Array<{ x: number; z: number; scale: number; rotation: number }> => {
+      const points: Array<{ x: number; z: number; scale: number; rotation: number }> = [];
+      let attempts = 0;
+      while (points.length < targetCount && attempts < targetCount * 18) {
+        attempts += 1;
+        const point = { x: (random() - 0.5) * (this.world.size - 10), z: (random() - 0.5) * (this.world.size - 10) };
+        if (terrainSlopeAt(this.world, point) > maxSlope) continue;
+        const moisture = terrainMoistureAt(this.world, point);
+        if (random() > clamp(0.42 + moisture * moistureBias, 0.18, 0.96)) continue;
+        if (this.world.camps.some((camp) => Math.hypot(point.x - camp.x, point.z - camp.z) < camp.radius - 1.6)) continue;
+        const hitsTrail = this.world.camps.some((camp) => {
+          const dx = point.x - camp.x;
+          const dz = point.z - camp.z;
+          const forwardX = Math.cos(camp.entranceAngle);
+          const forwardZ = Math.sin(camp.entranceAngle);
+          const along = dx * forwardX + dz * forwardZ;
+          const across = Math.abs(-dx * forwardZ + dz * forwardX);
+          return along > camp.radius - 4 && along < camp.radius + 30 && across < 3.6;
+        });
+        if (hitsTrail) continue;
+        points.push({ ...point, scale: 0.62 + random() * 0.78, rotation: random() * Math.PI * 2 });
+      }
+      return points;
+    };
+
+    const grassPoints = collect(760, 0.5, 0.62);
+    const heathPoints = collect(210, 0.42, 0.88);
+    const pebblePoints = collect(260, 0.62, -0.18);
+    const grass = new THREE.InstancedMesh(
+      this.createGrassTuftGeometry(),
+      new THREE.MeshStandardMaterial({ color: 0x68704c, roughness: 1, side: THREE.DoubleSide }),
+      grassPoints.length,
+    );
+    const heath = new THREE.InstancedMesh(
+      new THREE.IcosahedronGeometry(0.3, 0),
+      makeMaterial(0x53624b, 1),
+      heathPoints.length,
+    );
+    const pebbles = new THREE.InstancedMesh(
+      new THREE.DodecahedronGeometry(0.2, 0),
+      makeMaterial(0x626862, 1),
+      pebblePoints.length,
+    );
+    const matrix = new THREE.Matrix4();
+    const quaternion = new THREE.Quaternion();
+    const scale = new THREE.Vector3();
+    const position = new THREE.Vector3();
+    const place = (
+      mesh: THREE.InstancedMesh,
+      points: Array<{ x: number; z: number; scale: number; rotation: number }>,
+      baseHeight: number,
+      scaleY: number,
+    ): void => {
+      points.forEach((point, index) => {
+        position.set(point.x, this.worldHeight(point.x, point.z) + baseHeight * point.scale, point.z);
+        quaternion.setFromEuler(new THREE.Euler(0, point.rotation, 0));
+        scale.set(point.scale, point.scale * scaleY, point.scale);
+        matrix.compose(position, quaternion, scale);
+        mesh.setMatrixAt(index, matrix);
+      });
+      mesh.receiveShadow = true;
+      this.scene.add(mesh);
+    };
+    place(grass, grassPoints, 0.02, 1.12);
+    place(heath, heathPoints, 0.18, 0.62);
+    place(pebbles, pebblePoints, 0.12, 0.58);
+  }
+
   private buildLandmarks(): void {
     const deadwoodMaterial = makeMaterial(0x4f4135, 1);
     const ironMaterial = makeMaterial(0x5e554a, 0.95);
     const stoneMaterial = makeMaterial(0x535b55, 1);
     for (const landmark of this.world.landmarks) {
       const group = new THREE.Group();
-      group.position.set(landmark.x, 0, landmark.z);
+      group.position.set(landmark.x, this.worldHeight(landmark.x, landmark.z), landmark.z);
       group.rotation.y = landmark.rotation;
       group.scale.setScalar(landmark.scale);
       if (landmark.kind === "deadwood") {
@@ -320,7 +537,7 @@ export class GameRenderer {
     });
     for (const node of this.simulation.ironNodes) {
       const group = new THREE.Group();
-      group.position.set(node.x, 0, node.z);
+      group.position.set(node.x, this.worldHeight(node.x, node.z), node.z);
       group.rotation.y = node.rotation;
       const base = new THREE.Mesh(new THREE.DodecahedronGeometry(0.88, 0), rockMaterial);
       base.position.y = 0.58;
@@ -351,7 +568,7 @@ export class GameRenderer {
 
     for (const camp of this.world.camps) {
       const group = new THREE.Group();
-      group.position.set(camp.x, 0, camp.z);
+      group.position.set(camp.x, this.worldHeight(camp.x, camp.z), camp.z);
       for (let index = 0; index < 8; index += 1) {
         const angle = (index / 8) * Math.PI * 2;
         const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.38, 0), rockMaterial);
@@ -392,6 +609,13 @@ export class GameRenderer {
       const backAngle = camp.entranceAngle + Math.PI;
       if (camp.kind === "deep-cave") {
         const caveMaterial = makeMaterial(0x414843, 1);
+        const caveMouth = new THREE.Mesh(
+          new THREE.CircleGeometry(3.15, 9),
+          new THREE.MeshBasicMaterial({ color: 0x151b1c, side: THREE.DoubleSide }),
+        );
+        caveMouth.position.set(Math.cos(backAngle) * 8.05, 2.25, Math.sin(backAngle) * 8.05);
+        caveMouth.rotation.y = -backAngle - Math.PI / 2;
+        group.add(caveMouth);
         for (let index = -1; index <= 1; index += 1) {
           const caveRock = new THREE.Mesh(new THREE.DodecahedronGeometry(1.55, 0), caveMaterial);
           const angle = backAngle + index * 0.16;
@@ -409,15 +633,45 @@ export class GameRenderer {
         flag.position.copy(pole.position).add(new THREE.Vector3(0.85, 1.55, 0));
         flag.rotation.y = -camp.entranceAngle;
         group.add(flag);
+        for (let cairnIndex = 0; cairnIndex < 3; cairnIndex += 1) {
+          const cairn = new THREE.Mesh(new THREE.DodecahedronGeometry(0.38, 0), makeMaterial(0x737871, 1));
+          cairn.position.set(
+            Math.cos(backAngle - 0.72) * 5.2,
+            0.28 + cairnIndex * 0.46,
+            Math.sin(backAngle - 0.72) * 5.2,
+          );
+          cairn.scale.set(1 - cairnIndex * 0.18, 0.72, 0.9 - cairnIndex * 0.12);
+          cairn.castShadow = true;
+          group.add(cairn);
+        }
       } else {
         const crateMaterial = makeMaterial(0x654b34, 1);
-        for (let index = 0; index < 2; index += 1) {
+        for (let index = 0; index < 3; index += 1) {
           const crate = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.85, 1), crateMaterial);
           crate.position.set(Math.cos(backAngle + 0.35) * (5.2 + index), 0.45, Math.sin(backAngle + 0.35) * (5.2 + index));
           crate.rotation.y = backAngle + index * 0.4;
           crate.castShadow = true;
           group.add(crate);
         }
+        const canvasMaterial = new THREE.MeshStandardMaterial({ color: 0x7c6248, roughness: 1, side: THREE.DoubleSide });
+        const leanTo = new THREE.Mesh(new THREE.PlaneGeometry(3.7, 2.6), canvasMaterial);
+        leanTo.position.set(Math.cos(backAngle - 0.55) * 5.4, 1.55, Math.sin(backAngle - 0.55) * 5.4);
+        leanTo.rotation.set(-Math.PI / 2.7, -backAngle, 0.08);
+        leanTo.castShadow = true;
+        group.add(leanTo);
+        for (const side of [-1, 1]) {
+          const support = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.1, 2.3, 5), crateMaterial);
+          support.position.copy(leanTo.position).add(new THREE.Vector3(side * 1.45, -0.5, side * 0.12));
+          support.rotation.z = side * 0.12;
+          support.castShadow = true;
+          group.add(support);
+        }
+        const brokenFence = new THREE.Mesh(new THREE.BoxGeometry(4.8, 0.16, 0.22), crateMaterial);
+        brokenFence.position.set(Math.cos(backAngle + 1.1) * 6.5, 0.72, Math.sin(backAngle + 1.1) * 6.5);
+        brokenFence.rotation.y = backAngle - 0.35;
+        brokenFence.rotation.z = -0.18;
+        brokenFence.castShadow = true;
+        group.add(brokenFence);
       }
       this.scene.add(group);
       this.campViews.set(camp.id, { flame, glow });
@@ -439,7 +693,7 @@ export class GameRenderer {
         berry.position.set(Math.cos(angle) * 0.46, 0.68 + (index % 2) * 0.18, Math.sin(angle) * 0.4);
         group.add(berry);
       }
-      group.position.set(patch.x, 0, patch.z);
+      group.position.set(patch.x, this.worldHeight(patch.x, patch.z), patch.z);
       this.scene.add(group);
       this.berryViews.set(patch.id, group);
     }
@@ -540,7 +794,7 @@ export class GameRenderer {
     const player = this.simulation.player;
     const restingHeight = player.resting ? -0.5 : 0;
     const idleBob = player.resting ? Math.sin(this.time * 2) * 0.012 : Math.sin(this.time * 9) * 0.025;
-    this.playerGroup.position.set(player.x, restingHeight + idleBob, player.z);
+    this.playerGroup.position.set(player.x, this.worldHeight(player.x, player.z) + restingHeight + idleBob, player.z);
     const angle = -Math.atan2(player.facing.z, player.facing.x);
     this.playerGroup.rotation.y = angle;
     const attackProgress = player.attackFlash > 0 ? 1 - player.attackFlash / 0.22 : 0;
@@ -573,7 +827,7 @@ export class GameRenderer {
       }
       view.visible = item.active;
       if (!item.active) continue;
-      view.position.set(item.x, item.kind === "wood" ? 0.35 : 0.48, item.z);
+      view.position.set(item.x, this.worldHeight(item.x, item.z) + (item.kind === "wood" ? 0.35 : 0.48), item.z);
       view.rotation.y = item.rotation;
       const damageScale = clamp(item.hp / (item.kind === "stone" ? 220 : 70), 0.55, 1);
       view.scale.setScalar(item.placed ? damageScale : 1);
@@ -631,7 +885,7 @@ export class GameRenderer {
         this.wolfViews.set(wolf.id, view);
         this.scene.add(view.group);
       }
-      view.group.position.set(wolf.x, wolf.mode === "dead" ? 0.2 : 0, wolf.z);
+      view.group.position.set(wolf.x, this.worldHeight(wolf.x, wolf.z) + (wolf.mode === "dead" ? 0.2 : 0), wolf.z);
       view.group.rotation.y = -Math.atan2(wolf.facing.z, wolf.facing.x);
       if (wolf.mode === "dead") {
         view.group.rotation.z = lerp(view.group.rotation.z, Math.PI / 2, delta * 8);
@@ -670,7 +924,7 @@ export class GameRenderer {
       const age = this.simulation.elapsed - drop.createdAt;
       const burst = clamp(age / 0.42, 0, 1);
       const hop = Math.sin(burst * Math.PI) * 1.15;
-      view.position.set(drop.x, 0.25 + hop, drop.z);
+      view.position.set(drop.x, this.worldHeight(drop.x, drop.z) + 0.25 + hop, drop.z);
       view.rotation.y = drop.burstAngle + this.time * 0.8;
       const timeLeft = drop.expiresAt - this.simulation.elapsed;
       view.visible = timeLeft > 20 || Math.floor(this.time * 7) % 2 === 0;
@@ -749,7 +1003,7 @@ export class GameRenderer {
       }
     }
     if (nearestLit && nearestDistance < 32 * 32) {
-      this.fireLight.position.set(nearestLit.x, 2.4, nearestLit.z);
+      this.fireLight.position.set(nearestLit.x, this.worldHeight(nearestLit.x, nearestLit.z) + 2.4, nearestLit.z);
       this.fireLight.intensity = 3.2 + Math.sin(this.time * 14) * 0.3;
     } else {
       this.fireLight.intensity = 0;
@@ -774,18 +1028,19 @@ export class GameRenderer {
     const smoothing = 1 - Math.exp(-delta * 5.5);
     this.cameraFocus.x = lerp(this.cameraFocus.x, player.x, smoothing);
     this.cameraFocus.z = lerp(this.cameraFocus.z, player.z, smoothing);
+    this.cameraFocus.y = lerp(this.cameraFocus.y, this.worldHeight(player.x, player.z), smoothing);
     const distanceScale = window.innerWidth < 760 && window.innerWidth < window.innerHeight ? 1.18 : 1;
     const shakeX = (Math.random() - 0.5) * this.cameraShake;
     const shakeZ = (Math.random() - 0.5) * this.cameraShake;
     this.camera.position.set(
       this.cameraFocus.x + 19 * distanceScale + shakeX,
-      24 * distanceScale,
+      this.cameraFocus.y + 24 * distanceScale,
       this.cameraFocus.z + 19 * distanceScale + shakeZ,
     );
-    this.camera.lookAt(this.cameraFocus.x, 0.8, this.cameraFocus.z);
+    this.camera.lookAt(this.cameraFocus.x, this.cameraFocus.y + 0.8, this.cameraFocus.z);
     this.cameraShake = Math.max(0, this.cameraShake - delta * 0.8);
-    this.sun.position.set(this.cameraFocus.x - 35, 55, this.cameraFocus.z + 25);
-    this.sun.target.position.set(this.cameraFocus.x, 0, this.cameraFocus.z);
+    this.sun.position.set(this.cameraFocus.x - 35, this.cameraFocus.y + 55, this.cameraFocus.z + 25);
+    this.sun.target.position.set(this.cameraFocus.x, this.cameraFocus.y, this.cameraFocus.z);
     this.sun.target.updateMatrixWorld();
   }
 
@@ -804,8 +1059,12 @@ export class GameRenderer {
       }
     }
     attribute.needsUpdate = true;
-    this.snow.position.set(this.cameraFocus.x, 0, this.cameraFocus.z);
+    this.snow.position.set(this.cameraFocus.x, this.cameraFocus.y, this.cameraFocus.z);
     const material = this.snow.material as THREE.PointsMaterial;
     material.opacity = lerp(0.48, 0.78, 1 - this.simulation.getDaylight());
+  }
+
+  private worldHeight(x: number, z: number): number {
+    return terrainHeightAt(this.world, { x, z });
   }
 }

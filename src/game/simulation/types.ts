@@ -39,6 +39,13 @@ export interface CampDefinition extends Vec2 {
   entranceWidth: number;
   radius: number;
   kind: CampKind;
+  elevation: number;
+}
+
+export interface TerrainDefinition {
+  resolution: number;
+  seed: number;
+  maxWalkableSlope: number;
 }
 
 export interface TreeDefinition extends Vec2 {
@@ -130,6 +137,7 @@ export interface WolfState extends Vec2 {
 
 export interface WorldDefinition {
   size: number;
+  terrain: TerrainDefinition;
   camps: CampDefinition[];
   walls: CircleObstacle[];
   trees: TreeDefinition[];

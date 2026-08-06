@@ -4,15 +4,12 @@ import {
   distance,
   distanceSquared,
   dot,
-  fromEllipseLocal,
   mulberry32,
   normalize,
-  pointInEllipse,
   segmentIntersectsCircle,
-  segmentIntersectsEllipse,
   TAU,
-  toEllipseLocal,
 } from "./geometry";
+import { isTerrainWalkable, terrainHeightAt } from "../terrain/TerrainModel";
 import { NavigationGrid } from "./NavigationGrid";
 import type {
   BerryPatch,
@@ -686,10 +683,11 @@ export class GameSimulation {
     const camp = tutorialWolf
       ? this.world.camps[this.world.startCampId]
       : this.world.camps[Math.floor(this.random() * this.world.camps.length)];
-    const spawn = tutorialWolf ? {
+    const spawnCandidate = tutorialWolf ? {
       x: camp.x + Math.cos(camp.entranceAngle) * (camp.radius + 18),
       z: camp.z + Math.sin(camp.entranceAngle) * (camp.radius + 18),
     } : edgeSpawn;
+    const spawn = this.findNearestWalkablePoint(spawnCandidate);
     const anchorAngle = this.random() * TAU;
     const anchorDistance = 12 + this.random() * 10;
     const raiderChance = Math.min(0.35, 0.16 + (this.day - 1) * 0.06);
@@ -699,10 +697,10 @@ export class GameSimulation {
     const maxHealth = tutorialWolf ? 28 : kind === "large" ? 112 : 58;
     const attack = tutorialWolf ? 5 : kind === "large" ? 16 + Math.min(4, this.day - 1) : 10 + Math.min(3, Math.floor((this.day - 1) * 0.7));
     const defense = tutorialWolf ? 0 : kind === "large" ? 5 : 1;
-    const anchor = {
+    const anchor = this.findNearestWalkablePoint({
       x: camp.x + Math.cos(anchorAngle) * anchorDistance,
       z: camp.z + Math.sin(anchorAngle) * anchorDistance,
-    };
+    });
     this.wolves.push({
       id: this.wolfId++,
       kind,
@@ -742,8 +740,13 @@ export class GameSimulation {
     for (const wall of this.world.walls) {
       if (segmentIntersectsCircle(start, end, wall, wall.radius * 0.82)) return true;
     }
-    for (const hill of this.world.hills) {
-      if (segmentIntersectsEllipse(start, end, hill, 0.25)) return true;
+    const startHeight = terrainHeightAt(this.world, start) + 1.15;
+    const endHeight = terrainHeightAt(this.world, end) + 1.15;
+    for (let step = 1; step < 8; step += 1) {
+      const t = step / 8;
+      const point = { x: start.x + (end.x - start.x) * t, z: start.z + (end.z - start.z) * t };
+      const sightHeight = startHeight + (endHeight - startHeight) * t;
+      if (terrainHeightAt(this.world, point) > sightHeight + 0.35) return true;
     }
     for (const item of this.items) {
       if (item.active && item.placed && segmentIntersectsCircle(start, end, item, item.kind === "stone" ? 1.48 : 0.65)) return true;
@@ -799,12 +802,6 @@ export class GameSimulation {
       const strength = (safe - Math.sqrt(value)) / safe;
       steerX += away.x * strength * 2.6;
       steerZ += away.z * strength * 2.6;
-    }
-    for (const hill of this.world.hills) {
-      if (!pointInEllipse(entity, hill, 3.2)) continue;
-      const away = direction(hill, entity);
-      steerX += away.x * 2.1;
-      steerZ += away.z * 2.1;
     }
     for (const item of this.items) {
       if (!item.active || !item.placed || distanceSquared(entity, item) > 3.2 * 3.2) continue;
@@ -958,6 +955,21 @@ export class GameSimulation {
     return nearest;
   }
 
+  private findNearestWalkablePoint(origin: Vec2): Vec2 {
+    if (isTerrainWalkable(this.world, origin)) return origin;
+    for (let radius = 2; radius <= 24; radius += 2) {
+      for (let step = 0; step < 16; step += 1) {
+        const angle = (step / 16) * TAU;
+        const candidate = {
+          x: clamp(origin.x + Math.cos(angle) * radius, -this.world.size / 2 + 1, this.world.size / 2 - 1),
+          z: clamp(origin.z + Math.sin(angle) * radius, -this.world.size / 2 + 1, this.world.size / 2 - 1),
+        };
+        if (isTerrainWalkable(this.world, candidate)) return candidate;
+      }
+    }
+    return origin;
+  }
+
   private dropCarriedItem(): void {
     const kind = this.player.carrying;
     if (!kind) return;
@@ -989,9 +1001,13 @@ export class GameSimulation {
   }
 
   private moveEntity(entity: Vec2, dx: number, dz: number, radius: number, collideWithItems: boolean): void {
+    const originalX = entity.x;
     entity.x += dx;
+    if (!this.canTraverseTerrain({ x: originalX, z: entity.z }, entity)) entity.x = originalX;
     this.resolveCollisions(entity, radius, collideWithItems);
+    const originalZ = entity.z;
     entity.z += dz;
+    if (!this.canTraverseTerrain({ x: entity.x, z: originalZ }, entity)) entity.z = originalZ;
     this.resolveCollisions(entity, radius, collideWithItems);
     const half = this.world.size / 2 - radius;
     entity.x = clamp(entity.x, -half, half);
@@ -1001,13 +1017,20 @@ export class GameSimulation {
   private resolveCollisions(entity: Vec2, radius: number, collideWithItems: boolean): void {
     for (let pass = 0; pass < 3; pass += 1) {
       for (const obstacle of this.world.walls) this.pushOutsideCircle(entity, radius, obstacle, obstacle.radius);
-      for (const hill of this.world.hills) this.pushOutsideHill(entity, radius, hill);
       if (!collideWithItems) continue;
       for (const item of this.items) {
         if (!item.active || !item.placed) continue;
         this.pushOutsideCircle(entity, radius, item, item.kind === "stone" ? 1.48 : 0.62);
       }
     }
+  }
+
+  private canTraverseTerrain(from: Vec2, to: Vec2): boolean {
+    if (!isTerrainWalkable(this.world, to)) return false;
+    const travel = Math.hypot(to.x - from.x, to.z - from.z);
+    if (travel < 0.0001) return true;
+    const rise = Math.abs(terrainHeightAt(this.world, to) - terrainHeightAt(this.world, from));
+    return rise / travel <= this.world.terrain.maxWalkableSlope * 1.12;
   }
 
   private pushOutsideCircle(entity: Vec2, radius: number, obstacle: Vec2, obstacleRadius: number): void {
@@ -1026,15 +1049,4 @@ export class GameSimulation {
     entity.z += (dz / currentDistance) * correction;
   }
 
-  private pushOutsideHill(entity: Vec2, radius: number, hill: WorldDefinition["hills"][number]): void {
-    if (!pointInEllipse(entity, hill, radius)) return;
-    const local = toEllipseLocal(entity, hill);
-    const radiusX = hill.scaleX * 0.9 + radius;
-    const radiusZ = hill.scaleZ * 0.9 + radius;
-    const normalized = Math.hypot(local.x / radiusX, local.z / radiusZ);
-    const fallback: Vec2 = normalized < 0.0001 ? { x: radiusX, z: 0 } : { x: local.x / normalized, z: local.z / normalized };
-    const corrected = fromEllipseLocal(fallback, hill);
-    entity.x = corrected.x;
-    entity.z = corrected.z;
-  }
 }

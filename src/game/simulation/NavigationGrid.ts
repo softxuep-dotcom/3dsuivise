@@ -1,4 +1,5 @@
-import { direction, pointInEllipse } from "./geometry";
+import { isTerrainWalkable } from "../terrain/TerrainModel";
+import { direction } from "./geometry";
 import type { Vec2, WorldDefinition } from "./types";
 
 const UNREACHABLE = 0xffff;
@@ -87,8 +88,8 @@ export class NavigationGrid {
           const radius = wall.radius + 0.8;
           return dx * dx + dz * dz < radius * radius;
         });
-        const hitsHill = this.world.hills.some((hill) => pointInEllipse(point, hill, 0.8));
-        this.blocked[index] = hitsWall || hitsHill ? 1 : 0;
+        const hitsSteepTerrain = !isTerrainWalkable(this.world, point);
+        this.blocked[index] = hitsWall || hitsSteepTerrain ? 1 : 0;
       }
     }
   }
