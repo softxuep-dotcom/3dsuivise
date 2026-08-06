@@ -60,6 +60,7 @@ export class GameSimulation {
   private readonly random = mulberry32(847331);
   private readonly events: GameEvent[] = [];
   private readonly navigation: NavigationGrid;
+  private readonly retreatNavigations: NavigationGrid[];
   private wolfId = 0;
   private dropId = 0;
   private spawnCountdown = 3;
@@ -71,6 +72,17 @@ export class GameSimulation {
   constructor(world: WorldDefinition) {
     this.world = world;
     this.navigation = new NavigationGrid(world);
+    const retreatEdge = world.size / 2 - 0.7;
+    this.retreatNavigations = [
+      { x: -retreatEdge, z: 0 },
+      { x: retreatEdge, z: 0 },
+      { x: 0, z: -retreatEdge },
+      { x: 0, z: retreatEdge },
+    ].map((target) => {
+      const navigation = new NavigationGrid(world);
+      navigation.rebuild(target);
+      return navigation;
+    });
     const startCamp = world.camps[world.startCampId];
     this.camps = world.camps.map((camp) => ({ id: camp.id, fuel: camp.id === world.startCampId ? 42 : 0 }));
     this.items = world.initialItems.map((item) => ({ ...item }));
@@ -185,19 +197,23 @@ export class GameSimulation {
       if (wolf.mode === "dead" || distanceSquared(this.player, wolf) > 3.1 * 3.1) continue;
       const towardWolf = direction(this.player, wolf);
       if (dot(this.player.facing, towardWolf) < -0.15) continue;
+      const wasRetreating = wolf.mode === "retreating";
       wolf.health -= 38;
       wolf.hurtFlash = 0.18;
-      wolf.mode = wolf.health <= 0 ? "dead" : "chase";
+      if (wolf.health <= 0) wolf.mode = "dead";
+      else if (!wasRetreating) wolf.mode = "chase";
       wolf.lostTimer = 0;
       hit = true;
       this.events.push({ type: "wolf-hit", wolfId: wolf.id });
       if (wolf.health <= 0) this.killWolf(wolf);
     }
 
-    for (const wolf of this.wolves) {
-      if (wolf.mode !== "dead" && distanceSquared(this.player, wolf) < 17 * 17) {
-        wolf.mode = "chase";
-        wolf.lostTimer = 0;
+    if (this.phase === "night") {
+      for (const wolf of this.wolves) {
+        if (wolf.mode !== "dead" && distanceSquared(this.player, wolf) < 17 * 17) {
+          wolf.mode = "chase";
+          wolf.lostTimer = 0;
+        }
       }
     }
     if (!hit && this.objectiveStage >= 3) this.events.push({ type: "message", text: "挥空会暴露位置" });
@@ -315,6 +331,8 @@ export class GameSimulation {
       if (lit.fuel < 25) return "火快灭了：再搬一根圆木";
       return "守住火光；狼死亡会掉落肉和皮";
     }
+    const retreatingWolves = this.wolves.filter((wolf) => wolf.mode === "retreating").length;
+    if (retreatingWolves > 0) return `天亮了 · ${retreatingWolves}只狼正在撤离`;
     if (!this.player.hasLeatherCoat && this.getInventoryCount("wolf-hide") > 0) return "收集4张狼皮制作基础皮衣";
     if (this.getInventoryCount("berry") === 0) return "搜集圆木、石块与野果";
     return "选择营地，添柴并用多件物资封住入口";
@@ -405,15 +423,16 @@ export class GameSimulation {
 
   private updateWolves(delta: number): void {
     const livingCount = this.wolves.filter((wolf) => wolf.mode !== "dead").length;
-    const target = Math.min(40, 20 + (this.day - 1) * 10);
+    const target = Math.min(72, 42 + (this.day - 1) * 10);
     if (this.phase === "night" && livingCount < MAX_WOLVES && this.spawnedThisNight < target) {
       this.spawnCountdown -= delta;
       if (this.spawnCountdown <= 0) {
         this.spawnWolf();
         this.spawnedThisNight += 1;
-        const remainingTime = Math.max(20, this.phaseTime - 8);
-        const remainingWolves = Math.max(1, target - this.spawnedThisNight);
-        this.spawnCountdown = clamp(remainingTime / remainingWolves, 2.4, 6.2) * (0.85 + this.random() * 0.3);
+        const nightProgress = clamp(1 - this.phaseTime / this.getPhaseDuration(), 0, 1);
+        const nightlyPressure = Math.max(0.78, 1 - (this.day - 1) * 0.09);
+        const curvedInterval = 0.9 + Math.pow(nightProgress, 0.8) * 4.8;
+        this.spawnCountdown = curvedInterval * nightlyPressure * (0.85 + this.random() * 0.3);
       }
     }
 
@@ -421,6 +440,11 @@ export class GameSimulation {
     for (let index = this.wolves.length - 1; index >= 0; index -= 1) {
       const wolf = this.wolves[index];
       if (wolf.mode === "dead" && wolf.deathTimer <= 0) this.wolves.splice(index, 1);
+      else if (wolf.mode === "retreating" && (
+        this.isAtWorldEdge(wolf)
+        || wolf.lostTimer >= 34
+        || (wolf.lostTimer >= 18 && distanceSquared(wolf, this.player) > 45 * 45)
+      )) this.wolves.splice(index, 1);
     }
   }
 
@@ -432,7 +456,8 @@ export class GameSimulation {
       return;
     }
 
-    const canSeePlayer = this.wolfCanSeePlayer(wolf);
+    if (wolf.mode === "retreating") wolf.lostTimer += delta;
+    const canSeePlayer = this.phase === "night" && wolf.mode !== "retreating" && this.wolfCanSeePlayer(wolf);
     if (canSeePlayer) {
       wolf.mode = "chase";
       wolf.lostTimer = 0;
@@ -446,7 +471,9 @@ export class GameSimulation {
     }
 
     let target: Vec2;
-    if (wolf.mode === "entering") {
+    if (wolf.mode === "retreating") {
+      target = wolf.anchor;
+    } else if (wolf.mode === "entering") {
       target = wolf.anchor;
       if (distanceSquared(wolf, wolf.anchor) < 3 * 3) wolf.mode = wolf.raider ? "raid" : "patrol";
     } else if (wolf.mode === "chase") {
@@ -477,7 +504,10 @@ export class GameSimulation {
 
     let desired = direction(wolf, target);
     if (wolf.mode === "chase" && this.lineOfSightBlocked(wolf, this.player)) desired = this.navigation.directionFrom(wolf);
-    const blockingItem = this.findBlockingItem(wolf, desired);
+    if (wolf.mode === "retreating" && this.lineOfSightBlocked(wolf, wolf.anchor)) {
+      desired = this.getRetreatNavigation(wolf).directionFrom(wolf);
+    }
+    const blockingItem = wolf.mode === "retreating" ? null : this.findBlockingItem(wolf, desired);
     if (blockingItem) {
       if (wolf.attackCooldown <= 0) {
         wolf.attackCooldown = 0.95;
@@ -490,8 +520,36 @@ export class GameSimulation {
 
     const steered = this.getSteeredDirection(wolf, desired);
     wolf.facing = steered;
-    const pace = wolf.mode === "chase" ? wolf.speed * 1.2 : wolf.speed;
-    this.moveEntity(wolf, steered.x * pace * delta, steered.z * pace * delta, WOLF_RADIUS, true);
+    const pace = wolf.mode === "retreating" ? wolf.speed * 2.25 : wolf.mode === "chase" ? wolf.speed * 1.2 : wolf.speed;
+    this.moveEntity(wolf, steered.x * pace * delta, steered.z * pace * delta, WOLF_RADIUS, wolf.mode !== "retreating");
+  }
+
+  private beginRetreat(wolf: WolfState): void {
+    if (wolf.mode === "dead") return;
+    const half = this.world.size / 2 + 2;
+    const exits: Vec2[] = [
+      { x: -half, z: wolf.z },
+      { x: half, z: wolf.z },
+      { x: wolf.x, z: -half },
+      { x: wolf.x, z: half },
+    ];
+    wolf.mode = "retreating";
+    wolf.anchor = exits.reduce((best, candidate) => (
+      distanceSquared(wolf, candidate) < distanceSquared(wolf, best) ? candidate : best
+    ));
+    wolf.lostTimer = 0;
+    wolf.attackCooldown = 0;
+  }
+
+  private getRetreatNavigation(wolf: WolfState): NavigationGrid {
+    const horizontalExit = Math.abs(wolf.anchor.x) > this.world.size / 2;
+    if (horizontalExit) return this.retreatNavigations[wolf.anchor.x < 0 ? 0 : 1];
+    return this.retreatNavigations[wolf.anchor.z < 0 ? 2 : 3];
+  }
+
+  private isAtWorldEdge(wolf: WolfState): boolean {
+    const edge = this.world.size / 2 - WOLF_RADIUS - 1;
+    return Math.abs(wolf.x) >= edge || Math.abs(wolf.z) >= edge;
   }
 
   private killWolf(wolf: WolfState): void {
@@ -647,7 +705,7 @@ export class GameSimulation {
     if (this.phase === "day") {
       this.phase = "night";
       this.phaseTime = this.day === 1 ? FIRST_NIGHT_DURATION : this.day === 2 ? SECOND_NIGHT_DURATION : LATER_NIGHT_DURATION;
-      this.spawnCountdown = 2.5;
+      this.spawnCountdown = 0.45;
       this.spawnedThisNight = 0;
       this.objectiveStage = 3;
       this.events.push({ type: "phase", phase: "night", day: this.day });
@@ -657,8 +715,9 @@ export class GameSimulation {
     this.phase = "day";
     this.day += 1;
     this.phaseTime = LATER_DAY_DURATION;
+    for (const wolf of this.wolves) this.beginRetreat(wolf);
     this.events.push({ type: "phase", phase: "day", day: this.day });
-    this.events.push({ type: "message", text: "天亮了，但昨夜的狼仍留在地图上" });
+    this.events.push({ type: "message", text: "天亮了 · 狼群停止攻击并撤向雪原边缘" });
   }
 
   private updateObjectives(): void {

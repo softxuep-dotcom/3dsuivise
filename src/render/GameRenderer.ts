@@ -474,7 +474,9 @@ export class GameRenderer {
         view.group.rotation.z = 0;
         view.group.position.y = Math.abs(Math.sin(this.time * 8 + wolf.id)) * 0.04;
       }
-      view.bodyMaterial.color.setHex(wolf.hurtFlash > 0 ? 0xe04a46 : wolf.raider ? 0x384550 : 0x56656b);
+      view.bodyMaterial.color.setHex(
+        wolf.hurtFlash > 0 ? 0xe04a46 : wolf.mode === "retreating" ? 0x7d9094 : wolf.raider ? 0x384550 : 0x56656b,
+      );
       view.bodyMaterial.emissive.setHex(wolf.mode === "chase" ? 0x160000 : 0x000000);
     }
     for (const [id, view] of this.wolfViews) {

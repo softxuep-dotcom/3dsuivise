@@ -21,7 +21,6 @@ export class HudController {
   private readonly intro = required<HTMLElement>("intro");
   private readonly gameOver = required<HTMLElement>("game-over");
   private readonly inventoryOverlay = required<HTMLElement>("inventory-overlay");
-  private readonly rotateOverlay = required<HTMLElement>("rotate-overlay");
   private readonly healthBar = required<HTMLElement>("health-bar");
   private readonly warmthBar = required<HTMLElement>("warmth-bar");
   private readonly hungerBar = required<HTMLElement>("hunger-bar");
@@ -49,7 +48,6 @@ export class HudController {
   private toastTimer = 0;
   private lastHudUpdate = 0;
   private inventoryOpen = false;
-  private portraitBlocked = false;
 
   constructor(simulation: GameSimulation) {
     this.simulation = simulation;
@@ -75,11 +73,11 @@ export class HudController {
   }
 
   isGameplayBlocked(): boolean {
-    return this.inventoryOpen || this.portraitBlocked;
+    return this.inventoryOpen;
   }
 
   toggleInventory(): void {
-    if (this.portraitBlocked || !this.simulation.running) return;
+    if (!this.simulation.running) return;
     this.inventoryOpen = !this.inventoryOpen;
     this.inventoryOverlay.classList.toggle("hidden", !this.inventoryOpen);
     if (this.inventoryOpen) this.updateInventory();
@@ -88,12 +86,6 @@ export class HudController {
   closeInventory(): void {
     this.inventoryOpen = false;
     this.inventoryOverlay.classList.add("hidden");
-  }
-
-  setPortraitBlocked(blocked: boolean): void {
-    this.portraitBlocked = blocked;
-    this.rotateOverlay.classList.toggle("hidden", !blocked);
-    if (blocked) this.closeInventory();
   }
 
   update(deltaSeconds: number): void {
@@ -139,7 +131,7 @@ export class HudController {
   handle(event: GameEvent): void {
     if (event.type === "message") this.showToast(event.text, 3.1);
     if (event.type === "phase") {
-      this.showToast(event.phase === "night" ? `第 ${event.day} 夜 · 狼群正在进入` : `第 ${event.day} 天 · 抓紧补给`, 3.4);
+      this.showToast(event.phase === "night" ? `第 ${event.day} 夜 · 狼群正在涌入` : `第 ${event.day} 天 · 狼群正在撤离`, 3.4);
     }
     if (event.type === "pickup" && (event.kind === "raw-meat" || event.kind === "wolf-hide")) {
       this.showToast(event.kind === "raw-meat" ? "获得生狼肉" : "获得狼皮", 1.4);
@@ -233,7 +225,7 @@ export class HudController {
       const x = (wolf.x - player.x) * worldScale;
       const y = (wolf.z - player.z) * worldScale;
       if (Math.hypot(x, y) > center - 7) continue;
-      context.fillStyle = wolf.mode === "chase" ? "#ff5347" : "rgba(225, 115, 99, .62)";
+      context.fillStyle = wolf.mode === "chase" ? "#ff5347" : wolf.mode === "retreating" ? "rgba(150, 190, 198, .55)" : "rgba(225, 115, 99, .62)";
       context.fillRect(x - 1.5, y - 1.5, 3, 3);
     }
 

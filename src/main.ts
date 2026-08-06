@@ -38,24 +38,12 @@ input.bindCanvas(renderer.canvas, (x, y) => renderer.screenToWorld(x, y));
 let started = false;
 let previousTime = performance.now();
 let hiddenAt = 0;
-const portraitMedia = window.matchMedia(
-  "(pointer: coarse) and (orientation: portrait), (max-width: 760px) and (orientation: portrait)",
-);
-
-const syncOrientation = (): void => {
-  hud.setPortraitBlocked(portraitMedia.matches);
-};
-
-portraitMedia.addEventListener("change", syncOrientation);
-syncOrientation();
 
 document.getElementById("start-button")?.addEventListener("click", async () => {
   await audio.unlock();
   started = true;
   simulation.start();
   hud.showGame();
-  const orientation = screen.orientation as ScreenOrientation & { lock?: (value: string) => Promise<void> };
-  void orientation.lock?.("landscape").catch(() => undefined);
 });
 
 document.getElementById("restart-button")?.addEventListener("click", () => window.location.reload());

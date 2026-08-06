@@ -7,7 +7,7 @@ export type Phase = "day" | "night";
 export type CarryKind = "wood" | "stone";
 export type GroundItemKind = CarryKind;
 export type InventoryItemKind = "berry" | "raw-meat" | "cooked-meat" | "wolf-hide";
-export type WolfMode = "entering" | "patrol" | "chase" | "raid" | "dead";
+export type WolfMode = "entering" | "patrol" | "chase" | "raid" | "retreating" | "dead";
 
 export interface InventoryStack {
   kind: InventoryItemKind;
