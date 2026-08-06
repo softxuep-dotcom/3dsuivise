@@ -1,5 +1,5 @@
-import { angleDifference, distance, mulberry32, TAU } from "../simulation/geometry";
-import { isTerrainWalkable, terrainSlopeAt } from "../terrain/TerrainModel";
+import { distance, mulberry32, TAU } from "../simulation/geometry";
+import { campGatePosition, isTerrainWalkable, terrainSlopeAt } from "../terrain/TerrainModel";
 import type {
   BerryPatch,
   CampKind,
@@ -9,6 +9,7 @@ import type {
   HillDefinition,
   IronNode,
   LandmarkDefinition,
+  TerrainStyle,
   TreeDefinition,
   Vec2,
   WorldDefinition,
@@ -20,7 +21,20 @@ interface MapBlueprint {
   resolution: number;
   seed: number;
   maxWalkableSlope: number;
-  camps: Array<{ x: number; z: number; entranceAngle: number; kind: CampKind; elevation: number }>;
+  startCampId: number;
+  camps: Array<{
+    x: number;
+    z: number;
+    entranceAngle: number;
+    kind: CampKind;
+    terrainStyle: TerrainStyle;
+    elevation: number;
+    radius: number;
+    approachWidth: number;
+    platform: Vec2[];
+    approach: Vec2[];
+    gate: Vec2;
+  }>;
   ridges: Array<Omit<HillDefinition, "id">>;
 }
 
@@ -48,31 +62,17 @@ export function createWorld(seed = 71291): WorldDefinition {
     id,
     ...source,
     entranceWidth: CAMP_ENTRANCE_WIDTH[source.kind],
-    radius: 11,
+    radius: source.radius,
   }));
 
   const walls: CircleObstacle[] = [];
-  for (const camp of camps) {
-    const segments = camp.kind === "deep-cave" ? 18 : camp.kind === "abandoned-camp" ? 15 : 13;
-    for (let index = 0; index < segments; index += 1) {
-      const angle = (index / segments) * TAU;
-      if (angleDifference(angle, camp.entranceAngle) < camp.entranceWidth) continue;
-      const uneven = (random() - 0.5) * 0.6;
-      walls.push({
-        x: camp.x + Math.cos(angle) * (camp.radius + uneven),
-        z: camp.z + Math.sin(angle) * (camp.radius + uneven),
-        radius: 1.55 + random() * 0.7,
-        kind: "wall",
-      });
-    }
-  }
 
   const hills: HillDefinition[] = BLUEPRINT.ridges.map((ridge, id) => ({ id, ...ridge }));
   const terrainWorld = { camps, hills, terrain };
 
   const trees: TreeDefinition[] = [];
   let attempts = 0;
-  while (trees.length < 16 && attempts < 400) {
+  while (trees.length < 18 && attempts < 450) {
     attempts += 1;
     const point = { x: (random() - 0.5) * 192, z: (random() - 0.5) * 192 };
     if (!awayFromCamps(point, camps, 3)) continue;
@@ -96,26 +96,14 @@ export function createWorld(seed = 71291): WorldDefinition {
     });
   };
 
-  // Every hollow has a movable entrance boulder; one seals caves, windy gaps may need two.
+  // Each cliff shelter has one narrow ramp and one movable boulder that can seal it.
   for (const camp of camps) {
-    const inward = camp.radius - 2.1;
-    addItem(
-      "stone",
-      camp.x + Math.cos(camp.entranceAngle) * inward,
-      camp.z + Math.sin(camp.entranceAngle) * inward,
-    );
-    if (camp.kind === "windy-ridge") {
-      const sideAngle = camp.entranceAngle + Math.PI / 2;
-      addItem(
-        "stone",
-        camp.x + Math.cos(camp.entranceAngle) * (inward - 1.6) + Math.cos(sideAngle) * 2.2,
-        camp.z + Math.sin(camp.entranceAngle) * (inward - 1.6) + Math.sin(sideAngle) * 2.2,
-      );
-    }
+    const gate = campGatePosition(camp);
+    addItem("stone", gate.x, gate.z);
   }
 
   // The starting abandoned camp contains enough wood to teach fire management immediately.
-  const startCamp = camps[4];
+  const startCamp = camps[BLUEPRINT.startCampId];
   addItem("wood", startCamp.x + 2.2, startCamp.z + 2.6);
   addItem("wood", startCamp.x - 2.4, startCamp.z + 1.4);
   addItem("wood", startCamp.x + 3.4, startCamp.z - 2.2);
@@ -134,8 +122,8 @@ export function createWorld(seed = 71291): WorldDefinition {
   }
 
   const initialBerries: BerryPatch[] = [
-    { id: 0, x: -34, z: -18, berries: 2, regrowAt: 0 },
-    { id: 1, x: -13, z: -34, berries: 2, regrowAt: 0 },
+    { id: 0, x: -31, z: -15, berries: 2, regrowAt: 0 },
+    { id: 1, x: -19, z: -22, berries: 2, regrowAt: 0 },
   ];
   while (initialBerries.length < 32) {
     const point = { x: (random() - 0.5) * 196, z: (random() - 0.5) * 196 };
@@ -195,6 +183,6 @@ export function createWorld(seed = 71291): WorldDefinition {
     initialBerries,
     ironNodes,
     landmarks,
-    startCampId: 4,
+    startCampId: BLUEPRINT.startCampId,
   };
 }

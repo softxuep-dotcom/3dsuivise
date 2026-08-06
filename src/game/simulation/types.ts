@@ -11,6 +11,7 @@ export type WeaponKind = "wood-club" | "iron-spear";
 export type WolfKind = "small" | "large";
 export type WolfMode = "entering" | "patrol" | "chase" | "raid" | "retreating" | "dead";
 export type CampKind = "windy-ridge" | "deep-cave" | "abandoned-camp";
+export type TerrainStyle = "broken-spur" | "saddle-shoulder" | "cliff-alcove" | "wide-ledge" | "wind-crown";
 export type LandmarkKind = "deadwood" | "wreck" | "monolith";
 
 export interface InventoryStack {
@@ -40,6 +41,11 @@ export interface CampDefinition extends Vec2 {
   radius: number;
   kind: CampKind;
   elevation: number;
+  terrainStyle: TerrainStyle;
+  approachWidth: number;
+  platform: Vec2[];
+  approach: Vec2[];
+  gate: Vec2;
 }
 
 export interface TerrainDefinition {

@@ -2,7 +2,7 @@ import * as THREE from "three";
 import type { GameSimulation } from "../game/simulation/GameSimulation";
 import { clamp, lerp, mulberry32 } from "../game/simulation/geometry";
 import type { CampDefinition, GroundItem, Vec2, WolfState, WorldDefinition, WorldDrop } from "../game/simulation/types";
-import { terrainHeightAt, terrainMoistureAt, terrainSlopeAt, terrainSnowAt } from "../game/terrain/TerrainModel";
+import { distanceToCampApproach, terrainHeightAt, terrainMoistureAt, terrainSlopeAt, terrainSnowAt } from "../game/terrain/TerrainModel";
 
 interface CampView {
   flame: THREE.Group;
@@ -86,8 +86,6 @@ export class GameRenderer {
     this.scene.add(this.sun, this.fireLight);
 
     this.terrainMesh = this.buildGround();
-    this.buildCampTrails();
-    this.buildRockOutcrops();
     this.buildCampWalls();
     this.buildTrees();
     this.buildGroundCover();
@@ -169,7 +167,7 @@ export class GameRenderer {
     const colors = new Float32Array(positions.count * 3);
     const dryGrass = new THREE.Color(0x77775c);
     const dampGrass = new THREE.Color(0x59664e);
-    const soil = new THREE.Color(0x756550);
+    const soil = new THREE.Color(0x5a4532);
     const rock = new THREE.Color(0x666b67);
     const snow = new THREE.Color(0xc3cbc4);
     const color = new THREE.Color();
@@ -182,10 +180,23 @@ export class GameRenderer {
       const moisture = terrainMoistureAt(this.world, point);
       const snowAmount = terrainSnowAt(this.world, point);
       color.copy(dryGrass).lerp(dampGrass, moisture * 0.72);
-      const camp = this.world.camps.find((candidate) => Math.hypot(x - candidate.x, z - candidate.z) < candidate.radius - 0.6);
-      if (camp) color.lerp(soil, camp.kind === "windy-ridge" ? 0.28 : camp.kind === "deep-cave" ? 0.72 : 0.58);
+      let campWear = 0;
+      for (const camp of this.world.camps) {
+        const distance = Math.hypot(x - camp.x, z - camp.z);
+        const wear = 1 - smoothTerrainBlend(camp.radius * 0.2, camp.radius * 0.55, distance);
+        campWear = Math.max(campWear, wear * (camp.kind === "windy-ridge" ? 0.28 : camp.kind === "deep-cave" ? 0.5 : 0.42));
+      }
+      let pathWear = 0;
+      for (const camp of this.world.camps) {
+        const pathDistance = distanceToCampApproach(camp, point);
+        pathWear = Math.max(pathWear, 1 - smoothTerrainBlend(camp.approachWidth * 0.48, camp.approachWidth * 0.48 + 1.65, pathDistance));
+      }
+      color.lerp(soil, campWear);
       color.lerp(rock, smoothTerrainBlend(0.42, 0.86, slope));
-      color.lerp(snow, snowAmount * 0.9);
+      // The access road must remain legible while it crosses the steep ramp.
+      // Paint it after the cliff tint and keep windswept tracks mostly snow-free.
+      color.lerp(soil, pathWear * 0.84);
+      color.lerp(snow, snowAmount * 0.9 * (1 - pathWear * 0.82));
       const variation = 0.93 + Math.sin(x * 0.71 + z * 0.37) * 0.025 + Math.sin(z * 1.13) * 0.018;
       color.multiplyScalar(variation);
       positions.setZ(index, height);
@@ -251,52 +262,6 @@ export class GameRenderer {
     return texture;
   }
 
-  private buildCampTrails(): void {
-    const positions: number[] = [];
-    const indices: number[] = [];
-    const segments = 18;
-    const length = 29;
-    const halfWidth = 1.55;
-    for (const camp of this.world.camps) {
-      const forward = { x: Math.cos(camp.entranceAngle), z: Math.sin(camp.entranceAngle) };
-      const side = { x: -forward.z, z: forward.x };
-      const startVertex = positions.length / 3;
-      for (let index = 0; index <= segments; index += 1) {
-        const t = index / segments;
-        const along = camp.radius - 3 + t * length;
-        const bend = Math.sin(t * Math.PI) * Math.sin(camp.id * 2.17) * 2.1;
-        const centerX = camp.x + forward.x * along + side.x * bend;
-        const centerZ = camp.z + forward.z * along + side.z * bend;
-        const width = halfWidth * (0.18 + Math.sin(t * Math.PI) * 0.82);
-        for (const direction of [-1, 1]) {
-          const x = centerX + side.x * width * direction;
-          const z = centerZ + side.z * width * direction;
-          positions.push(x, this.worldHeight(x, z) + 0.035, z);
-        }
-        if (index === segments) continue;
-        const row = startVertex + index * 2;
-        indices.push(row, row + 2, row + 1, row + 1, row + 2, row + 3);
-      }
-    }
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-    geometry.setIndex(indices);
-    geometry.computeVertexNormals();
-    const material = new THREE.MeshStandardMaterial({
-      color: 0x746044,
-      roughness: 1,
-      transparent: true,
-      opacity: 0.58,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-      polygonOffset: true,
-      polygonOffsetFactor: -2,
-    });
-    const trails = new THREE.Mesh(geometry, material);
-    trails.receiveShadow = true;
-    this.scene.add(trails);
-  }
-
   private createGrassTuftGeometry(): THREE.BufferGeometry {
     const positions: number[] = [];
     for (let blade = 0; blade < 3; blade += 1) {
@@ -317,38 +282,9 @@ export class GameRenderer {
     return geometry;
   }
 
-  private buildRockOutcrops(): void {
-    const count = this.world.hills.length * 3;
-    const mesh = new THREE.InstancedMesh(
-      new THREE.DodecahedronGeometry(1, 0),
-      makeMaterial(0x5d635f, 1),
-      count,
-    );
-    const matrix = new THREE.Matrix4();
-    const rotation = new THREE.Quaternion();
-    const scale = new THREE.Vector3();
-    const position = new THREE.Vector3();
-    let instance = 0;
-    for (const hill of this.world.hills) {
-      for (let rockIndex = 0; rockIndex < 3; rockIndex += 1) {
-        const along = (rockIndex - 1) * hill.scaleX * 0.18;
-        const x = hill.x + Math.cos(hill.rotation) * along + Math.sin(hill.rotation) * (rockIndex % 2 ? 1.1 : -0.8);
-        const z = hill.z + Math.sin(hill.rotation) * along - Math.cos(hill.rotation) * (rockIndex % 2 ? 1.1 : -0.8);
-        const height = 0.9 + (hill.id % 4) * 0.28 + rockIndex * 0.16;
-        position.set(x, this.worldHeight(x, z) + height * 0.42, z);
-        rotation.setFromEuler(new THREE.Euler(hill.id * 0.23, hill.rotation + rockIndex * 0.8, rockIndex * 0.34));
-        scale.set(1.2 + rockIndex * 0.32, height, 0.9 + (hill.id % 3) * 0.22);
-        matrix.compose(position, rotation, scale);
-        mesh.setMatrixAt(instance++, matrix);
-      }
-    }
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    this.scene.add(mesh);
-  }
-
   private buildCampWalls(): void {
     const wallData = this.world.walls.filter((wall) => wall.kind === "wall");
+    if (wallData.length === 0) return;
     const geometry = new THREE.DodecahedronGeometry(1, 0);
     const material = makeMaterial(0x62665e, 1);
     const mesh = new THREE.InstancedMesh(geometry, material, wallData.length);
@@ -408,15 +344,7 @@ export class GameRenderer {
         const moisture = terrainMoistureAt(this.world, point);
         if (random() > clamp(0.42 + moisture * moistureBias, 0.18, 0.96)) continue;
         if (this.world.camps.some((camp) => Math.hypot(point.x - camp.x, point.z - camp.z) < camp.radius - 1.6)) continue;
-        const hitsTrail = this.world.camps.some((camp) => {
-          const dx = point.x - camp.x;
-          const dz = point.z - camp.z;
-          const forwardX = Math.cos(camp.entranceAngle);
-          const forwardZ = Math.sin(camp.entranceAngle);
-          const along = dx * forwardX + dz * forwardZ;
-          const across = Math.abs(-dx * forwardZ + dz * forwardX);
-          return along > camp.radius - 4 && along < camp.radius + 30 && across < 3.6;
-        });
+        const hitsTrail = this.world.camps.some((camp) => distanceToCampApproach(camp, point) < camp.approachWidth * 0.5 + 1.6);
         if (hitsTrail) continue;
         points.push({ ...point, scale: 0.62 + random() * 0.78, rotation: random() * Math.PI * 2 });
       }

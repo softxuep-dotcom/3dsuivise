@@ -1,7 +1,10 @@
 import bpy
+import base64
 import json
 import math
+import os
 import random
+import struct
 from pathlib import Path
 from mathutils import Vector
 
@@ -9,12 +12,22 @@ from mathutils import Vector
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE_DIR = ROOT / "authoring" / "terrain"
 BLUEPRINT_PATH = ROOT / "src" / "game" / "content" / "mapBlueprint.json"
+HEIGHTFIELD_PATH = ROOT / "src" / "game" / "content" / "terrainHeightfield.json"
 BLEND_PATH = SOURCE_DIR / "ember_ridge_map.blend"
-OVERVIEW_PATH = SOURCE_DIR / "preview_overview.png"
-START_PATH = SOURCE_DIR / "preview_start_camp.png"
+PREVIEW_SUFFIX = os.environ.get("TERRAIN_PREVIEW_SUFFIX", "")
+OVERVIEW_PATH = SOURCE_DIR / f"preview_overview{PREVIEW_SUFFIX}.png"
+START_PATH = SOURCE_DIR / f"preview_start_camp{PREVIEW_SUFFIX}.png"
+CAMP_PREVIEW_PATHS = [SOURCE_DIR / f"preview_camp_{index + 1}{PREVIEW_SUFFIX}.png" for index in range(5)]
+LOW_PREVIEW_PATHS = [SOURCE_DIR / f"preview_camp_{index + 1}_low{PREVIEW_SUFFIX}.png" for index in range(5)]
+SLOPE_PATH = SOURCE_DIR / f"preview_slope{PREVIEW_SUFFIX}.png"
+NAV_PATH = SOURCE_DIR / f"preview_navigation{PREVIEW_SUFFIX}.png"
 
 with BLUEPRINT_PATH.open("r", encoding="utf-8") as handle:
     BLUEPRINT = json.load(handle)
+with HEIGHTFIELD_PATH.open("r", encoding="utf-8") as handle:
+    HEIGHTFIELD = json.load(handle)
+height_bytes = base64.b64decode(HEIGHTFIELD["data"])
+HEIGHT_VALUES = struct.unpack(f"<{len(height_bytes) // 2}H", height_bytes)
 
 
 def clamp(value, minimum, maximum):
@@ -54,61 +67,81 @@ def value_noise(x, y, seed):
 
 def base_height(x, y):
     seed = BLUEPRINT["seed"]
-    height = value_noise(x / 34.0, y / 34.0, seed) * 0.72
-    height += value_noise(x / 16.0, y / 16.0, seed + 31) * 0.28
-    height += value_noise(x / 7.5, y / 7.5, seed + 79) * 0.08
-    for ridge in BLUEPRINT["ridges"]:
+    warped_x = x + value_noise(x / 54.0, y / 54.0, seed + 901) * 7.5
+    warped_y = y + value_noise(x / 54.0, y / 54.0, seed + 977) * 7.5
+    ridge_field = 1.0 - abs(value_noise(warped_x / 34.0, warped_y / 34.0, seed + 401))
+    height = value_noise(warped_x / 62.0, warped_y / 62.0, seed) * 1.25
+    height += value_noise(warped_x / 29.0, warped_y / 29.0, seed + 31) * 0.82
+    height += (ridge_field - 0.48) * 1.45
+    height += value_noise(warped_x / 9.0, warped_y / 9.0, seed + 79) * 0.14
+    for ridge_id, ridge in enumerate(BLUEPRINT["ridges"]):
         dx = x - ridge["x"]
         dy = y - ridge["z"]
         cosine = math.cos(-ridge["rotation"])
         sine = math.sin(-ridge["rotation"])
         local_x = dx * cosine - dy * sine
         local_y = dx * sine + dy * cosine
-        q = local_x * local_x / (ridge["scaleX"] ** 2) + local_y * local_y / (ridge["scaleZ"] ** 2)
+        local_y += math.sin(local_x / max(5.0, ridge["scaleX"]) * math.pi * 1.7 + ridge_id * 0.73) * ridge["scaleZ"] * 0.09
+        edge_noise = value_noise((x + ridge_id * 17) / 12.0, (y - ridge_id * 11) / 12.0, seed + 1301) * 0.12
+        q = (local_x * local_x / (ridge["scaleX"] ** 2) + local_y * local_y / (ridge["scaleZ"] ** 2)) / (1.0 + edge_noise)
         if q < 1.0:
-            height += ridge["height"] * ((1.0 - q) ** 2)
+            height += ridge["height"] * (smoothstep(1.0, 0.0, q) ** 1.35)
     return height
+
+
+def camp_approach_offset(camp, camp_id, along):
+    start = camp["radius"] * 0.55
+    end = camp["radius"] + 24.0
+    amount = clamp((along - start) / (end - start), 0.0, 1.0)
+    return math.sin(amount * math.pi) * math.sin(camp_id * 1.73 + 0.55) * 1.75
 
 
 def shape_camp(height, camp, camp_id, x, y):
     dx = x - camp["x"]
     dy = y - camp["z"]
-    radius = 11.0
-    distance = math.hypot(dx, dy)
-    plateau = 1.0 - smoothstep(radius - 1.8, radius + 5.8, distance)
-    detail = math.sin((x + camp_id * 13) * 0.42) * math.cos((y - camp_id * 7) * 0.37) * 0.035
-    result = lerp(height, camp["elevation"] + detail, plateau)
-    angle = math.atan2(dy, dx)
-    angle_difference = abs((angle - camp["entranceAngle"] + math.pi) % math.tau - math.pi)
-    gap_edge = (0.19 if camp["kind"] == "deep-cave" else 0.32 if camp["kind"] == "windy-ridge" else 0.25) + (0.3 if camp["kind"] == "deep-cave" else 0.42)
-    entrance_width = 0.19 if camp["kind"] == "deep-cave" else 0.32 if camp["kind"] == "windy-ridge" else 0.25
-    closed_side = smoothstep(entrance_width * 0.72, gap_edge, angle_difference)
-    inner_ring = smoothstep(radius - 4.8, radius - 0.2, distance)
-    outer_ring = 1.0 - smoothstep(radius + 1.3, radius + 7.2, distance)
-    ring = inner_ring * outer_ring
-    back_facing = smoothstep(0.25, 1.0, (1.0 - math.cos(angle_difference)) * 0.5)
-    wall_height = 5.2 if camp["kind"] == "deep-cave" else 2.4 if camp["kind"] == "windy-ridge" else 2.75
-    enclosure = 0.48 + back_facing * 0.52 if camp["kind"] == "abandoned-camp" else 1.0
-    result += ring * closed_side * enclosure * wall_height
+    radius = camp["radius"]
     forward_x = math.cos(camp["entranceAngle"])
     forward_y = math.sin(camp["entranceAngle"])
     along = dx * forward_x + dy * forward_y
-    across = abs(-dx * forward_y + dy * forward_x)
-    if radius - 4.0 < along < radius + 22.0 and across < 6.2:
-        lane = 1.0 - smoothstep(3.4, 6.2, across)
-        start = smoothstep(radius - 4.0, radius + 1.0, along)
-        end = 1.0 - smoothstep(radius + 15.0, radius + 22.0, along)
-        ramp_t = smoothstep(radius - 1.0, radius + 19.0, along)
-        target = lerp(camp["elevation"], height, ramp_t)
+    across = -dx * forward_y + dy * forward_x
+    half_across = radius * (0.73 + (camp_id % 3) * 0.045)
+    half_along = radius * (1.24 + ((camp_id + 1) % 2) * 0.1)
+    shifted_along = along + radius * 0.28
+    result = height
+    profile_angle = math.atan2(across / half_across, shifted_along / half_along)
+    edge_warp = 1.0 + math.sin(profile_angle * 3.0 + camp_id * 1.41) * 0.11 + math.sin(profile_angle * 5.0 - camp_id * 0.83) * 0.055
+    profile = math.hypot(across / half_across, shifted_along / half_along) / edge_warp
+    plateau = 1.0 - smoothstep(0.82, 1.025, profile)
+    detail = value_noise((x + camp_id * 13) / 7.5, (y - camp_id * 7) / 7.5, 6101 + camp_id) * 0.16
+    crown = camp["elevation"] + detail + (1.0 - clamp(profile, 0.0, 1.0)) * 0.1
+    result = lerp(result, crown, plateau)
+    ramp_start = radius * 0.55
+    ramp_end = radius + 24.0
+    if ramp_start - 1.5 < along < ramp_end and abs(across) < 5.2:
+        centered_across = abs(across - camp_approach_offset(camp, camp_id, along))
+        lane = 1.0 - smoothstep(1.7, 3.05, centered_across)
+        start = smoothstep(ramp_start - 1.5, ramp_start + 1.2, along)
+        end = 1.0 - smoothstep(ramp_end - 4.0, ramp_end, along)
+        descent = smoothstep(radius - 1.8, ramp_end - 4.5, along)
+        target = lerp(camp["elevation"] + detail * 0.3, height, descent)
         result = lerp(result, target, lane * start * end)
     return result
 
 
 def terrain_height(x, y):
-    height = base_height(x, y)
-    for camp_id, camp in enumerate(BLUEPRINT["camps"]):
-        height = shape_camp(height, camp, camp_id, x, y)
-    return height
+    resolution = HEIGHTFIELD["resolution"]
+    size = HEIGHTFIELD["size"]
+    grid_x = clamp((x + size * 0.5) / size * resolution, 0.0, resolution)
+    grid_y = clamp((y + size * 0.5) / size * resolution, 0.0, resolution)
+    x0, y0 = math.floor(grid_x), math.floor(grid_y)
+    x1, y1 = min(resolution, x0 + 1), min(resolution, y0 + 1)
+    stride = resolution + 1
+    height_range = HEIGHTFIELD["maxHeight"] - HEIGHTFIELD["minHeight"]
+    def decode(index):
+        return HEIGHTFIELD["minHeight"] + HEIGHT_VALUES[index] / 65535.0 * height_range
+    top = lerp(decode(y0 * stride + x0), decode(y0 * stride + x1), grid_x - x0)
+    bottom = lerp(decode(y1 * stride + x0), decode(y1 * stride + x1), grid_x - x0)
+    return lerp(top, bottom, grid_y - y0)
 
 
 def terrain_slope(x, y, distance=0.9):
@@ -121,8 +154,8 @@ def terrain_snow(x, y):
     height = terrain_height(x, y)
     slope = terrain_slope(x, y, 1.1)
     drift = value_noise(x / 11.0, y / 11.0, BLUEPRINT["seed"] + 503) * 0.5 + 0.5
-    altitude = smoothstep(3.4, 6.2, height)
-    return clamp(altitude * (1.0 - smoothstep(0.38, 0.9, slope)) * smoothstep(0.46, 0.76, drift), 0.0, 1.0)
+    altitude = smoothstep(11.5, 13.5, height)
+    return clamp(altitude * (1.0 - smoothstep(0.38, 0.9, slope)) * smoothstep(0.58, 0.82, drift), 0.0, 1.0)
 
 
 def make_material(name, color, roughness=1.0, emission=None):
@@ -169,6 +202,14 @@ MAT_FLAG = make_material("Wind_Flag", (0.43, 0.18, 0.10))
 MAT_PATH = make_material("Ground_WornPath", (0.42, 0.31, 0.19))
 MAT_COVER = make_material("Ground_DryCover", (0.28, 0.34, 0.19))
 
+MAT_TERRAIN = bpy.data.materials.new("Terrain_VertexBlend")
+MAT_TERRAIN.use_nodes = True
+terrain_principled = MAT_TERRAIN.node_tree.nodes.get("Principled BSDF")
+terrain_principled.inputs["Roughness"].default_value = 0.96
+terrain_vertex_color = MAT_TERRAIN.node_tree.nodes.new("ShaderNodeVertexColor")
+terrain_vertex_color.layer_name = "TerrainColor"
+MAT_TERRAIN.node_tree.links.new(terrain_vertex_color.outputs["Color"], terrain_principled.inputs["Base Color"])
+
 
 def move_to_collection(obj, collection):
     for owner in list(obj.users_collection):
@@ -184,6 +225,60 @@ def add_rock(name, x, y, z, scale=(1.0, 1.0, 1.0), rotation=(0.0, 0.0, 0.0), mat
     obj.data.materials.append(material)
     move_to_collection(obj, collection or COLLECTIONS["landmarks"])
     return obj
+
+
+def mix_color(a, b, amount):
+    return tuple(lerp(a[index], b[index], clamp(amount, 0.0, 1.0)) for index in range(3))
+
+
+def point_segment_distance(x, y, start, end):
+    vx, vy = end[0] - start[0], end[1] - start[1]
+    amount = clamp(((x - start[0]) * vx + (y - start[1]) * vy) / max(0.0001, vx * vx + vy * vy), 0.0, 1.0)
+    return math.hypot(x - (start[0] + vx * amount), y - (start[1] + vy * amount))
+
+
+def camp_local_to_world(camp, point):
+    forward_x = math.cos(camp["entranceAngle"])
+    forward_y = math.sin(camp["entranceAngle"])
+    side_x, side_y = -forward_y, forward_x
+    return (
+        camp["x"] + side_x * point["x"] + forward_x * point["z"],
+        camp["z"] + side_y * point["x"] + forward_y * point["z"],
+    )
+
+
+def camp_path_distance(camp, x, y):
+    points = [camp_local_to_world(camp, point) for point in camp["approach"]]
+    return min(point_segment_distance(x, y, start, end) for start, end in zip(points, points[1:]))
+
+
+def terrain_color(x, y):
+    # Keep Blender's vertex preview close to the WebGL palette so the .blend
+    # remains a trustworthy authoring artifact instead of a nearly-black debug view.
+    dry = (0.467, 0.467, 0.361)
+    damp = (0.349, 0.400, 0.306)
+    soil = (0.353, 0.271, 0.196)
+    rock = (0.400, 0.420, 0.404)
+    snow = (0.765, 0.796, 0.769)
+    height = terrain_height(x, y)
+    slope = terrain_slope(x, y, 1.15)
+    moisture_noise = value_noise(x / 18.0, y / 18.0, BLUEPRINT["seed"] + 211) * 0.5 + 0.5
+    moisture = clamp(moisture_noise * 0.72 + clamp((1.8 - height) / 7.0, 0.0, 0.35), 0.0, 1.0)
+    color = mix_color(dry, damp, moisture * 0.72)
+    camp_wear_amount = 0.0
+    path_wear_amount = 0.0
+    for camp in BLUEPRINT["camps"]:
+        distance = math.hypot(x - camp["x"], y - camp["z"])
+        camp_wear = 1.0 - smoothstep(camp["radius"] * 0.2, camp["radius"] * 0.55, distance)
+        path_wear = 1.0 - smoothstep(camp["approachWidth"] * 0.48, camp["approachWidth"] * 0.48 + 1.65, camp_path_distance(camp, x, y))
+        camp_wear_amount = max(camp_wear_amount, camp_wear * 0.42)
+        path_wear_amount = max(path_wear_amount, path_wear)
+    color = mix_color(color, soil, camp_wear_amount)
+    color = mix_color(color, rock, smoothstep(0.3, 0.72, slope))
+    color = mix_color(color, soil, path_wear_amount * 0.84)
+    color = mix_color(color, snow, terrain_snow(x, y) * 0.9 * (1.0 - path_wear_amount * 0.82))
+    macro = 0.93 + value_noise(x / 24.0, y / 24.0, BLUEPRINT["seed"] + 1703) * 0.055
+    return tuple(clamp(channel * macro, 0.0, 1.0) for channel in color)
 
 
 size = BLUEPRINT["size"] + 8.0
@@ -203,44 +298,15 @@ for row in range(segments):
 mesh = bpy.data.meshes.new("EmberRidge_Heightfield")
 mesh.from_pydata(vertices, [], faces)
 mesh.materials.clear()
-for material in (MAT_GRASS, MAT_SOIL, MAT_ROCK, MAT_SNOW):
-    mesh.materials.append(material)
+mesh.materials.append(MAT_TERRAIN)
+colors = mesh.color_attributes.new(name="TerrainColor", type="BYTE_COLOR", domain="POINT")
+for vertex in mesh.vertices:
+    color = terrain_color(vertex.co.x, vertex.co.y)
+    colors.data[vertex.index].color = (*color, 1.0)
+for polygon in mesh.polygons:
+    polygon.use_smooth = True
 terrain = bpy.data.objects.new("TERRAIN_Heightfield", mesh)
 COLLECTIONS["terrain"].objects.link(terrain)
-for polygon in mesh.polygons:
-    center = terrain.data.vertices[polygon.vertices[0]].co
-    x, y = center.x, center.y
-    slope = terrain_slope(x, y)
-    snow = terrain_snow(x, y)
-    in_camp = any(math.hypot(x - camp["x"], y - camp["z"]) < 10.5 for camp in BLUEPRINT["camps"])
-    polygon.material_index = 3 if snow > 0.28 else 2 if slope > 0.5 else 1 if in_camp else 0
-
-trail_vertices = []
-trail_faces = []
-for camp_id, camp in enumerate(BLUEPRINT["camps"]):
-    forward_x = math.cos(camp["entranceAngle"])
-    forward_y = math.sin(camp["entranceAngle"])
-    side_x, side_y = -forward_y, forward_x
-    start_vertex = len(trail_vertices)
-    for step in range(19):
-        amount = step / 18.0
-        along = 8.0 + amount * 29.0
-        bend = math.sin(amount * math.pi) * math.sin(camp_id * 2.17) * 2.1
-        center_x = camp["x"] + forward_x * along + side_x * bend
-        center_y = camp["z"] + forward_y * along + side_y * bend
-        width = 1.55 * (0.18 + math.sin(amount * math.pi) * 0.82)
-        for direction in (-1.0, 1.0):
-            x = center_x + side_x * width * direction
-            y = center_y + side_y * width * direction
-            trail_vertices.append((x, y, terrain_height(x, y) + 0.045))
-        if step < 18:
-            row = start_vertex + step * 2
-            trail_faces.append((row, row + 1, row + 3, row + 2))
-trail_mesh = bpy.data.meshes.new("Camp_Trail_Ribbons")
-trail_mesh.from_pydata(trail_vertices, [], trail_faces)
-trail_mesh.materials.append(MAT_PATH)
-trails = bpy.data.objects.new("TERRAIN_WornTrails", trail_mesh)
-COLLECTIONS["terrain"].objects.link(trails)
 
 cover_vertices = []
 cover_faces = []
@@ -253,7 +319,7 @@ while cover_count < 520 and cover_attempts < 9000:
     y = cover_random.uniform(-105, 105)
     if terrain_slope(x, y) > 0.5:
         continue
-    if any(math.hypot(x - camp["x"], y - camp["z"]) < 10.0 for camp in BLUEPRINT["camps"]):
+    if any(math.hypot(x - camp["x"], y - camp["z"]) < camp["radius"] - 1.5 for camp in BLUEPRINT["camps"]):
         continue
     base = len(cover_vertices)
     scale = cover_random.uniform(0.35, 0.82)
@@ -294,28 +360,16 @@ for camp_id, camp in enumerate(BLUEPRINT["camps"]):
     marker.empty_display_type = "CIRCLE"
     marker.empty_display_size = 2.0
     COLLECTIONS["markers"].objects.link(marker)
-    entrance_x = cx + math.cos(camp["entranceAngle"]) * 13.0
-    entrance_y = cy + math.sin(camp["entranceAngle"]) * 13.0
+    forward_x = math.cos(camp["entranceAngle"])
+    forward_y = math.sin(camp["entranceAngle"])
+    side_x, side_y = -forward_y, forward_x
+    entrance_x = cx + side_x * camp["gate"]["x"] + forward_x * camp["gate"]["z"]
+    entrance_y = cy + side_y * camp["gate"]["x"] + forward_y * camp["gate"]["z"]
     entrance = bpy.data.objects.new(f"CAMP_{camp_id:02d}_ENTRANCE", None)
     entrance.location = (entrance_x, entrance_y, terrain_height(entrance_x, entrance_y) + 0.2)
     entrance.empty_display_type = "ARROWS"
     entrance.rotation_euler[2] = camp["entranceAngle"]
     COLLECTIONS["markers"].objects.link(entrance)
-
-    width = 0.19 if camp["kind"] == "deep-cave" else 0.32 if camp["kind"] == "windy-ridge" else 0.25
-    segments = 18 if camp["kind"] == "deep-cave" else 15 if camp["kind"] == "abandoned-camp" else 13
-    for segment in range(segments):
-        angle = segment / float(segments) * math.tau
-        difference = abs((angle - camp["entranceAngle"] + math.pi) % math.tau - math.pi)
-        if difference < width:
-            continue
-        x = cx + math.cos(angle) * 11.0
-        y = cy + math.sin(angle) * 11.0
-        add_rock(
-            f"CAMP_{camp_id:02d}_Wall_{segment:02d}", x, y, terrain_height(x, y) + 0.7,
-            (1.45 + (segment % 3) * 0.14, 1.18 + (segment % 2) * 0.12, 1.65 + (segment % 4) * 0.18),
-            (segment * 0.13, segment * 0.07, angle), MAT_WALL, COLLECTIONS["camps"],
-        )
 
     bpy.ops.mesh.primitive_cylinder_add(vertices=8, radius=0.72, depth=1.0, location=(cx, cy, elevation + 0.5))
     fire = bpy.context.object
@@ -323,9 +377,8 @@ for camp_id, camp in enumerate(BLUEPRINT["camps"]):
     fire.data.materials.append(MAT_FIRE)
     move_to_collection(fire, COLLECTIONS["camps"])
 
-    inward = 8.9
-    stone_x = cx + math.cos(camp["entranceAngle"]) * inward
-    stone_y = cy + math.sin(camp["entranceAngle"]) * inward
+    stone_x = entrance_x
+    stone_y = entrance_y
     add_rock(
         f"CAMP_{camp_id:02d}_MovableBoulder", stone_x, stone_y, terrain_height(stone_x, stone_y) + 0.8,
         (1.55, 1.3, 1.1), (0.1, 0.22, camp["entranceAngle"]), MAT_WALL, COLLECTIONS["camps"],
@@ -387,13 +440,13 @@ for camp_id, camp in enumerate(BLUEPRINT["camps"]):
 random.seed(BLUEPRINT["seed"] + 2026)
 tree_count = 0
 attempts = 0
-while tree_count < 34 and attempts < 1200:
+while tree_count < 18 and attempts < 1200:
     attempts += 1
     x = random.uniform(-103, 103)
     y = random.uniform(-103, 103)
     if terrain_slope(x, y) > 0.42:
         continue
-    if any(math.hypot(x - camp["x"], y - camp["z"]) < 14.0 for camp in BLUEPRINT["camps"]):
+    if any(math.hypot(x - camp["x"], y - camp["z"]) < camp["radius"] + 3.0 for camp in BLUEPRINT["camps"]):
         continue
     height = terrain_height(x, y)
     bpy.ops.mesh.primitive_cone_add(vertices=7, radius1=1.15, radius2=0.08, depth=3.8, location=(x, y, height + 2.7))
@@ -413,21 +466,21 @@ def point_camera(camera, target):
 bpy.ops.object.light_add(type="SUN", location=(-45, -55, 80))
 sun = bpy.context.object
 sun.name = "Preview_Sun"
-sun.data.energy = 3.2
-sun.rotation_euler = (math.radians(28), math.radians(-24), math.radians(-32))
-sun.data.color = (1.0, 0.84, 0.66)
+sun.data.energy = 2.7
+sun.rotation_euler = (math.radians(36), math.radians(-18), math.radians(-58))
+sun.data.color = (1.0, 0.9, 0.78)
 
 bpy.ops.object.light_add(type="AREA", location=(25, -20, 55))
 fill = bpy.context.object
 fill.name = "Preview_SkyFill"
-fill.data.energy = 1600
+fill.data.energy = 560
 fill.data.shape = "DISK"
 fill.data.size = 85
 
-bpy.ops.object.camera_add(location=(126, -146, 166))
+bpy.ops.object.camera_add(location=(148, -178, 190))
 camera = bpy.context.object
 camera.name = "Preview_Camera"
-camera.data.lens = 56
+camera.data.lens = 54
 point_camera(camera, (0, 0, 0))
 bpy.context.scene.camera = camera
 
@@ -439,17 +492,83 @@ scene.render.resolution_percentage = 100
 scene.render.image_settings.file_format = "PNG"
 scene.render.film_transparent = False
 scene.world.color = (0.055, 0.075, 0.08)
+scene.world.use_nodes = True
+world_background = scene.world.node_tree.nodes.get("Background")
+world_background.inputs["Color"].default_value = (0.035, 0.055, 0.07, 1.0)
+world_background.inputs["Strength"].default_value = 0.38
 scene.view_settings.look = "AgX - Medium High Contrast"
 
 scene.render.filepath = str(OVERVIEW_PATH)
 bpy.ops.wm.save_as_mainfile(filepath=str(BLEND_PATH))
 bpy.ops.render.render(write_still=True)
 
-camera.location = (-3, -67, 39)
-camera.data.lens = 52
-point_camera(camera, (-30, -30, 1.0))
+start_camp = BLUEPRINT["camps"][BLUEPRINT["startCampId"]]
+camera.location = (start_camp["x"] + 35, start_camp["z"] + 26, 34)
+camera.data.lens = 54
+point_camera(camera, (start_camp["x"], start_camp["z"], start_camp["elevation"] + 0.5))
 scene.render.filepath = str(START_PATH)
 bpy.ops.render.render(write_still=True)
+
+# Bare-terrain review set. Props are intentionally hidden: each shelter must
+# read from geology alone at a shared camera/lens before decoration can help it.
+COLLECTIONS["camps"].hide_render = True
+COLLECTIONS["landmarks"].hide_render = True
+for index, camp in enumerate(BLUEPRINT["camps"]):
+    last_x, last_y = camp_local_to_world(camp, camp["approach"][-1])
+    direction_x, direction_y = last_x - camp["x"], last_y - camp["z"]
+    length = max(0.001, math.hypot(direction_x, direction_y))
+    direction_x, direction_y = direction_x / length, direction_y / length
+    side_x, side_y = -direction_y, direction_x
+
+    camera.location = (
+        camp["x"] + direction_x * 48.0 + side_x * 25.0,
+        camp["z"] + direction_y * 48.0 + side_y * 25.0,
+        camp["elevation"] + 48.0,
+    )
+    camera.data.lens = 52
+    point_camera(camera, (camp["x"], camp["z"], camp["elevation"] - 0.2))
+    scene.render.filepath = str(CAMP_PREVIEW_PATHS[index])
+    bpy.ops.render.render(write_still=True)
+
+    camera.location = (
+        camp["x"] + direction_x * 52.0 + side_x * 12.0,
+        camp["z"] + direction_y * 52.0 + side_y * 12.0,
+        terrain_height(camp["x"] + direction_x * 52.0, camp["z"] + direction_y * 52.0) + 13.0,
+    )
+    camera.data.lens = 50
+    point_camera(camera, (camp["x"], camp["z"], camp["elevation"] + 1.2))
+    scene.render.filepath = str(LOW_PREVIEW_PATHS[index])
+    bpy.ops.render.render(write_still=True)
+
+# Slope and navigation validation use the exact same sampled heightfield as the
+# browser. The colors are temporary and restored before saving the .blend.
+original_colors = [tuple(item.color) for item in colors.data]
+camera.data.type = "ORTHO"
+camera.data.ortho_scale = BLUEPRINT["size"] + 6.0
+camera.location = (0.0, 0.0, 180.0)
+camera.rotation_euler = (0.0, 0.0, 0.0)
+scene.render.resolution_x = 1024
+scene.render.resolution_y = 1024
+for vertex in mesh.vertices:
+    slope = terrain_slope(vertex.co.x, vertex.co.y, 0.72)
+    amount = smoothstep(0.12, 1.15, slope)
+    colors.data[vertex.index].color = (0.12 + amount * 0.78, 0.62 - amount * 0.47, 0.18, 1.0)
+scene.render.filepath = str(SLOPE_PATH)
+bpy.ops.render.render(write_still=True)
+
+for vertex in mesh.vertices:
+    walkable = terrain_slope(vertex.co.x, vertex.co.y, 0.72) <= BLUEPRINT["maxWalkableSlope"]
+    colors.data[vertex.index].color = (0.12, 0.52, 0.2, 1.0) if walkable else (0.72, 0.08, 0.06, 1.0)
+scene.render.filepath = str(NAV_PATH)
+bpy.ops.render.render(write_still=True)
+
+for item, color in zip(colors.data, original_colors):
+    item.color = color
+camera.data.type = "PERSP"
+scene.render.resolution_x = 1280
+scene.render.resolution_y = 820
+COLLECTIONS["camps"].hide_render = False
+COLLECTIONS["landmarks"].hide_render = False
 bpy.ops.wm.save_as_mainfile(filepath=str(BLEND_PATH))
 
 print(f"Saved {BLEND_PATH}")

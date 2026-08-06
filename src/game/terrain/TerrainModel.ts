@@ -1,12 +1,39 @@
+import terrainHeightfield from "../content/terrainHeightfield.json";
 import { clamp, lerp } from "../simulation/geometry";
 import type { CampDefinition, Vec2, WorldDefinition } from "../simulation/types";
 
-type TerrainWorld = Pick<WorldDefinition, "camps" | "hills" | "terrain">;
+type TerrainWorld = Pick<WorldDefinition, "terrain">;
+
+interface HeightfieldPayload {
+  size: number;
+  resolution: number;
+  minHeight: number;
+  maxHeight: number;
+  encoding: "uint16-le-base64";
+  data: string;
+}
+
+const HEIGHTFIELD = terrainHeightfield as HeightfieldPayload;
 
 const smoothstep = (edge0: number, edge1: number, value: number): number => {
   const t = clamp((value - edge0) / Math.max(0.0001, edge1 - edge0), 0, 1);
   return t * t * (3 - 2 * t);
 };
+
+const decodeHeightfield = (): Float32Array => {
+  const binary = atob(HEIGHTFIELD.data);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  const view = new DataView(bytes.buffer);
+  const values = new Float32Array(binary.length / 2);
+  const range = HEIGHTFIELD.maxHeight - HEIGHTFIELD.minHeight;
+  for (let index = 0; index < values.length; index += 1) {
+    values[index] = HEIGHTFIELD.minHeight + view.getUint16(index * 2, true) / 65535 * range;
+  }
+  return values;
+};
+
+const HEIGHTS = decodeHeightfield();
 
 const hash = (x: number, z: number, seed: number): number => {
   let value = Math.imul(x, 374761393) + Math.imul(z, 668265263) + Math.imul(seed, 1442695041);
@@ -26,66 +53,47 @@ const valueNoise = (x: number, z: number, seed: number): number => {
   return lerp(a, b, sz) * 2 - 1;
 };
 
-const baseHeight = (world: TerrainWorld, x: number, z: number): number => {
-  const seed = world.terrain.seed;
-  let height = valueNoise(x / 34, z / 34, seed) * 0.72;
-  height += valueNoise(x / 16, z / 16, seed + 31) * 0.28;
-  height += valueNoise(x / 7.5, z / 7.5, seed + 79) * 0.08;
-  for (const ridge of world.hills) {
-    const dx = x - ridge.x;
-    const dz = z - ridge.z;
-    const cosine = Math.cos(-ridge.rotation);
-    const sine = Math.sin(-ridge.rotation);
-    const localX = dx * cosine - dz * sine;
-    const localZ = dx * sine + dz * cosine;
-    const q = (localX * localX) / (ridge.scaleX * ridge.scaleX) + (localZ * localZ) / (ridge.scaleZ * ridge.scaleZ);
-    if (q >= 1) continue;
-    const weight = (1 - q) ** 2;
-    height += ridge.height * weight;
-  }
-  return height;
-};
-
-const shapeCamp = (height: number, camp: CampDefinition, x: number, z: number): number => {
-  const dx = x - camp.x;
-  const dz = z - camp.z;
-  const distance = Math.hypot(dx, dz);
-  const plateauBlend = 1 - smoothstep(camp.radius - 1.8, camp.radius + 5.8, distance);
-  const detail = Math.sin((x + camp.id * 13) * 0.42) * Math.cos((z - camp.id * 7) * 0.37) * 0.035;
-  let result = lerp(height, camp.elevation + detail, plateauBlend);
-
-  const angle = Math.atan2(dz, dx);
-  let angleDifference = Math.abs((angle - camp.entranceAngle + Math.PI) % (Math.PI * 2) - Math.PI);
-  if (angleDifference > Math.PI) angleDifference = Math.PI * 2 - angleDifference;
-  const gapEdge = camp.entranceWidth + (camp.kind === "deep-cave" ? 0.3 : 0.42);
-  const closedSide = smoothstep(camp.entranceWidth * 0.72, gapEdge, angleDifference);
-  const innerRing = smoothstep(camp.radius - 4.8, camp.radius - 0.2, distance);
-  const outerRing = 1 - smoothstep(camp.radius + 1.3, camp.radius + 7.2, distance);
-  const ring = innerRing * outerRing;
-  const backFacing = smoothstep(0.25, 1, (1 - Math.cos(angleDifference)) * 0.5);
-  const wallHeight = camp.kind === "deep-cave" ? 5.2 : camp.kind === "windy-ridge" ? 2.4 : 2.75;
-  const enclosure = camp.kind === "abandoned-camp" ? 0.48 + backFacing * 0.52 : 1;
-  result += ring * closedSide * enclosure * wallHeight;
-
+export function campLocalToWorld(camp: CampDefinition, local: Vec2): Vec2 {
   const forwardX = Math.cos(camp.entranceAngle);
   const forwardZ = Math.sin(camp.entranceAngle);
-  const along = dx * forwardX + dz * forwardZ;
-  const across = Math.abs(-dx * forwardZ + dz * forwardX);
-  if (along > camp.radius - 4 && along < camp.radius + 22 && across < 6.2) {
-    const lane = 1 - smoothstep(3.4, 6.2, across);
-    const start = smoothstep(camp.radius - 4, camp.radius + 1, along);
-    const end = 1 - smoothstep(camp.radius + 15, camp.radius + 22, along);
-    const rampT = smoothstep(camp.radius - 1, camp.radius + 19, along);
-    const target = lerp(camp.elevation, height, rampT);
-    result = lerp(result, target, lane * start * end);
-  }
-  return result;
-};
+  const sideX = -forwardZ;
+  const sideZ = forwardX;
+  return {
+    x: camp.x + sideX * local.x + forwardX * local.z,
+    z: camp.z + sideZ * local.x + forwardZ * local.z,
+  };
+}
 
-export function terrainHeightAt(world: TerrainWorld, point: Vec2): number {
-  let height = baseHeight(world, point.x, point.z);
-  for (const camp of world.camps) height = shapeCamp(height, camp, point.x, point.z);
-  return height;
+export function campGatePosition(camp: CampDefinition): Vec2 {
+  return campLocalToWorld(camp, camp.gate);
+}
+
+export function distanceToCampApproach(camp: CampDefinition, point: Vec2): number {
+  let best = Number.POSITIVE_INFINITY;
+  for (let index = 0; index < camp.approach.length - 1; index += 1) {
+    const start = campLocalToWorld(camp, camp.approach[index]);
+    const end = campLocalToWorld(camp, camp.approach[index + 1]);
+    const dx = end.x - start.x;
+    const dz = end.z - start.z;
+    const lengthSquared = Math.max(0.0001, dx * dx + dz * dz);
+    const amount = clamp(((point.x - start.x) * dx + (point.z - start.z) * dz) / lengthSquared, 0, 1);
+    best = Math.min(best, Math.hypot(point.x - (start.x + dx * amount), point.z - (start.z + dz * amount)));
+  }
+  return best;
+}
+
+export function terrainHeightAt(_world: TerrainWorld, point: Vec2): number {
+  const half = HEIGHTFIELD.size * 0.5;
+  const gridX = clamp((point.x + half) / HEIGHTFIELD.size * HEIGHTFIELD.resolution, 0, HEIGHTFIELD.resolution);
+  const gridZ = clamp((point.z + half) / HEIGHTFIELD.size * HEIGHTFIELD.resolution, 0, HEIGHTFIELD.resolution);
+  const x0 = Math.floor(gridX);
+  const z0 = Math.floor(gridZ);
+  const x1 = Math.min(HEIGHTFIELD.resolution, x0 + 1);
+  const z1 = Math.min(HEIGHTFIELD.resolution, z0 + 1);
+  const stride = HEIGHTFIELD.resolution + 1;
+  const top = lerp(HEIGHTS[z0 * stride + x0], HEIGHTS[z0 * stride + x1], gridX - x0);
+  const bottom = lerp(HEIGHTS[z1 * stride + x0], HEIGHTS[z1 * stride + x1], gridX - x0);
+  return lerp(top, bottom, gridZ - z0);
 }
 
 export function terrainSlopeAt(world: TerrainWorld, point: Vec2, sampleDistance = 0.7): number {
@@ -110,6 +118,6 @@ export function terrainSnowAt(world: TerrainWorld, point: Vec2): number {
   const height = terrainHeightAt(world, point);
   const slope = terrainSlopeAt(world, point, 1.1);
   const drift = valueNoise(point.x / 11, point.z / 11, world.terrain.seed + 503) * 0.5 + 0.5;
-  const altitude = smoothstep(3.4, 6.2, height);
-  return clamp(altitude * (1 - smoothstep(0.38, 0.9, slope)) * smoothstep(0.46, 0.76, drift), 0, 1);
+  const altitude = smoothstep(11.5, 13.5, height);
+  return clamp(altitude * (1 - smoothstep(0.38, 0.9, slope)) * smoothstep(0.58, 0.82, drift), 0, 1);
 }

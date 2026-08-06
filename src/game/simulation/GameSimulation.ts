@@ -9,7 +9,7 @@ import {
   segmentIntersectsCircle,
   TAU,
 } from "./geometry";
-import { isTerrainWalkable, terrainHeightAt } from "../terrain/TerrainModel";
+import { campGatePosition, isTerrainWalkable, terrainHeightAt } from "../terrain/TerrainModel";
 import { NavigationGrid } from "./NavigationGrid";
 import type {
   BerryPatch,
@@ -42,7 +42,7 @@ const DROP_LIFETIME = 180;
 
 const CAMP_LABELS: Record<CampKind, string> = {
   "windy-ridge": "风口高地",
-  "deep-cave": "深山洞",
+  "deep-cave": "背风崖穴",
   "abandoned-camp": "废弃营地",
 };
 
@@ -849,10 +849,7 @@ export class GameSimulation {
   }
 
   private isEntranceBlocked(camp: CampDefinition): boolean {
-    const entrance = {
-      x: camp.x + Math.cos(camp.entranceAngle) * camp.radius,
-      z: camp.z + Math.sin(camp.entranceAngle) * camp.radius,
-    };
+    const entrance = campGatePosition(camp);
     return this.items.some((item) => item.active && item.placed && item.kind === "stone" && distanceSquared(item, entrance) < 3.6 * 3.6);
   }
 
