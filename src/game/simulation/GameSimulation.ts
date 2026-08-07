@@ -40,6 +40,18 @@ const LATER_NIGHT_DURATION = 135;
 const MAX_WOLVES = 120;
 const DROP_LIFETIME = 180;
 
+// === 体温系统 ===
+// 体温是生死指标：0 = 冻死，100 = 中暑/过热死亡，50 = 中性起点
+const WARMTH_MIN = 0;
+const WARMTH_MAX = 100;
+const WARMTH_INITIAL = 50;
+// 各项速率（每秒）—— 三者独立累加，皮衣/地形不再影响体温
+//   篝火：+3.0/s   白天：+1.2/s   夜晚：-1.6/s
+//   组合示例：白天火边 = 3 + 1.2 = +4.2/s；夜晚火边 = 3 - 1.6 = +1.4/s
+const WARMTH_FIRE_GAIN = 3.0;      // 篝火边回温（独立分量，始终为正）
+const WARMTH_DAY_REGEN = 1.2;      // 白天基础回暖（独立分量）
+const WARMTH_NIGHT_LOSS = 1.6;     // 夜间寒冷流失（独立分量，始终为负）
+
 const CAMP_LABELS: Record<CampKind, string> = {
   "windy-ridge": "风口高地",
   "deep-cave": "背风崖穴",
@@ -76,6 +88,8 @@ export class GameSimulation {
   private gameOverSent = false;
   private duskWarningSent = false;
   private largeWolfAnnounced = false;
+  // 死因记录，供 UI 显示游戏结束文案
+  deathCause: "frozen" | "overheated" | "killed" | null = null;
 
   constructor(world: WorldDefinition) {
     this.world = world;
@@ -104,7 +118,7 @@ export class GameSimulation {
       maxHealth: 100,
       attack: 28,
       defense: 2,
-      warmth: 90,
+      warmth: WARMTH_INITIAL,
       hunger: 82,
       inventory: Array.from({ length: INVENTORY_CAPACITY }, () => null),
       carrying: null,
@@ -153,13 +167,28 @@ export class GameSimulation {
     this.updateObjectives();
 
     if (this.phaseTime <= 0) this.advancePhase();
-    if (this.player.health <= 0 && !this.gameOverSent) {
-      this.player.health = 0;
-      this.setResting(false);
-      this.running = false;
-      this.gameOverSent = true;
-      this.events.push({ type: "game-over" });
+
+    // 游戏结束判定：体温归零（冻死）/ 体温爆表（过热）/ 生命归零（被狼杀死或饿死）
+    if (!this.gameOverSent) {
+      if (this.player.warmth <= WARMTH_MIN) {
+        this.player.warmth = WARMTH_MIN;
+        this.endGame("frozen");
+      } else if (this.player.warmth >= WARMTH_MAX) {
+        this.player.warmth = WARMTH_MAX;
+        this.endGame("overheated");
+      } else if (this.player.health <= 0) {
+        this.player.health = 0;
+        this.endGame("killed");
+      }
     }
+  }
+
+  private endGame(cause: "frozen" | "overheated" | "killed"): void {
+    this.setResting(false);
+    this.running = false;
+    this.gameOverSent = true;
+    this.deathCause = cause;
+    this.events.push({ type: "game-over" });
   }
 
   requestInteraction(): void {
@@ -401,15 +430,17 @@ export class GameSimulation {
   getObjective(): string {
     if (!this.clockStarted) return "移动或拿起圆木，开始第一天";
     if (this.player.resting) return this.player.hunger < 40 ? "休息中 · 饥饿使恢复降至0.6/秒" : "休息中 · 生命每秒恢复1点";
-    if (this.player.warmth <= 0) return "体温归零 · 生命正在快速流失";
-    if (this.player.hunger <= 0) return "饥饿归零 · 生命正在流失";
+    // 体温端点警告（新机制）
+    if (this.player.warmth <= 10) return "即将冻死 · 立刻回到篝火边";
+    if (this.player.warmth >= 90) return "即将过热 · 远离篝火降温";
     if (this.player.warmth < 25) return "体温过低 · 移动与攻击减弱";
+    if (this.player.warmth > 75) return "体温偏高 · 暂时离开篝火";
+    if (this.player.hunger <= 0) return "饥饿归零 · 生命正在流失";
     if (this.player.hunger < 20) return "严重饥饿 · 无法休息且攻击减弱";
     if (this.phase === "day" && this.day === 1 && this.phaseTime <= 14) return "天快黑了 · 用入口大石封住缺口";
     if (this.phase === "night") {
       const lit = this.getNearestLitCamp();
-      if (!lit && this.player.warmth <= 0) return "体温归零 · 寒冷正在伤害你";
-      if (!lit) return "篝火熄灭 · 体温正在下降";
+      if (!lit) return "篝火熄灭 · 体温正在下降，尽快添柴";
       if (lit.fuel < 25) return "火快灭了：再搬一根圆木";
       return "守住火光；狼死亡会掉落肉和皮";
     }
@@ -435,23 +466,31 @@ export class GameSimulation {
   }
 
   private updateNeeds(delta: number): void {
-    this.player.hunger = clamp(this.player.hunger - delta * 0.12, 0, 100);
+    // 饥饿下降速率 0.55/s，约 3 分钟满→空
+    this.player.hunger = clamp(this.player.hunger - delta * 0.55, 0, 100);
+
+    // === 体温系统 ===
+    // 规则：三个独立分量相加，互不依赖，皮衣/地形不再影响体温。
+    //   篝火边：+WARMTH_FIRE_GAIN（+3.0/s）
+    //   白天  ：+WARMTH_DAY_REGEN（+1.2/s）
+    //   夜晚  ：+WARMTH_NIGHT_LOSS（-1.6/s，本身是负值方向，用减法表达）
+    // 组合：
+    //   白天火边 = 3.0 + 1.2         = +4.2/s
+    //   白天无火 = 1.2               = +1.2/s
+    //   夜晚火边 = 3.0 - 1.6         = +1.4/s
+    //   夜晚无火 = -1.6              = -1.6/s
     const nearFire = this.camps.some((camp) => {
       if (camp.fuel <= 0) return false;
       return distanceSquared(this.player, this.world.camps[camp.id]) < 8.2 * 8.2;
     });
-    if (nearFire) {
-      this.player.warmth = clamp(this.player.warmth + delta * 6.2, 0, 100);
-    } else if (this.phase === "night") {
-      const shelter = this.findNearestCamp(13.2);
-      const shelterMultiplier = shelter?.kind === "deep-cave" ? 0.58 : shelter?.kind === "windy-ridge" ? 1.25 : 0.9;
-      const coatMultiplier = this.player.hasLeatherCoat ? 0.65 : 1;
-      this.player.warmth = clamp(this.player.warmth - delta * 1.15 * shelterMultiplier * coatMultiplier, 0, 100);
-    } else {
-      this.player.warmth = clamp(this.player.warmth + delta * 0.32, 0, 100);
-    }
+    let warmthDelta = 0;
+    if (nearFire) warmthDelta += WARMTH_FIRE_GAIN;
+    if (this.phase === "day") warmthDelta += WARMTH_DAY_REGEN;
+    else warmthDelta -= WARMTH_NIGHT_LOSS;
+    this.player.warmth = clamp(this.player.warmth + delta * warmthDelta, WARMTH_MIN, WARMTH_MAX);
+
+    // 饥饿归零仍扣血（保留原机制），体温端点改为直接触发游戏结束（见 update()）
     if (this.player.hunger <= 0) this.player.health -= delta * 2.6;
-    if (this.player.warmth <= 0) this.player.health -= delta * 3.8;
   }
 
   private updateRest(delta: number): void {
@@ -512,7 +551,8 @@ export class GameSimulation {
 
   private updateWolves(delta: number): void {
     const livingCount = this.wolves.filter((wolf) => wolf.mode !== "dead").length;
-    const target = Math.min(72, 42 + (this.day - 1) * 10);
+    // 每夜目标狼数大幅上调：D1 26→40，D2 36→55，D3+ 46→70，压力明显增强
+    const target = Math.min(90, 40 + (this.day - 1) * 15);
     if (this.phase === "night" && livingCount < MAX_WOLVES && this.spawnedThisNight < target) {
       this.spawnCountdown -= delta;
       if (this.spawnCountdown <= 0) {
@@ -520,7 +560,8 @@ export class GameSimulation {
         this.spawnedThisNight += 1;
         const nightProgress = clamp(1 - this.phaseTime / this.getPhaseDuration(), 0, 1);
         const nightlyPressure = Math.max(0.78, 1 - (this.day - 1) * 0.09);
-        const curvedInterval = 0.9 + Math.pow(nightProgress, 0.8) * 4.8;
+        // 刷怪间隔曲线整体压缩：从 0.9~5.7s 缩到 0.7~4.0s，前期更密集
+        const curvedInterval = 0.7 + Math.pow(nightProgress, 0.8) * 3.3;
         this.spawnCountdown = curvedInterval * nightlyPressure * (0.85 + this.random() * 0.3);
       }
     }

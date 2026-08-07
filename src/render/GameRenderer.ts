@@ -940,15 +940,19 @@ export class GameRenderer {
 
   private syncDayNight(): void {
     const daylight = this.simulation.getDaylight();
-    const sky = new THREE.Color().lerpColors(new THREE.Color(0x31445f), new THREE.Color(0x9bb8c2), daylight);
+    // 夜晚基础亮度整体抬高：天空从深蓝偏向月夜蓝，避免一片漆黑
+    const sky = new THREE.Color().lerpColors(new THREE.Color(0x4a6080), new THREE.Color(0x9bb8c2), daylight);
     this.scene.background = sky;
     if (this.scene.fog) this.scene.fog.color.copy(sky);
-    this.hemisphere.color.lerpColors(new THREE.Color(0x91a8d0), new THREE.Color(0xdff7ff), daylight);
-    this.hemisphere.groundColor.lerpColors(new THREE.Color(0x35404d), new THREE.Color(0x52616a), daylight);
-    this.hemisphere.intensity = lerp(1.34, 2.2, daylight);
-    this.sun.color.lerpColors(new THREE.Color(0x9aadd3), new THREE.Color(0xfff1d4), daylight);
-    this.sun.intensity = lerp(0.82, 3.2, daylight);
-    this.renderer.toneMappingExposure = lerp(1.03, 1.05, daylight);
+    this.hemisphere.color.lerpColors(new THREE.Color(0xa8bbe0), new THREE.Color(0xdff7ff), daylight);
+    this.hemisphere.groundColor.lerpColors(new THREE.Color(0x475160), new THREE.Color(0x52616a), daylight);
+    // 夜晚半球光强度从 1.34 提到 1.85，让地形细节可见
+    this.hemisphere.intensity = lerp(1.85, 2.2, daylight);
+    this.sun.color.lerpColors(new THREE.Color(0xb8c8e8), new THREE.Color(0xfff1d4), daylight);
+    // 夜晚太阳（当作月光）强度从 0.82 提到 1.45，地面不再糊成一片
+    this.sun.intensity = lerp(1.45, 3.2, daylight);
+    // 夜晚曝光略提，让篝火光圈外也能辨识
+    this.renderer.toneMappingExposure = lerp(1.12, 1.05, daylight);
   }
 
   private updateCamera(delta: number): void {

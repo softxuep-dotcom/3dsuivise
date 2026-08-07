@@ -119,7 +119,7 @@ export class HudController {
     this.setMeter(this.warmthBar, this.warmthValue, player.warmth);
     this.setMeter(this.hungerBar, this.hungerValue, player.hunger);
     this.healthBar.closest(".meter")?.classList.toggle("critical", player.health < 30);
-    this.warmthBar.closest(".meter")?.classList.toggle("critical", player.warmth < 25);
+    this.warmthBar.closest(".meter")?.classList.toggle("critical", player.warmth < 15 || player.warmth > 85);
     this.hungerBar.closest(".meter")?.classList.toggle("critical", player.hunger < 20);
     this.attackValue.textContent = String(player.attack);
     this.defenseValue.textContent = String(player.defense);
@@ -219,7 +219,15 @@ export class HudController {
 
   private showGameOver(): void {
     const wolfCount = this.simulation.wolves.filter((wolf) => wolf.mode !== "dead").length;
-    this.resultCopy.textContent = `坚持到第 ${this.simulation.day} 天，猎杀 ${this.simulation.player.kills} 只狼。雪原上仍有 ${wolfCount} 只狼在活动。`;
+    const cause = this.simulation.deathCause;
+    const causeText = cause === "frozen"
+      ? "体温归零，你倒在了风雪里。"
+      : cause === "overheated"
+        ? "体温爆表，火光灼穿了你的最后一口气。"
+        : cause === "killed" && this.simulation.player.hunger <= 0
+          ? "饥饿耗尽，你再没有力气站起来。"
+          : "狼群撕碎了你的最后一道防线。";
+    this.resultCopy.textContent = `坚持到第 ${this.simulation.day} 天，猎杀 ${this.simulation.player.kills} 只狼。${causeText} 雪原上仍有 ${wolfCount} 只狼在活动。`;
     this.gameOver.classList.remove("hidden");
   }
 
