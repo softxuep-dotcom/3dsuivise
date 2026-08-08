@@ -28,6 +28,11 @@ if (import.meta.env.DEV && new URLSearchParams(window.location.search).get("nigh
 const audio = new SynthAudio();
 const hud = new HudController(simulation);
 
+if (import.meta.env.DEV) {
+  // 开发期调试句柄：用来在浏览器控制台里快进模拟、检查五轴状态。
+  (window as unknown as { game: unknown }).game = { simulation, world, hud };
+}
+
 const runGameplayAction = (action: () => void): void => {
   if (!hud.isGameplayBlocked()) action();
 };
@@ -43,7 +48,8 @@ try {
 const input = new InputController({
   onAction: () => runGameplayAction(() => simulation.requestInteraction()),
   onAttack: () => runGameplayAction(() => simulation.requestAttack()),
-  onEat: () => runGameplayAction(() => simulation.consumeBerry()),
+  onEat: () => runGameplayAction(() => simulation.consumeJuice()),
+  onDrink: () => runGameplayAction(() => simulation.consumeWater()),
   onInventory: () => hud.toggleInventory(),
 });
 input.bindCanvas(renderer.canvas, (x, y) => renderer.screenToWorld(x, y));
@@ -60,6 +66,7 @@ document.getElementById("start-button")?.addEventListener("click", async () => {
 });
 
 document.getElementById("restart-button")?.addEventListener("click", () => window.location.reload());
+document.getElementById("victory-restart-button")?.addEventListener("click", () => window.location.reload());
 document.getElementById("sound-button")?.addEventListener("click", async () => {
   await audio.unlock();
   const enabled = audio.toggle();

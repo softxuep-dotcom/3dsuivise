@@ -1,0 +1,567 @@
+== A000 喝水 [AIrg]
+    code=AIrg, levels=1, race=other, Dur1=1, HeroDur1=1, DataA1=10, DataB1=5, DataC1=3, DataD1=1, DataE1=1
+== A001 眼镜蛇毒 [Aspo]
+    code=Aspo, levels=1, race=critters, Dur1=60, HeroDur1=60, DataA1=10, DataB1=0.5, DataC1=0.25, DataD1=1
+    "可以杀死人的蛇毒。"
+== A002 毒针 [Aspo]
+    code=Aspo, levels=1, race=critters, Dur1=60, HeroDur1=60, DataA1=8, DataB1=0.349999994039536, DataC1=0.25, DataD1=1
+    "可以杀死人的毒针。"
+== A003 毒液 [Aspo]
+    code=Aspo, levels=1, race=critters, Dur1=60, HeroDur1=60, DataA1=6, DataB1=0.400000005960464, DataC1=0.25, DataD1=1
+    "可以杀死人的毒液。"
+== A004 提水 [Aroa]
+    code=Aroa, levels=1, race=creeps, Cast1=8, Dur1=1, HeroDur1=1, Cost1=50, Area1=1
+    "如果井里有水，就有水喝了哦。"
+== A005 钻沙 [Apiv]
+    code=Apiv, levels=1, race=other, Dur1=2.5, HeroDur1=2.5, DataA1=1
+== A006 吃甲壳虫的肉 [AIrg]
+    code=AIrg, levels=1, race=other, Dur1=1, HeroDur1=1, DataA1=20, DataC1=3, DataD1=1, DataE1=1
+== A007 吃野兔的肉 [AIrg]
+    code=AIrg, levels=1, race=other, Dur1=1, HeroDur1=1, DataA1=40, DataC1=3, DataD1=1, DataE1=1
+== A008 吃秃鹰的肉 [AIrg]
+    code=AIrg, levels=1, race=other, Dur1=1, HeroDur1=1, DataA1=30, DataC1=3, DataD1=1, DataE1=1
+== A009 睡眠 [AUsl]
+    code=AUsl, levels=1, race=commoner, Dur1=16, HeroDur1=16, Rng1=180, DataA1=10
+    "舒服的睡上一觉，可以补充较多的体力。"
+== A00A 联盟建筑物 [Aall]
+    code=Aall, levels=1, race=other, Rng1=150, DataA1=150, DataB1=1
+== A00B 喝仙人掌的汁 [AIrg]
+    code=AIrg, levels=1, race=other, Dur1=1, HeroDur1=1, DataA1=15, DataB1=5, DataC1=3, DataD1=1, DataE1=1
+== A00C 仙人掌的汁 [Aroa]
+    code=Aroa, levels=1, race=creeps, Cast1=3, Dur1=1, HeroDur1=1, Cost1=150, Area1=1
+    "如果仙人掌里有汁，就有的喝了。"
+== A00D 钻沙 [AOwk]
+    code=AOwk, levels=1, race=critters, Dur1=6, HeroDur1=6, DataA1=0.6, DataB1=0.1, DataC1=50, DataD1=1
+    "钻到沙漠里。"
+== A00E 吃沙虫的肉 [AIrg]
+    code=AIrg, levels=1, race=other, Dur1=1, HeroDur1=1, DataA1=12, DataC1=3, DataD1=1, DataE1=1
+== A00F 吃蜥蜴的肉 [AIrg]
+    code=AIrg, levels=1, race=other, Dur1=1, HeroDur1=1, DataA1=35, DataC1=3, DataD1=1, DataE1=1
+== A00G 吃蜘蛛的肉 [AIrg]
+    code=AIrg, levels=1, race=other, Dur1=1, HeroDur1=1, DataA1=20, DataC1=3, DataD1=1, DataE1=1
+== A00H 吃眼镜蛇的肉 [AIrg]
+    code=AIrg, levels=1, race=other, Dur1=1, HeroDur1=1, DataA1=32, DataC1=3, DataD1=1, DataE1=1
+== A00I 吃白颈鼠的肉 [AIrg]
+    code=AIrg, levels=1, race=other, Dur1=1, HeroDur1=1, DataA1=25, DataC1=3, DataD1=1, DataE1=1
+== A00J 吃沙鼠的肉 [AIrg]
+    code=AIrg, levels=1, race=other, Dur1=1, HeroDur1=1, DataA1=25, DataC1=3, DataD1=1, DataE1=1
+== A00K 吃蝎子的肉 [AIrg]
+    code=AIrg, levels=1, race=other, Dur1=1, HeroDur1=1, DataA1=25, DataC1=3, DataD1=1, DataE1=1
+== A00L 合成 [AOws]
+    code=AOws, levels=1, race=orc, HeroDur1=0.100000001490116, Area1=1, DataB1=0.00999999977648258, DataC1=1
+    "火窖=植被+木头+石头 / |Cff00ff00干枯的井=木头+石头+石头 / 帐篷=狼皮+木头 / |Cff00ff00丝织磨坊=木头+木头+石头（未完成） / 战争磨坊=蛇皮+植被+木头+石头 / |Cff00ff00防具磨坊=植被+植被+木头+石头 / 工具工厂=标志+木条+木头 / |Cff00ff00标志=鼠皮+木头 / 仓库=木条+木头 / |Cff00ff00树桩=木头 / 木头人=石头+石头+木头+木头+木头 / |C
+== A00M 建造火窖  [AIbl]
+    code=AIbl, levels=1, race=other, Dur1=2, Rng1=100
+== A00N 建造干枯的井 [AIbl]
+    code=AIbl, levels=1, race=other, Dur1=2, Rng1=100
+== A00O 木条 [Aroa]
+    code=Aroa, levels=1, race=creeps, Cast1=2, Dur1=1, HeroDur1=1, Cost1=100, Area1=1
+    "一块木条。"
+== A00P 木头 [AHds]
+    code=AHds, levels=1, race=creeps, Cast1=4, Dur1=1, HeroDur1=1, Cost1=150
+    "一块木头"
+== A00Q 建造帐篷 [AIbl]
+    code=AIbl, levels=1, race=other, Dur1=2, Rng1=100
+== A00R 吃狼的肉 [AIrg]
+    code=AIrg, levels=1, race=other, Dur1=1, HeroDur1=1, DataA1=120, DataC1=3, DataD1=1, DataE1=1
+== A00S 建造标志 [AIbl]
+    code=AIbl, levels=1, race=other, Dur1=2, Rng1=100
+== A00T 解毒药 [AIrg]
+    code=AIrg, levels=1, race=other, Dur1=2, HeroDur1=1, Rng1=500, DataA1=20, DataC1=3, DataE1=1
+== A00U 建造丝织磨坊 [AIbl]
+    code=AIbl, levels=1, race=other, Dur1=2, Rng1=100
+== A00V 建造战争磨坊 [AIbl]
+    code=AIbl, levels=1, race=other, Dur1=2, Rng1=100
+== A00W 建造防具磨坊 [AIbl]
+    code=AIbl, levels=1, race=other, Dur1=2, Rng1=100
+== A00X 建造树桩 [AIbl]
+    code=AIbl, levels=1, race=other, Dur1=2, Rng1=100
+== A00Y 建造工具工厂 [AIbl]
+    code=AIbl, levels=1, race=other, Dur1=2, Rng1=100
+== A00Z 建造仓库 [AIbl]
+    code=AIbl, levels=1, race=other, Dur1=2, Rng1=100
+== A010 攻90 [AIat]
+    code=AIat, levels=1, race=human, DataA1=90
+== A011 攻50 [AIat]
+    code=AIat, levels=1, race=human, DataA1=50
+== A012 加防御35 [AIde]
+    code=AIde, levels=1, race=human, DataA1=35
+== A013 工具合成 [AOws]
+    code=AOws, levels=1, race=orc, HeroDur1=0.5, Area1=10
+    "铁=石头+石头+石头 / 钢=铁+铁+铁 / 银=钢+钢+钢 / 金=银+银+银 / 金刚石=金+金+金"
+== A014 加防御55 [AIde]
+    code=AIde, levels=1, race=human, DataA1=55
+== A015 初级道具合成 [AEfk]
+    code=AEfk, levels=1, race=orc
+    ""
+== A016 变回树桩 [Aroa]
+    code=Aroa, levels=1, race=creeps, Dur1=1, HeroDur1=1, Area1=1
+    "天亮了狼或僵尸还在打哥就用这技能。"
+== A017 奔跑 [AIsa]
+    code=AIsa, levels=1, race=human, Dur1=18, HeroDur1=18, Cost1=25, Area1=100, DataA1=2
+    "奔跑移动速度加快。"
+== A018 低级防具合成 [AEfk]
+    code=AEfk, levels=1, race=orc
+    "皮甲☆=狼皮+狼皮+蜘蛛丝 / 青甲☆=铁+铁+铁"
+== A019 低级武器合成 [AEfk]
+    code=AEfk, levels=1, race=orc
+    "中国唐刀☆=斩马刀+铁+铁+铁+木头 / 刺刀☆=佩刀+铁+铁+铁+钢 / 太刀☆=大砍刀+铁+铁+木头+钢 / 尼泊尔军刀☆=苗刀+铁+木头+木头+钢 / 德国开山刀☆=木棍+铁+铁+铁+铁 / 斧头☆=锄头+木头+木头+铁+铁 / 武士刀☆=蝴蝶刀+木条+铁+铁+铁 / 狼牙棒☆=毒爪+木头+毒针+铁+铁 / 瑞士军刀☆=西瓜刀+石头+石头+铁+铁"
+== A01A 恢复体力 [AIrg]
+    code=AIrg, levels=1, race=other, Dur1=1, HeroDur1=1, DataA1=888, DataB1=500, DataD1=1, DataE1=1
+== A01B 物品栏 [AInv]
+    code=AInv, levels=1, race=human, DataA1=6, DataD1=1, DataE1=1
+== A01C 物品栏 [AInv]
+    code=AInv, levels=1, race=human, DataA1=2, DataD1=1, DataE1=1
+== A01D 加防御65 [AIde]
+    code=AIde, levels=1, race=human, DataA1=65
+== A01E 攻60 [AIat]
+    code=AIat, levels=1, race=human, DataA1=60
+== A01F 攻85 [AIat]
+    code=AIat, levels=1, race=human, DataA1=85
+== A01G 加防御75 [AIde]
+    code=AIde, levels=1, race=human, DataA1=75
+== A01H 攻250 [AIat]
+    code=AIat, levels=1, race=human, DataA1=250
+== A01I 加防御25 [AIde]
+    code=AIde, levels=1, race=human, DataA1=25
+== A01J 加防御45 [AIde]
+    code=AIde, levels=1, race=human, DataA1=45
+== A01K 攻125 [AIat]
+    code=AIat, levels=1, race=human, DataA1=125
+== A01L 攻80 [AIat]
+    code=AIat, levels=1, race=human, DataA1=80
+== A01M 攻速-0.25 [AIas]
+    code=AIas, levels=1, race=human, DataA1=-0.25
+== A01N 攻速0.10 [AIas]
+    code=AIas, levels=1, race=human, DataA1=0.100000001490116
+== A01O 攻速-0.15 [AIas]
+    code=AIas, levels=1, race=human, DataA1=-0.150000005960464
+== A01P 攻速0.45 [AIas]
+    code=AIas, levels=1, race=human, DataA1=0.449999988079071
+== A01Q 攻速-0.35 [AIas]
+    code=AIas, levels=1, race=human, DataA1=-0.349999994039536
+== A01R 狼爪 [AOcr]
+    code=AOcr, levels=1, race=creeps, DataA1=20, DataB1=2, DataD1=0.100000001490116
+    "十分锋利的爪子，20%造成2倍伤害，10%闪避敌人的攻击！"
+== A01S 尖刺 [AUts]
+    code=AUts, levels=1, race=creeps, DataA1=0.5, DataB1=0.5
+    "仙人掌身上的尖刺能将敌人50%的攻击力化为对敌人的伤害。"
+== A01T 诱捕 [Aens]
+    code=Aens, levels=1, race=critters, Dur1=12, HeroDur1=3, Cost1=5, Rng1=420, DataA1=0.6, DataB1=200, DataC1=100
+    "能将一个目标空中单位固定在地面上，使其在<Aens,Dur1>秒内不能移动。"
+== A01U 吃肉 [AIrg]
+    code=AIrg, levels=1, race=other, Dur1=1, HeroDur1=1, DataA1=400, DataB1=100, DataC1=3, DataD1=1, DataE1=1
+== A01V 跳 [AEbl]
+    code=AEbl, levels=1, race=human, Dur1=0.33, Cost1=8, Rng1=99999, DataA1=1000, DataB1=200
+    "跳跃一段距离。"
+== A01W 投石 [ACtb]
+    code=ACtb, levels=1, race=creeps, Dur1=1, HeroDur1=1, Rng1=800, DataA1=50
+    "一块巨石被投向敌人，对其造成<ACtb,DataA1>点的伤害并在<ACtb,Dur1>秒内使其处于昏晕状态。"
+== A01X 僵尸 [AOcr]
+    code=AOcr, levels=1, race=creeps, DataA1=20, DataB1=2.5, DataD1=0.100000001490116
+    "十分锋利的爪子，20%造成2.5倍伤害，10%闪避敌人的攻击！"
+== A01Y 毒 [AIcb]
+    code=AIcb, levels=1, race=other, Dur1=10, HeroDur1=10, DataA1=60, DataB1=5, DataE1=1
+== A01Z 吃僵尸的肉 [AIrg]
+    code=AIrg, levels=1, race=other, Dur1=1, HeroDur1=1, DataA1=20, DataC1=3, DataD1=1, DataE1=1
+== A020 战斗位置 [Abtl]
+    code=Abtl, levels=1, race=human, Area1=1000, DataB1=1
+    "使得附近的幸存者跑入防御塔从而对来犯的敌人进行反击。"
+== A021 卸载幸存者 [Astd]
+    code=Astd, levels=1, race=human
+    "使得防御塔内的幸存者重新回到自己的工作岗位上。"
+== A022 货物保持 (防御塔) [Abun]
+    code=Abun, levels=1, race=human, Rng1=120, Area1=250, DataA1=1
+== A023 建造木头人 [AIbl]
+    code=AIbl, levels=1, race=other, Dur1=2, Rng1=100
+== A024 合成 [ANht]
+    code=ANht, levels=1, race=orc, HeroDur1=0.100000001490116, Area1=100
+    ""
+== A025 攻速-0.45 [AIas]
+    code=AIas, levels=1, race=human, DataA1=-0.449999988079071
+== A026 飞跃 [AEbl]
+    code=AEbl, levels=1, race=human, Dur1=0.33, Cost1=25, Rng1=99999, DataA1=99999, DataB1=200
+    "能让天屎瞬间飞跃一段距离，从而逃离战场或者快速加入战斗。"
+== A027 灭火 [AHds]
+    code=AHds, levels=1, race=human, Dur1=1, HeroDur1=1
+    "灭掉火焰。"
+== A028 点燃火焰 [ANht]
+    code=ANht, levels=1, race=human, HeroDur1=0.100000001490116, Area1=100
+    "需要植被或者木头，才可以点燃！！"
+== A029 睡眠 [AUsl]
+    code=AUsl, levels=1, race=commoner, Dur1=16, HeroDur1=16, Rng1=180, DataA1=10
+    "在茅草屋里比较凉快，可以较少补充体力和减低体温。"
+== A02A 建造茅草屋 [AIbl]
+    code=AIbl, levels=1, race=other, Dur1=2, Rng1=100
+== A02B 尿 [Absk]
+    code=Absk, levels=1, race=human, Dur1=12, HeroDur1=12, Cost1=10, DataA1=0.100000001490116, DataB1=0.150000005960464, DataC1=0.25
+    "把自己的尿抹在自己的身上，这样的话可以降低体温（同时可以添加10%的移动速度和15%的攻击速度但敌人攻击会添加25%的伤害）虽然不是喝不过还是有点恶心，如果你是“聪明人”可以不抹~~"
+== A02C 装逼 [Atau]
+    code=Atau, levels=1, race=human, Cost1=5, Area1=388, DataA1=10
+    "装逼而已!不过这里的每个东西都不喜欢装逼的SB！他们会做出什么暴力的行为呢！~"
+== A02D 吃骆驼的肉 [AIrg]
+    code=AIrg, levels=1, race=other, Dur1=1, HeroDur1=1, DataA1=120, DataC1=3, DataD1=1, DataE1=1
+== A02E 喝骆驼体内的水 [AIrg]
+    code=AIrg, levels=1, race=other, Dur1=1, HeroDur1=1, DataA1=10, DataB1=25, DataC1=3, DataD1=1, DataE1=1
+== A02F 物品栏 [AInv]
+    code=AInv, levels=1, race=human, DataA1=1, DataD1=1, DataE1=1
+== A02G 吃人肉 [AIrg]
+    code=AIrg, levels=1, race=other, Dur1=1, HeroDur1=1, DataA1=425, DataB1=100, DataC1=3, DataD1=1, DataE1=1
+== A02H 母狼 [Aspd]
+    code=Aspd, levels=1, race=creeps, DataA1=2, DataB1=n00S
+== A02I 龙卷旋风 [Atsp]
+    code=Atsp, levels=1, race=naga, Dur1=12, HeroDur1=6, Area1=275, DataA1=22, DataB1=3
+== A02J 减速光环 [Aasl]
+    code=Aasl, levels=1, race=naga, Rng1= - , Area1=600, DataA1=-0.75, DataB1=-0.5, DataC1= - 
+== A02K 建造训练营 [AIbl]
+    code=AIbl, levels=1, race=other, Dur1=2, Rng1=100
+== A02L 挖坑 [ACtc]
+    code=ACtc, levels=1, race=creeps, Dur1=3, HeroDur1=3, Cost1=10, Area1=125, DataC1=0.600000023841858
+    "攻击+40 /  / 攻速-15% /  / 重创：25%造成附加80伤害 /  / 这锄头还可以挖矿，需要10点累劳"
+== A02M 攻速0.15 [AIas]
+    code=AIas, levels=1, race=human, DataA1=0.150000005960464
+== A02N "暴击(3,25)" [AOcr]
+    code=AOcr, levels=1, race=human, DataA1=25, DataB1=3
+== A02O "暴击(2,80)" [AOcr]
+    code=AOcr, levels=1, race=human, DataA1=80, DataB1=2
+== A02P "暴击(3,80)" [AOcr]
+    code=AOcr, levels=1, race=human, DataA1=80, DataB1=3
+== A02Q "暴击(2.5,50)" [AOcr]
+    code=AOcr, levels=1, race=human, DataA1=50, DataB1=2.5
+== A02R "暴击(3,45)" [AOcr]
+    code=AOcr, levels=1, race=human, DataA1=45, DataB1=3
+== A02S "暴击(2.5,25)" [AOcr]
+    code=AOcr, levels=1, race=human, DataA1=25, DataB1=2.5
+== A02T "暴击(15,5)" [AOcr]
+    code=AOcr, levels=1, race=human, DataA1=5, DataB1=15
+== A02U "暴击(3,50)" [AOcr]
+    code=AOcr, levels=1, race=human, DataA1=50, DataB1=3
+== A02V "暴击(4,25)" [AOcr]
+    code=AOcr, levels=1, race=human, DataA1=25, DataB1=4
+== A02W "暴击(15,10)" [AOcr]
+    code=AOcr, levels=1, race=human, DataA1=10, DataB1=15
+== A02X "暴击(3,60)" [AOcr]
+    code=AOcr, levels=1, race=human, DataA1=60, DataB1=3
+== A02Y 闪避4 [AEev]
+    code=AEev, levels=1, race=human, DataA1=0.449999988079071
+    "给予<AIev,DataA1,%>%的概率来躲避掉敌人的攻击。"
+== A02Z 闪避3 [AEev]
+    code=AEev, levels=1, race=human, DataA1=0.349999994039536
+    "给予<AIev,DataA1,%>%的概率来躲避掉敌人的攻击。"
+== A030 闪避1 [AEev]
+    code=AEev, levels=1, race=human, DataA1=0.15
+    "给予<AIev,DataA1,%>%的概率来躲避掉敌人的攻击。"
+== A031 闪避2 [AEev]
+    code=AEev, levels=1, race=human, DataA1=0.25
+    "给予<AIev,DataA1,%>%的概率来躲避掉敌人的攻击。"
+== A032 烤肉 [Amim]
+    code=Amim, levels=1, race=creeps
+    "把肉放火里烤，可以获得好吃的烤肉！"
+== A033 闪避5 [AEev]
+    code=AEev, levels=1, race=human, DataA1=0.550000011920929
+    "给予<AIev,DataA1,%>%的概率来躲避掉敌人的攻击。"
+== A034 闪避6 [AEev]
+    code=AEev, levels=1, race=human, DataA1=0.649999976158142
+    "给予<AIev,DataA1,%>%的概率来躲避掉敌人的攻击。"
+== A035 吃烤肉 [AIrg]
+    code=AIrg, levels=1, race=other, Dur1=1, HeroDur1=1, DataA1=100, DataC1=3, DataD1=1, DataE1=1
+== A036 重击 [AHbh]
+    code=AHbh, levels=1, race=human, Dur1=2, HeroDur1=1, DataA1=45, DataC1=250
+== A037 重击 [AHbh]
+    code=AHbh, levels=1, race=human, Dur1=2, HeroDur1=1, DataA1=45, DataC1=150
+== A038 攻速-0.40 [AIas]
+    code=AIas, levels=1, race=human, DataA1=-0.400000005960464
+== A039 重击 [AHbh]
+    code=AHbh, levels=1, race=human, Dur1=2, HeroDur1=1, DataA1=35, DataC1=300
+== A03A 重击 [AHbh]
+    code=AHbh, levels=1, race=human, Dur1=2, HeroDur1=1, DataA1=45, DataC1=200
+== A03B 重击 [AHbh]
+    code=AHbh, levels=1, race=human, Dur1=2, HeroDur1=1, DataA1=40, DataC1=100
+== A03C 重击 [AHbh]
+    code=AHbh, levels=1, race=human, Dur1=2, HeroDur1=1, DataA1=40, DataC1=125
+== A03D 重击 [AHbh]
+    code=AHbh, levels=1, race=human, Dur1=2, HeroDur1=1, DataA1=20, DataC1=150
+== A03E 伤害反弹 [AUts]
+    code=AUts, levels=1, race=human, DataA1=0.3, DataB1=1
+    ""
+== A03F 伤害反弹 [AUts]
+    code=AUts, levels=1, race=human, DataA1=0.3, DataB1=1
+    ""
+== A03G 伤害反弹 [AUts]
+    code=AUts, levels=1, race=human, DataA1=0.3, DataB1=1
+    ""
+== A03H 伤害反弹 [AUts]
+    code=AUts, levels=1, race=human, DataA1=0.3, DataB1=1
+    ""
+== A03I 伤害反弹 [AUts]
+    code=AUts, levels=1, race=human, DataA1=0.3, DataB1=1
+    ""
+== A03J 伤害反弹 [AUts]
+    code=AUts, levels=1, race=human, DataA1=0.3, DataB1=1
+    ""
+== A03K 伤害反弹 [AUts]
+    code=AUts, levels=1, race=human, DataA1=0.3, DataB1=1
+    ""
+== A03L 伤害反弹 [AUts]
+    code=AUts, levels=1, race=human, DataA1=0.3, DataB1=1
+    ""
+== A03M 吸收伤害 [Assk]
+    code=Assk, levels=1, race=human, DataA1=100, DataB1=1, DataC1=12, DataD1=1, DataE1=1
+    ""
+== A03N 吸收伤害 [Assk]
+    code=Assk, levels=1, race=human, DataA1=100, DataB1=1, DataC1=12, DataD1=1, DataE1=1
+    ""
+== A03O 吸收伤害 [Assk]
+    code=Assk, levels=1, race=human, DataA1=100, DataB1=1, DataC1=12, DataD1=1, DataE1=1
+    ""
+== A03P 吸收伤害 [Assk]
+    code=Assk, levels=1, race=human, DataA1=100, DataB1=1, DataC1=12, DataD1=1, DataE1=1
+    ""
+== A03Q 吸收伤害 [Assk]
+    code=Assk, levels=1, race=human, DataA1=100, DataB1=1, DataC1=12, DataD1=1, DataE1=1
+    ""
+== A03R 吸收伤害 [Assk]
+    code=Assk, levels=1, race=human, DataA1=100, DataB1=1, DataC1=12, DataD1=1, DataE1=1
+    ""
+== A03S 吸收伤害 [Assk]
+    code=Assk, levels=1, race=human, DataA1=100, DataB1=1, DataC1=12, DataD1=1, DataE1=1
+    ""
+== A03T 吸收伤害 [Assk]
+    code=Assk, levels=1, race=human, DataA1=100, DataB1=1, DataC1=12, DataD1=1, DataE1=1
+    ""
+== A03U 吸收伤害 [Assk]
+    code=Assk, levels=1, race=human, DataA1=100, DataB1=1, DataC1=12, DataD1=1, DataE1=1
+    ""
+== A03V 吸收伤害 [Assk]
+    code=Assk, levels=1, race=human, DataA1=100, DataB1=1, DataC1=12, DataD1=1, DataE1=1
+    ""
+== A03W  武器 [AIat]
+    code=AIat, levels=1, race=other
+== A03X  防具 [AIat]
+    code=AIat, levels=1, race=other
+== A03Y  防具 [AIat]
+    code=AIat, levels=1, race=other
+== A03Z 火焰 [AHad]
+    code=AHad, levels=1, race=human, Area1=320, DataA1=1.5
+    "正在火焰旁的幸存者，其体温将得到恢复。"
+== A041 跳跃 [ANht]
+    code=ANht, levels=1, race=human, Dur1=0.00100000004749745, HeroDur1=0.00100000004749745, Area1=0.00999999977648258
+    "跳跃一段距离。"
+== A04A 攻100 [AIat]
+    code=AIat, levels=1, race=human, DataA1=100
+== A04B 攻速0.35 [AIas]
+    code=AIas, levels=1, race=human, DataA1=0.349999994039536
+== A04C 初级武器合成 [AOww]
+    code=AOww, levels=1, race=orc
+    "中国唐刀☆☆=上个等级的刀+钢+钢+铁+铁 / 刺刀☆☆=上个等级的刀+钢+钢+铁+铁 / 太刀☆☆=上个等级的刀+钢+钢+铁+铁 / 尼泊尔军刀☆☆=上个等级的刀+钢+钢+铁+铁 / 德国开山刀☆☆=上个等级的刀+钢+钢+铁+铁 / 斧头☆☆=上个等级的刀+钢+钢+铁+铁 / 武士刀☆☆=上个等级的刀+钢+钢+铁+铁 / 狼牙棒☆☆=上个等级的刀+钢+钢+铁+铁 / 瑞士军刀☆☆=上个等级的刀+钢+钢+铁+铁"
+== A04D 初级防具合成 [AOww]
+    code=AOww, levels=1, race=orc
+    "皮甲☆☆=上个等级+狼皮+狼皮+蛇皮+蜘蛛丝 / 青甲☆☆=上个等级+铁+铁+银"
+== A04E 高级道具合成 [AOww]
+    code=AOww, levels=1, race=orc
+    ""
+== A04F 超级武器合成 [AOvd]
+    code=AOvd, levels=1, race=orc, Area1=800
+    "中国唐刀☆☆☆☆☆=上个等级的刀+金刚石+金刚石+金刚石+金 / 刺刀☆☆☆☆☆=上个等级的刀+金刚石+金刚石+金刚石+金 / 太刀☆☆☆☆☆=上个等级的刀+金刚石+金刚石+金刚石+金 / 尼泊尔军刀☆☆☆☆☆=上个等级的刀+金刚石+金刚石+金刚石+金 / 德国开山刀☆☆☆☆☆=上个等级的刀+金刚石+金刚石+金刚石+金 / 斧头☆☆☆☆☆=上个等级的刀+金刚石+金刚石+金刚石+金 / 武士刀☆☆☆☆☆=上个等级的刀+金刚石+金刚石+金
+== A04G 超级防具合成 [AOvd]
+    code=AOvd, levels=1, race=orc, Area1=800
+    "皮甲☆☆☆☆☆=上个等级+金+狼皮+蛇皮+蜘蛛丝 / 青甲☆☆☆☆☆=上个等级+金+金+金+铁"
+== A04H 终极防具合成 [ANbr]
+    code=ANbr, levels=1, race=orc
+    "皮甲★=上个等级+金钢石+狼皮+蛇皮+蜘蛛丝 / 青甲★=上个等级+金钢石+金钢石+银+钢"
+== A04I 高级武器合成 [AHav]
+    code=AHav, levels=1, race=orc, Dur1=1, HeroDur1=1
+== A04J 高级防具合成 [AHav]
+    code=AHav, levels=1, race=orc, Dur1=1, HeroDur1=1
+== A04K 拆除 [ACtc]
+    code=ACtc, levels=1, race=creeps, Cast1=3
+    "拆掉没用的建筑。"
+== A04L 中级武器合成 [ANht]
+    code=ANht, levels=1, race=orc
+    "中国唐刀☆☆☆=上个等级的刀+银+银+铁+铁 / 刺刀☆☆☆=上个等级的刀+银+银+铁+铁 / 太刀☆☆☆=上个等级的刀+银+银+铁+铁 / 尼泊尔军刀☆☆☆=上个等级的刀+银+银+铁+铁 / 德国开山刀☆☆☆=上个等级的刀+银+银+铁+铁 / 斧头☆☆☆=上个等级的刀+银+银+铁+铁 / 武士刀☆☆☆=上个等级的刀+银+银+铁+铁 / 狼牙棒☆☆☆=上个等级的刀+银+银+铁+铁 / 瑞士军刀☆☆☆=上个等级的刀+银+银+铁+铁"
+== A04M 中级防具合成 [ANht]
+    code=ANht, levels=1, race=orc
+    "皮甲☆☆☆=上个等级+铁+狼皮+蛇皮+蜘蛛丝 / 青甲☆☆☆=上个等级+铁+铁+银+钢"
+== A04N 终极道具合成 [ANht]
+    code=ANht, levels=1, race=orc
+    ""
+== A04O 终极武器合成 [ANbr]
+    code=ANbr, levels=1, race=orc
+    "中国唐刀★=上个等级的刀+金刚石+金刚石+金刚石+金刚石+金刚石 / 刺刀★=上个等级的刀+金刚石+金刚石+金刚石+金刚石+金刚石 / 太刀★=上个等级的刀+金刚石+金刚石+金刚石+金刚石+金刚石 / 尼泊尔军刀★=上个等级的刀+金刚石+金刚石+金刚石+金刚石+金刚石 / 德国开山刀★=上个等级的刀+金刚石+金刚石+金刚石+金刚石+金刚石 / 斧头★=上个等级的刀+金刚石+金刚石+金刚石+金刚石+金刚石 / 武士刀★=上个等级的刀+金
+== A04P 吃小狼的肉 [AIrg]
+    code=AIrg, levels=1, race=other, Dur1=1, HeroDur1=1, DataA1=50, DataC1=3, DataD1=1, DataE1=1
+== A04Q 时间控制 [Aroa]
+    code=Aroa, levels=1, race=other, Dur1=0.5, HeroDur1=0.5
+    "增加周围友军单位<AIrr,DataA1,%>%的攻击力。 / 持续<AIrr,Dur1>秒。"
+== A04R 道具合成 [AEfk]
+    code=AEfk, levels=1, race=orc
+    "解毒药=蛇毒（毒液） / 体力药水=狼的肉+狼的肉+蛇牙+毒针 / 蜘蛛丝饰针=蜘蛛丝+石头 / 靴=鼠皮+鼠皮+蜘蛛丝 / 加速手套=蛇皮+蛇皮+鼠皮+蜘蛛丝 / 医疗宝石=银+银 / 一布袋的肉=狼的肉+狼的肉+狼的肉+狼皮 / 劳力宝石=钢+银 / 高级加速手套=加速手套+加速手套 / 洗脸水=水 / 佩刀=铁+铁 / 大砍刀=木条+铁 / 斩马刀=铁+木条 / 木棍=木头+木条 / 毒爪=毒针+蛇牙 / 苗刀=木头+铁 / 蝴
+== A04S 物品栏 [AInv]
+    code=AInv, levels=1, race=human, DataA1=1, DataD1=1, DataE1=1
+== A04T 中暑 [AOae]
+    code=AOae, levels=1, race=human, Area1=100, DataA1=-0.850000023841858, DataB1=-0.949999988079071
+    "由于体温过搞而中暑，你的移动速度和攻击速度大幅度下降了。"
+== A04U 寒冷 [AOae]
+    code=AOae, levels=1, race=human, Area1=100, DataA1=-0.990000009536743, DataB1=-1.54999995231628
+    "你感到十分的寒冷，因此移动速度和攻击速度大幅度的下降了。"
+== A04V 攻200 [AIat]
+    code=AIat, levels=1, race=human, DataA1=200
+== A04W 攻速0.65 [AIas]
+    code=AIas, levels=1, race=human, DataA1=0.649999976158142
+== A04X 攻速0.25 [AIas]
+    code=AIas, levels=1, race=human, DataA1=0.25
+== A04Y 攻速-0.65 [AIas]
+    code=AIas, levels=1, race=human, DataA1=-0.649999976158142
+== A04Z 攻速0.20 [AIas]
+    code=AIas, levels=1, race=human, DataA1=0.2
+== A050 攻速0.50 [AIas]
+    code=AIas, levels=1, race=human, DataA1=0.5
+== A051 攻速0.70 [AIas]
+    code=AIas, levels=1, race=human, DataA1=0.699999988079071
+== A052 攻速-0.55 [AIas]
+    code=AIas, levels=1, race=human, DataA1=-0.550000011920929
+== A053 攻速0.55 [AIas]
+    code=AIas, levels=1, race=human, DataA1=0.550000011920929
+== A054 攻600 [AIat]
+    code=AIat, levels=1, race=human, DataA1=600
+== A055 攻180 [AIat]
+    code=AIat, levels=1, race=human, DataA1=180
+== A056 攻300 [AIat]
+    code=AIat, levels=1, race=human, DataA1=300
+== A057 攻450 [AIat]
+    code=AIat, levels=1, race=human, DataA1=450
+== A058 攻800 [AIat]
+    code=AIat, levels=1, race=human, DataA1=800
+== A059 攻速0.40 [AIas]
+    code=AIas, levels=1, race=human, DataA1=0.400000005960464
+== A05A 攻375 [AIat]
+    code=AIat, levels=1, race=human, DataA1=375
+== A05B 攻400 [AIat]
+    code=AIat, levels=1, race=human, DataA1=400
+== A05C 攻150 [AIat]
+    code=AIat, levels=1, race=human, DataA1=150
+== A05D 攻350 [AIat]
+    code=AIat, levels=1, race=human, DataA1=350
+== A05E 攻175 [AIat]
+    code=AIat, levels=1, race=human, DataA1=175
+== A05F 攻130 [AIat]
+    code=AIat, levels=1, race=human, DataA1=130
+== A05G 攻速0.80 [AIas]
+    code=AIas, levels=1, race=human, DataA1=0.800000011920929
+== A05H 攻速-0.20 [AIas]
+    code=AIas, levels=1, race=human, DataA1=-0.200000002980232
+== A05I 攻速0.60 [AIas]
+    code=AIas, levels=1, race=human, DataA1=0.600000023841858
+== A05J "暴击(5,45)" [AOcr]
+    code=AOcr, levels=1, race=human, DataA1=45, DataB1=5
+== A05K "暴击(1.5,80)" [AOcr]
+    code=AOcr, levels=1, race=human, DataA1=80, DataB1=1.5
+== A05L "暴击(10,5)" [AOcr]
+    code=AOcr, levels=1, race=human, DataA1=5, DataB1=10
+== A05M "暴击(2.5,80)" [AOcr]
+    code=AOcr, levels=1, race=human, DataA1=80, DataB1=2.5
+== A05N "暴击(3.5,45)" [AOcr]
+    code=AOcr, levels=1, race=human, DataA1=45, DataB1=3.5
+== A05O "暴击(4,45)" [AOcr]
+    code=AOcr, levels=1, race=human, DataA1=45, DataB1=4
+== A05P "暴击(4,35)" [AOcr]
+    code=AOcr, levels=1, race=human, DataA1=35, DataB1=4
+== A05Q "暴击(15,15)" [AOcr]
+    code=AOcr, levels=1, race=human, DataA1=15, DataB1=15
+== A05R "暴击(4,60)" [AOcr]
+    code=AOcr, levels=1, race=human, DataA1=60, DataB1=4
+== A05S "暴击(6,40)" [AOcr]
+    code=AOcr, levels=1, race=human, DataA1=40, DataB1=6
+== A05T "暴击(20,15)" [AOcr]
+    code=AOcr, levels=1, race=human, DataA1=15, DataB1=20
+== A05U "暴击(4.5,45)" [AOcr]
+    code=AOcr, levels=1, race=human, DataA1=45, DataB1=4.5
+== A05V "暴击(5.5,50)" [AOcr]
+    code=AOcr, levels=1, race=human, DataA1=50, DataB1=5.5
+== A05W "暴击(3.5,85)" [AOcr]
+    code=AOcr, levels=1, race=human, DataA1=85, DataB1=3.5
+== A05X "暴击(5,35)" [AOcr]
+    code=AOcr, levels=1, race=human, DataA1=35, DataB1=5
+== A05Y 攻速-0.10 [AIas]
+    code=AIas, levels=1, race=human, DataA1=-0.100000001490116
+== A05Z "暴击(5,50)" [AOcr]
+    code=AOcr, levels=1, race=human, DataA1=50, DataB1=5
+== A060 "暴击(4,85)" [AOcr]
+    code=AOcr, levels=1, race=human, DataA1=85, DataB1=4
+== A061 "暴击(4.5,60)" [AOcr]
+    code=AOcr, levels=1, race=human, DataA1=60, DataB1=4.5
+== A062 重击 [AHbh]
+    code=AHbh, levels=1, race=human, Dur1=2, HeroDur1=1, DataA1=15, DataC1=100
+== A063 重击 [AHbh]
+    code=AHbh, levels=1, race=human, Dur1=2, HeroDur1=1, DataA1=35, DataC1=50
+== A064 重击 [AHbh]
+    code=AHbh, levels=1, race=human, Dur1=2, HeroDur1=1, DataA1=45, DataC1=320
+== A065 重击 [AHbh]
+    code=AHbh, levels=1, race=human, Dur1=2, HeroDur1=1, DataA1=30, DataC1=300
+== A066 重击 [AHbh]
+    code=AHbh, levels=1, race=human, Dur1=2, HeroDur1=1, DataA1=20, DataC1=300
+== A067 重击 [AHbh]
+    code=AHbh, levels=1, race=human, Dur1=2, HeroDur1=1, DataA1=40, DataC1=250
+== A068 重击 [AHbh]
+    code=AHbh, levels=1, race=human, Dur1=2, HeroDur1=1, DataA1=30, DataC1=300
+== A069 重击 [AHbh]
+    code=AHbh, levels=1, race=human, Dur1=2, HeroDur1=1, DataA1=35, DataC1=200
+== A06A 重击 [AHbh]
+    code=AHbh, levels=1, race=human, Dur1=2, HeroDur1=1, DataA1=65, DataC1=350
+== A06B 攻速0.30 [AIas]
+    code=AIas, levels=1, race=human, DataA1=0.300000011920929
+== A06C 重击 [AHbh]
+    code=AHbh, levels=1, race=human, Dur1=2, HeroDur1=1, DataA1=40, DataC1=500
+== A06D "暴击(25,15)" [AOcr]
+    code=AOcr, levels=1, race=human, DataA1=15, DataB1=25
+== A06E 重击 [AHbh]
+    code=AHbh, levels=1, race=human, Dur1=2, HeroDur1=1, DataA1=50, DataC1=250
+== A06F 重击 [AHbh]
+    code=AHbh, levels=1, race=human, Dur1=2, HeroDur1=1, DataA1=45, DataC1=420
+== A06G 重击 [AHbh]
+    code=AHbh, levels=1, race=human, Dur1=2, HeroDur1=1, DataA1=50, DataC1=450
+== A06H 重击 [AHbh]
+    code=AHbh, levels=1, race=human, Dur1=2, HeroDur1=1, DataA1=40, DataC1=650
+== A06I 重击 [AHbh]
+    code=AHbh, levels=1, race=human, Dur1=2, HeroDur1=1, DataA1=35, DataC1=400
+== A06J 攻速-0.50 [AIas]
+    code=AIas, levels=1, race=human, DataA1=-0.5
+== A06K 生存技巧 [Aspb]
+    code=Aspb, levels=1, race=human, DataA1=A041,A02C,A02B,A06M,A06Q, DataC1=5, DataD1=5, DataE1=spellbook
+    "你会的一些技巧！"
+== A06L 重击 [AHbh]
+    code=AHbh, levels=1, race=human, Dur1=2, HeroDur1=1, DataA1=35, DataC1=500
+== A06M 活埋 [ACtc]
+    code=ACtc, levels=1, race=human, Dur1=5, HeroDur1=5, Cost1=15, Area1=1, DataC1=-1000, DataD1=-1000
+    "把自己埋在沙里，这样可以加体温！当然还有半个头没埋。"
+== A06O 报复人类 [AHds]
+    code=AHds, levels=1, race=naga, Dur1=0.100000001490116, HeroDur1=0.100000001490116, Cost1=1
+    "如果你觉得人类该死，那么你现在就可以选择报复~！但是你别忘了你也是人类~！"
+== A06P 拯救人类 [ACtc]
+    code=ACtc, levels=1, race=naga, Dur1=0.00999999977648258, HeroDur1=0.00999999977648258, Cost1=1, Area1=0.100000001490116, DataA1=1, DataC1=0.00999999977648258, DataD1=0.00999999977648258
+    "成为天使拯救人类，你的善良我看不到，但是和你在这里生存的同伴看得到~！"
+== A06Q 自杀 [Aroa]
+    code=Aroa, levels=1, race=human, Cast1=5, Dur1=0.100000001490116, HeroDur1=0.100000001490116, Area1=0.100000001490116, DataA1=0.100000001490116
+    "不想活了就自杀吧~！"
+== A06W  武器 [AIat]
+    code=AIat, levels=1, race=other
+== A06X  武器 [AIat]
+    code=AIat, levels=1, race=other
+== A06Y  武器 [AIat]
+    code=AIat, levels=1, race=other
+== A06Z  武器 [AIat]
+    code=AIat, levels=1, race=other
+== A070  武器 [AIat]
+    code=AIat, levels=1, race=other
+== A071  武器 [AIat]
+    code=AIat, levels=1, race=other
+== A072  武器 [AIat]
+    code=AIat, levels=1, race=other
+== A073  武器 [AIat]
+    code=AIat, levels=1, race=other
+== A074  武器 [AIat]
+    code=AIat, levels=1, race=other
+== A075  武器 [AIat]
+    code=AIat, levels=1, race=other
+== A076  武器 [AIat]
+    code=AIat, levels=1, race=other

@@ -1,0 +1,579 @@
+ItemData cols: ['itemID', 'comment', 'scriptname', 'version', 'class', 'Level', 'oldLevel', 'abilList', 'cooldownID', 'ignoreCD', 'uses', 'prio', 'usable', 'perishable', 'droppable', 'pawnable', 'sellable', 'pickRandom', 'powerup', 'drop', 'stockMax', 'stockRegen', 'stockStart', 'goldcost', 'lumbercost', 'HP', 'morph', 'armor', 'file', 'scale', 'selSize', 'colorR', 'colorG', 'colorB', 'InBeta']
+custom item count: 144
+
+== I000  蜥蜴的肉
+    class=Charged, Level=3, abilList=A00F, cooldownID=A00F, uses=5, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=3, prio=121
+    Ubertip: 能恢复少量体力，少量饥饿，和少量的水分。
+
+== I001  眼镜蛇的肉
+    class=Charged, Level=3, abilList=A00H, cooldownID=A00H, uses=5, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=3, prio=121
+    Ubertip: 能恢复少量体力，少量饥饿，和少量的水分。
+
+== I002  秃鹰的肉
+    class=Charged, Level=3, abilList=A008, cooldownID=A008, uses=5, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=3, prio=121
+    Ubertip: 能恢复少量体力，少量饥饿，和少量的水分。
+
+== I003  蜘蛛的肉
+    class=Charged, Level=3, abilList=A00G, cooldownID=A00G, uses=5, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=3, prio=121
+    Ubertip: 能恢复少量体力，少量饥饿，和少量的水分。
+
+== I004  沙虫的肉
+    class=Charged, Level=3, abilList=A00E, cooldownID=A00E, uses=5, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=3, prio=121
+    Ubertip: 能恢复少量体力，少量饥饿，和少量的水分。
+
+== I005  沙鼠的肉
+    class=Charged, Level=3, abilList=A00J, cooldownID=A00J, uses=5, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=3, prio=121
+    Ubertip: 能恢复少量体力，少量饥饿，和少量的水分。
+
+== I006  白颈鼠的肉
+    class=Charged, Level=3, abilList=A00I, cooldownID=A00I, uses=5, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=3, prio=121
+    Ubertip: 能恢复少量体力，少量饥饿，和少量的水分。
+
+== I007  蝎子的肉
+    class=Charged, Level=3, abilList=A00K, cooldownID=A00K, uses=5, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=3, prio=121
+    Ubertip: 能恢复少量体力，少量饥饿，和少量的水分。
+
+== I008  野兔的肉
+    class=Charged, Level=3, abilList=A007, cooldownID=A007, uses=5, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=3, prio=121
+    Ubertip: 能恢复少量体力，少量饥饿，和少量的水分。
+
+== I009  甲壳虫的肉
+    class=Charged, Level=3, abilList=A006, cooldownID=A006, uses=5, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=3, prio=121
+    Ubertip: 能恢复少量体力，少量饥饿，和少量的水分。
+
+== I00A  水
+    class=Charged, Level=2, abilList=A000, cooldownID=A000, uses=1, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=0, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=1, oldLevel=0, prio=75
+    Ubertip: 水啊，有水喝了啊。（可以降低一点点的体温和恢复水分）
+
+== I00B  仙人掌的汁
+    class=Charged, Level=0, abilList=A00B, cooldownID=A00B, uses=1, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=2, stockRegen=180, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=80
+    Ubertip: 能恢复少量体力，少量饥饿，和少量的水分，同时也会降低一点点体温。
+
+== I00C  植被
+    class=Miscellaneous, Level=0, usable=0, perishable=1, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=100000, armor=Wood, ignoreCD=0, sellable=1, powerup=0, morph=0, oldLevel=0, prio=200
+    Ubertip: 令人惊奇的植物，能够奇迹般地在沙漠生存。
+
+== I00D  木条
+    class=Miscellaneous, Level=0, abilList=AIat, cooldownID=AIat, usable=0, perishable=1, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=100000, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=27
+    Ubertip: 一块木条。增加3点的攻击力。
+
+== I00E  木头
+    class=Miscellaneous, Level=0, abilList=AItj, cooldownID=AItj, usable=0, perishable=1, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=100000, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=27
+    Ubertip: 一块木头。增加5点的攻击力。
+
+== I00F  蜘蛛丝
+    class=Miscellaneous, Level=0, uses=0, usable=0, perishable=1, droppable=1, pawnable=0, stockMax=2, stockRegen=60, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=81
+    Ubertip: 蜘蛛的丝。
+
+== I00G  石头
+    class=Miscellaneous, Level=0, abilList=A01W,AItj, cooldownID=A01W, uses=1, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=3, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=100000, armor=Wood, ignoreCD=0, sellable=1, powerup=0, morph=0, oldLevel=0, prio=0
+    Ubertip: 一块石头。增加5点的攻击力。
+
+== I00H  蛇皮
+    class=Miscellaneous, Level=0, usable=0, perishable=1, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=200
+    Ubertip: 一个稀有的蛇皮。
+
+== I00I  狼皮
+    class=Miscellaneous, Level=0, usable=0, perishable=1, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=200
+    Ubertip: 一个稀有的狼皮。
+
+== I00J  鼠皮
+    class=Miscellaneous, Level=0, usable=0, perishable=1, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=0
+    Ubertip: 这只是鼠类的皮而已!
+
+== I00K  毒针
+    class=Miscellaneous, Level=0, abilList=AItl, cooldownID=AItl, usable=0, perishable=1, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=0
+    Ubertip: 这只是毒针而已!增加8点的攻击力。
+
+== I00L  蛇牙
+    class=Miscellaneous, Level=0, usable=0, perishable=1, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=200
+    Ubertip: 一个稀有的蛇牙。
+
+== I00M  蛇毒
+    class=Miscellaneous, Level=0, usable=0, perishable=1, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=0
+    Ubertip: 这只是蛇毒而已!
+
+== I00N  火窖
+    class=Artifact, Level=1, abilList=A00M, cooldownID=A00M, uses=1, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=3, stockRegen=30, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=0
+    Ubertip: 建造火窖，火窖可以添加幸存者的体温。
+
+== I00O  干枯的井
+    class=Artifact, Level=1, abilList=A00N, cooldownID=A00N, uses=1, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=3, stockRegen=30, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=0
+    Ubertip: 建造干枯的井，干枯的井会慢慢的存储地里的水。
+
+== I00P  帐篷
+    class=Artifact, Level=1, abilList=A00Q, cooldownID=A00Q, uses=1, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=3, stockRegen=30, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=0
+    Ubertip: 建造帐篷，帐篷可以让幸存者在里面舒服的睡觉。
+
+== I00Q  狼的肉
+    class=Charged, Level=3, abilList=A00R, cooldownID=A00R, uses=3, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=3, prio=121
+    Ubertip: 能恢复大量体力，大量饥饿，和少量的水分。
+
+== I00R  毒液
+    class=Miscellaneous, Level=0, usable=0, perishable=1, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=0
+    Ubertip: 这只是毒液而已!
+
+== I00S  标志
+    class=Artifact, Level=1, abilList=A00S, cooldownID=A00S, uses=1, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=3, stockRegen=30, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=0
+    Ubertip: 建造标志，标志可以标记一个地方的位置。
+
+== I00T  解毒药
+    class=Charged, Level=0, abilList=A00T, cooldownID=A00T, uses=1, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=2, stockRegen=30, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=57
+    Ubertip: 解除身上中毒的效果。只可以为自己使用。
+
+== I00U  树桩（2）
+    class=Artifact, Level=1, abilList=A00X, cooldownID=A00X, uses=2, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=3, stockRegen=30, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=0
+    Ubertip: 建造树桩，树桩可以保卫基地。
+
+== I00V  工具磨坊
+    class=Artifact, Level=1, abilList=A00U, cooldownID=A00U, uses=1, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=3, stockRegen=30, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=0
+    Ubertip: 建造工具磨坊，工具磨坊可以生产各种辅助的道具。
+
+== I00W  战争磨坊
+    class=Artifact, Level=1, abilList=A00V, cooldownID=A00V, uses=1, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=3, stockRegen=30, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=0
+    Ubertip: 建造战争磨坊，战争磨坊可以制作各种武器，和强化武器。
+
+== I00X  防具磨坊
+    class=Artifact, Level=1, abilList=A00W, cooldownID=A00W, uses=1, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=3, stockRegen=30, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=0
+    Ubertip: 建造防具磨坊，防具磨坊可以制作各种防具，和强化各种防具。
+
+== I00Y  工具工厂
+    class=Artifact, Level=1, abilList=A00Y, cooldownID=A00Y, uses=1, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=3, stockRegen=30, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=0
+    Ubertip: 建造工具工厂，一个初级产品的工厂，可以生产铁，钢，银等各种矿石，还可以制作各种物品！
+
+== I00Z  仓库
+    class=Artifact, Level=1, abilList=A00Z, cooldownID=A00Z, uses=1, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=3, stockRegen=30, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=0
+    Ubertip: 建造可以存放东西的仓库，一个私人的仓库。|cFFFF0000（如果东西把放在地上，有及小的几率腐化，不管是什么东西）
+
+== I010   苗刀
+    class=Campaign, Level=5, abilList=A070,A01E, cooldownID=A011, usable=1, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+60|r /  / |cffff0000攻速+0%|r /  / |cffff0080重创：0%造成附加0伤害|r /  / |cffc0c0c0一把普普通通苗刀，用来杀人还不错|r
+
+== I011  武士刀|cFFFF0754☆☆☆
+    class=Permanent, Level=5, abilList=A03W,A02X,A02M,A04V, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+200|r /  / |cffff0000攻速+15%|r /  / |cffff0080重创：60%造成3倍伤害|r /  / |cffc0c0c0小日本从中国唐刀改进的刀，日本武士用的刀！|r
+
+== I012   西瓜刀
+    class=Campaign, Level=5, abilList=A070,A01L,A01M, cooldownID=A011, usable=1, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+80|r /  / |cffff0000攻速-25%|r /  / |cffff0080重创：0%造成0倍伤害|r /  / |cffc0c0c0用来切西瓜的刀，但是现在没有西瓜可以切|r
+
+== I013  武士刀|cFFFF0754☆☆
+    class=Permanent, Level=5, abilList=A03W,A02U,A04A,A02M, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+100|r /  / |cffff0000攻速+15%|r /  / |cffff0080重创：50%造成3倍伤害|r /  / |cffc0c0c0小日本从中国唐刀改进的刀，日本武士用的刀！|r
+
+== I014  铁
+    class=Miscellaneous, Level=0, abilList=AItj, cooldownID=AItj, usable=0, perishable=1, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=100000, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=27
+    Ubertip: 一块铁。增加5点的攻击力。
+
+== I015  树桩（1）
+    class=Artifact, Level=1, abilList=A00X, cooldownID=A00X, uses=1, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=3, stockRegen=30, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=0
+    Ubertip: 建造树桩，树桩可以保卫基地。
+
+== I016  钢
+    class=Miscellaneous, Level=0, abilList=AItj, cooldownID=AItj, usable=0, perishable=1, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=100000, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=27
+    Ubertip: 一块钢。增加5点的攻击力。
+
+== I017  金
+    class=Miscellaneous, Level=0, abilList=AItj, cooldownID=AItj, usable=0, perishable=1, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=100000, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=27
+    Ubertip: 一块金。增加5点的攻击力。
+
+== I018  银
+    class=Miscellaneous, Level=0, abilList=AItj, cooldownID=AItj, usable=0, perishable=1, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=100000, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=27
+    Ubertip: 一块银。增加5点的攻击力。
+
+== I019  金刚石
+    class=Miscellaneous, Level=0, abilList=AItx, cooldownID=AItx, usable=0, perishable=1, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=100000, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=27
+    Ubertip: 一块金刚石。增加20点的攻击力。
+
+== I01A  武士刀|cFFFF0754☆☆☆☆
+    class=Permanent, Level=5, abilList=A03W,A05R,A04V,A04X, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+200|r /  / |cffff0000攻速+25%|r /  / |cffff0080重创：60%造成4倍伤害|r /  / |cffc0c0c0小日本从中国唐刀改进的刀，日本武士用的刀！|r
+
+== I01B   斩马刀
+    class=Campaign, Level=5, abilList=A070,A01E,A02N, cooldownID=A011, usable=1, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+60|r /  / |cffff0000攻速+0%|r /  / |cffff0080重创：25%造成3倍伤害|r /  / |cffc0c0c0古代战争时用来斩马的刀器，暴击后的攻击力很高|r
+
+== I01C   蝴蝶刀
+    class=Campaign, Level=5, abilList=A070,A01L,A02M, cooldownID=A011, usable=1, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+50|r /  / |cffff0000攻速+15%|r /  / |cffff0080重创：0%造成0倍伤害|r /  / |cffc0c0c0十分顺手的蝴蝶刀，命中率及高|r
+
+== I01D  太刀|cFFFF0754☆☆☆☆
+    class=Permanent, Level=5, abilList=A072,A056,A05H,A03A, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+300|r /  / |cffff0000攻速-20%|r /  / |cffff0080重创：45%造成附加200伤害|r /  / |cffc0c0c0攻击了还算可以，就是有点笨重|r
+
+== I01E  瑞士军刀|cFFFF0754☆☆
+    class=Permanent, Level=5, abilList=A06W,A05N,A010,A04B, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+90|r /  / |cffff0000攻速+35%|r /  / |cffff0080重创：45%造成3.5倍伤害|r /  / |cffc0c0c0十分厉害的的刀军刀，命中要害的几率及高
+
+== I01F  太刀|cFFFF0754☆☆
+    class=Permanent, Level=5, abilList=A072,A01K,A01O,A03B, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+125|r /  / |cffff0000攻速-15%|r /  / |cffff0080重创：40%造成附加100伤害|r /  / |cffc0c0c0攻击了还算可以，就是有点笨重|r
+
+== I01G   木棍
+    class=Campaign, Level=5, abilList=A06W,A062,A01N,A011, cooldownID=A011, usable=1, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+50|r /  / |cffff0000攻速+10%|r /  / |cffff0080重创：15%造成附加100伤害|r /  / |cffc0c0c0实心的棍子，用起来十分顺手|r
+
+== I01H  武士刀|cFFFF0754☆☆☆☆☆
+    class=Permanent, Level=5, abilList=A03W,A05U,A04V,A059, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+200|r /  / |cffff0000攻速+40%|r /  / |cffff0080重创：45%造成4.5倍伤害|r /  / |cffc0c0c0小日本从中国唐刀改进的刀，日本武士用的刀！|r
+
+== I01I  体力药水
+    class=Charged, Level=0, abilList=A01A, cooldownID=A00B, uses=3, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=2, stockRegen=180, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=80
+    Ubertip: 能恢复大量的体力，劳累，饥饿和水分。
+
+== I01J   毒爪
+    class=Campaign, Level=0, abilList=A01Y, cooldownID=A01Y, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=180, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=0
+    Ubertip: |cffff0000攻击+60|r /  / |cffff0000攻速-0%|r /  / |cffff0080重创：100%造成被攻击单位减少5的防御|r /  / |cffc0c0c0十分毒的武器~小心点，别让自己中毒了|r
+
+== I01K  人肉
+    class=Charged, Level=3, abilList=A01Z, cooldownID=A01Z, uses=1, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=3, prio=121
+    Ubertip: 当你找到这种肉时说明有人在这里死去过！这或许是你同伴的尸体！你吃还是不吃？就看你敢不敢吃人肉了~！
+
+== I01L  靴
+    class=Campaign, Level=3, abilList=A017,AIms, cooldownID=A017, usable=1, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=60, stockStart=220, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=2, prio=41
+    Ubertip: 能增加移动速度，和奔跑技能。
+
+== I01M  加速手套
+    class=Campaign, Level=2, abilList=A04B, cooldownID=AIas, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=2, prio=32
+    Ubertip: 增加英雄35%的攻击速度。2个可以合成高级手套！
+
+== I01N  医疗宝石☆
+    class=Campaign, Level=6, abilList=AIlz, cooldownID=AIml, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=128
+    Ubertip: 增加幸存者的体力值。两个宝石☆可以合成医疗宝石☆☆
+
+== I01O  一布袋的肉
+    class=Campaign, Level=0, abilList=A01U, cooldownID=A01U, uses=15, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=10
+    Ubertip: 能恢复大量的体力，劳累，饥饿和水分。
+
+== I01P  劳力宝石
+    class=Campaign, Level=6, abilList=AImb, cooldownID=AImm, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=61
+    Ubertip: 增加劳力最大值。
+
+== I01Q  僵尸的肉
+    class=Charged, Level=3, abilList=A01Z, cooldownID=A01Z, uses=2, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=3, prio=121
+    Ubertip: 一看就觉得想吐但是能恢复少量体力，少量饥饿，和少量的水分。
+
+== I01R  僵尸终结者的头颅
+    class=Miscellaneous, Level=0, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=3, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=1, powerup=0, morph=0, oldLevel=0, prio=0
+    Ubertip: 僵尸终结者曾是僵尸里的王者，不幸的是你杀害了他，或许这东西有什么用。
+
+== I01S  木头人
+    class=Artifact, Level=1, abilList=A023, cooldownID=A023, uses=1, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=3, stockRegen=30, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=0
+    Ubertip: 建造木头人，一个木头人练习武术的时用的道具，可以加固树桩！
+
+== I01T  高级加速手套
+    class=Campaign, Level=2, abilList=A05G, cooldownID=A025, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=2, prio=32
+    Ubertip: 增加英雄80%的攻击速度。
+
+== I01U  茅草屋
+    class=Artifact, Level=1, abilList=A02A, cooldownID=A02A, uses=1, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=3, stockRegen=30, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=0
+    Ubertip: 建造茅草屋，十分凉快的茅草屋可以让幸存者在里面凉快的睡觉，降低体温。
+
+== I01V  洗脸水
+    class=Charged, Level=2, abilList=A000, cooldownID=A000, uses=1, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=0, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=1, oldLevel=0, prio=75
+    Ubertip: 洗把水用来洗脸，为了不浪费水洗后的水再喝~（可以降低体温和恢复水分）
+
+== I01W  骆驼的肉
+    class=Charged, Level=3, abilList=A02D, cooldownID=A02D, uses=5, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=3, prio=121
+    Ubertip: 能恢复体力，饥饿，和水分。
+
+== I01X  骆驼水
+    class=Charged, Level=2, abilList=A000, cooldownID=A000, uses=1, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=0, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=1, oldLevel=0, prio=75
+    Ubertip: 骆驼体内的水~~（可以降低一点体温和恢复一点水分）
+
+== I01Y  蜘蛛丝饰针
+    class=Charged, Level=4, abilList=A01T, cooldownID=A01T, uses=1, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=6, prio=30
+    Ubertip: 捕获某个敌方的单位。
+
+== I01Z  训练营
+    class=Artifact, Level=1, abilList=A02K, cooldownID=A02K, uses=1, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=3, stockRegen=30, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=0
+    Ubertip: 建造训练营，训练营可以训练各种技能。
+
+== I020   锄头
+    class=Campaign, Level=3, abilList=A011,A05H,A02L, cooldownID=A02L, usable=1, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=60, stockStart=220, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=2, prio=41
+    Ubertip: |cffff0000攻击+50|r /  / |cffff0000攻速-20%|r /  / |cffff0080重创：0%造成附加0伤害|r /  / |cffc0c0c0这锄头还可以挖矿，需要10点累劳|r
+
+== I021  中国唐刀|cFFFF0754☆☆☆☆
+    class=Permanent, Level=5, abilList=A076,A05P,A05D,A01M, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+350|r /  / |cffff0000攻速-25%|r /  / |cffff0080重创：35%造成4倍伤害|r /  / |cffc0c0c0中国唐刀，攻击力十分高|r
+
+== I022   佩刀
+    class=Campaign, Level=5, abilList=A070,A02S,A011,A01N, cooldownID=A011, usable=1, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+50|r /  / |cffff0000攻速+10%|r /  / |cffff0080重创：25%造成2.5倍伤害|r /  / |cffc0c0c0十分顺手的佩刀，攻击速度还可以|r
+
+== I023  刺刀|cFFFF0754☆☆
+    class=Permanent, Level=5, abilList=A070,A01L,A01P,A02O, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+80|r /  / |cffff0000攻速+45%|r /  / |cffff0080重创：80%造成2倍伤害|r /  / |cffc0c0c0刺客用的刀，很轻的刀|r
+
+== I024  德国开山刀|cFFFF0754☆
+    class=Permanent, Level=5, abilList=A074,A062,A01F,A01M, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+85|r /  / |cffff0000攻速－25%|r /  / |cffff0080重创：15%造成附加100伤害|r /  / |cffc0c0c0德国的开山刀，全力劈下人一下就变成两半。|r
+
+== I025  中国唐刀|cFFFF0754★
+    class=Permanent, Level=5, abilList=A076,A05S,A057,A05Y, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+450|r /  / |cffff0000攻速-10%|r /  / |cffff0080重创：40%造成6倍伤害|r /  / |cffc0c0c0中国唐刀，攻击力十分高|r
+
+== I026  中国唐刀|cFFFF0754☆☆☆☆☆
+    class=Permanent, Level=5, abilList=A076,A05X,A05B,A01O, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+400|r /  / |cffff0000攻速-15%|r /  / |cffff0080重创：35%造成5倍伤害|r /  / |cffc0c0c0中国唐刀，攻击力十分高|r
+
+== I027  中国唐刀|cFFFF0754☆☆
+    class=Permanent, Level=5, abilList=A076,A02N,A01H,A01Q, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+250|r /  / |cffff0000攻速-35%|r /  / |cffff0080重创：25%造成3倍伤害|r /  / |cffc0c0c0中国唐刀，攻击力十分高|r
+
+== I028  中国唐刀|cFFFF0754☆
+    class=Permanent, Level=5, abilList=A076,A02S,A04A,A01Q, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+100|r /  / |cffff0000攻速-35%|r /  / |cffff0080重创：25%造成2.5倍伤害|r /  / |cffc0c0c0中国唐刀，攻击力十分高|r
+
+== I029  刺刀|cFFFF0754☆☆☆☆☆
+    class=Permanent, Level=5, abilList=A070,A04A,A01O,A05W, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+100|r /  / |cffff0000攻速+70%|r /  / |cffff0080重创：85%造成3.5倍伤害|r /  / |cffc0c0c0刺客用的刀，很轻的刀|r
+
+== I02A  刺刀|cFFFF0754☆
+    class=Permanent, Level=5, abilList=A070,A011,A01P,A05K, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+50|r /  / |cffff0000攻速+45%|r /  / |cffff0080重创：80%造成1.5倍伤害|r /  / |cffc0c0c0刺客用的刀，很轻的刀|r
+
+== I02B  刺刀|cFFFF0754☆☆☆☆
+    class=Permanent, Level=5, abilList=A070,A04A,A04W,A02P, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+100|r /  / |cffff0000攻速+65%|r /  / |cffff0080重创：80%造成3倍伤害|r /  / |cffc0c0c0刺客用的刀，很轻的刀|r
+
+== I02C  刺刀|cFFFF0754☆☆☆
+    class=Permanent, Level=5, abilList=A070,A01L,A04W,A05M, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+80|r /  / |cffff0000攻速+65%|r /  / |cffff0080重创：80%造成2.5倍伤害|r /  / |cffc0c0c0刺客用的刀，很轻的刀|r
+
+== I02D  刺刀|cFFFF0754★
+    class=Permanent, Level=5, abilList=A06Y,A05C,A05G,A060, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+150|r /  / |cffff0000攻速+80%|r /  / |cffff0080重创：85%造成4倍伤害|r /  / |cffc0c0c0刺客用的刀，很轻的刀|r
+
+== I02E  中国唐刀|cFFFF0754☆☆☆
+    class=Permanent, Level=5, abilList=A076,A02V,A05D,A025, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+350|r /  / |cffff0000攻速-45%|r /  / |cffff0080重创：25%造成4倍伤害|r /  / |cffc0c0c0中国唐刀，攻击力十分高|r
+
+== I02F   大砍刀
+    class=Campaign, Level=5, abilList=A070,A01L,A038,A063, cooldownID=A011, usable=1, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+80|r /  / |cffff0000攻速-40%|r /  / |cffff0080重创：35%造成附加50伤害|r /  / |cffc0c0c0比较重的刀，攻击了还算可以|r
+
+== I02G  武士刀|cFFFF0754☆
+    class=Permanent, Level=5, abilList=A03W,A02Q,A01F,A02M, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+85|r /  / |cffff0000攻速+15%|r /  / |cffff0080重创：50%造成2.5倍伤害|r /  / |cffc0c0c0小日本从中国唐刀改进的刀，日本武士用的刀！|r
+
+== I02H  太刀|cFFFF0754★
+    class=Permanent, Level=5, abilList=A075,A05B,A05H,A06A, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+400|r /  / |cffff0000攻速-20%|r /  / |cffff0080重创：65%造成附加350伤害|r /  / |cffc0c0c0攻击了还算可以，就是有点笨重|r
+
+== I02I  青甲|cFFFF0754☆☆☆☆
+    class=Purchasable, Level=5, abilList=A03Y,A03G,A014, cooldownID=A011, usable=1, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000防御+55|r /  / |cffff0080特效：增加能将敌人30%的近战攻击弹射回去。|r /  / |cffc0c0c0十分坚硬青甲，防御力及高|r
+
+== I02J  尼泊尔军刀|cFFFF0754☆☆☆☆☆
+    class=Permanent, Level=5, abilList=A06Z,A05T,A01H,A06B, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+250|r /  / |cffff0000攻速+30%|r /  / |cffff0080重创：15%造成20倍伤害|r /  / |cffc0c0c0十分顺手的尼泊尔军刀，打中要害一刀致命！|r
+
+== I02K  德国开山刀|cFFFF0754☆☆
+    class=Permanent, Level=5, abilList=A074,A069,A01K,A01M, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+200|r /  / |cffff0000攻速－35%|r /  / |cffff0080重创：35%造成附加200伤害|r /  / |cffc0c0c0德国的开山刀，全力劈下人一下就变成两半。|r
+
+== I02L  斧头|cFFFF0754★
+    class=Permanent, Level=5, abilList=A06X,A06H,A058,A025, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+800|r /  / |cffff0000攻速-45%|r /  / |cffff0080重创：40%造成附加650伤害|r /  / |cffc0c0c0比较重的斧头，攻击了还算可以|r
+
+== I02M  武士刀|cFFFF0754★
+    class=Permanent, Level=5, abilList=A03W,A061,A01H,A01P, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+250|r /  / |cffff0000攻速+45%|r /  / |cffff0080重创：60%造成4.5倍伤害|r /  / |cffc0c0c0小日本从中国唐刀改进的刀，日本武士用的刀！|r
+
+== I02N  尼泊尔军刀|cFFFF0754☆☆☆☆
+    class=Permanent, Level=5, abilList=A06Z,A05Q,A04V,A04X, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+200|r /  / |cffff0000攻速+25%|r /  / |cffff0080重创：15%造成15倍伤害|r /  / |cffc0c0c0十分顺手的尼泊尔军刀，打中要害一刀致命！|r
+
+== I02O  狼牙棒|cFFFF0754☆☆☆☆
+    class=Permanent, Level=5, abilList=A071,A04Z,A01H,A064, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+250|r /  / |cffff0000攻速+20%|r /  / |cffff0080重创：45%造成附加320伤害|r /  / |cffc0c0c0这把狼牙棒看起来好厉害的样子|r
+
+== I02P  小狼的肉
+    class=Charged, Level=3, abilList=A04P, cooldownID=A00R, uses=2, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=3, prio=121
+    Ubertip: 能恢复大量体力，大量饥饿，和少量的水分。
+
+== I02Q  德国开山刀|cFFFF0754☆☆☆☆
+    class=Permanent, Level=5, abilList=A074,A039,A05B,A025, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+400|r /  / |cffff0000攻速－45%|r /  / |cffff0080重创：35%造成附加300伤害|r /  / |cffc0c0c0德国的开山刀，全力劈下人一下就变成两半。|r
+
+== I02R  德国开山刀|cFFFF0754☆☆☆
+    class=Permanent, Level=5, abilList=A074,A067,A01K,A01M, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+250|r /  / |cffff0000攻速－25%|r /  / |cffff0080重创：40%造成附加250伤害|r /  / |cffc0c0c0德国的开山刀，全力劈下人一下就变成两半。|r
+
+== I02S  德国开山刀|cFFFF0754★
+    class=Permanent, Level=5, abilList=A06W,A06L,A054,A01Q, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+600|r /  / |cffff0000攻速－35%|r /  / |cffff0080重创：35%造成附加500伤害|r /  / |cffc0c0c0德国的开山刀，全力劈下人一下就变成两半。|r
+
+== I02T  德国开山刀|cFFFF0754☆☆☆☆☆
+    class=Permanent, Level=5, abilList=A074,A06I,A057,A038, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+450|r /  / |cffff0000攻速－40%|r /  / |cffff0080重创：35%造成附加400伤害|r /  / |cffc0c0c0德国的开山刀，全力劈下人一下就变成两半。|r
+
+== I02U  斧头|cFFFF0754☆☆☆
+    class=Permanent, Level=5, abilList=A06X,A068,A05A,A06J, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+375|r /  / |cffff0000攻速-50%|r /  / |cffff0080重创：30%造成附加300伤害|r /  / |cffc0c0c0比较重的斧头，攻击了还算可以|r
+
+== I02V  斧头|cFFFF0754☆☆☆☆
+    class=Permanent, Level=5, abilList=A06X,A065,A058,A04Y, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+800|r /  / |cffff0000攻速-65%|r /  / |cffff0080重创：30%造成附加300伤害|r /  / |cffc0c0c0比较重的斧头，攻击了还算可以|r
+
+== I02W  斧头|cFFFF0754☆☆
+    class=Permanent, Level=5, abilList=A066,A06X,A025,A04V, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+200|r /  / |cffff0000攻速-45%|r /  / |cffff0080重创：20%造成附加300伤害|r /  / |cffc0c0c0比较重的斧头，攻击了还算可以|r
+
+== I02X  斧头|cFFFF0754☆
+    class=Permanent, Level=5, abilList=A06X,A03D,A01K,A025, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+125|r /  / |cffff0000攻速-45%|r /  / |cffff0080重创：20%造成附加150伤害|r /  / |cffc0c0c0比较重的斧头，攻击了还算可以|r
+
+== I02Y  斧头|cFFFF0754☆☆☆☆☆
+    class=Permanent, Level=5, abilList=A06X,A06C,A058,A052, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+800|r /  / |cffff0000攻速-55%|r /  / |cffff0080重创：40%造成附加500伤害|r /  / |cffc0c0c0比较重的斧头，攻击了还算可以|r
+
+== I02Z  狼牙棒|cFFFF0754☆☆☆
+    class=Permanent, Level=5, abilList=A071,A01N,A01H,A067, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+250|r /  / |cffff0000攻速+10%|r /  / |cffff0080重创：40%造成附加250伤害|r /  / |cffc0c0c0这把狼牙棒看起来好厉害的样子|r
+
+== I030  狼牙棒|cFFFF0754☆☆
+    class=Permanent, Level=5, abilList=A071,A01Q,A05E,A067, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+175|r /  / |cffff0000攻速-35%|r /  / |cffff0080重创：40%造成附加250伤害|r /  / |cffc0c0c0这把狼牙棒看起来好厉害的样子|r
+
+== I031  狼牙棒|cFFFF0754☆
+    class=Permanent, Level=5, abilList=A071,A01Q,A04A,A03C, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+100|r /  / |cffff0000攻速-35%|r /  / |cffff0080重创：40%造成附加125伤害|r /  / |cffc0c0c0这把狼牙棒看起来好厉害的样子|r
+
+== I032  狼牙棒|cFFFF0754☆☆☆☆☆
+    class=Permanent, Level=5, abilList=A071,A04Z,A056,A06F, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+300|r /  / |cffff0000攻速+20%|r /  / |cffff0080重创：45%造成附加420伤害|r /  / |cffc0c0c0这把狼牙棒看起来好厉害的样子|r
+
+== I033  狼牙棒|cFFFF0754★
+    class=Permanent, Level=5, abilList=A071,A04X,A05D,A06G, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+350|r /  / |cffff0000攻速+25%|r /  / |cffff0080重创：50%造成附加450伤害|r /  / |cffc0c0c0这把狼牙棒看起来好厉害的样子|r
+
+== I034  瑞士军刀|cFFFF0754★
+    class=Permanent, Level=5, abilList=A06W,A05V,A04V,A05I, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+200|r /  / |cffff0000攻速+60%|r /  / |cffff0080重创：50%造成5.5倍伤害|r /  / |cffc0c0c0十分厉害的的刀军刀，命中要害的几率及高
+
+== I035  瑞士军刀|cFFFF0754☆☆☆☆☆
+    class=Permanent, Level=5, abilList=A06W,A05Z,A055,A053, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+180|r /  / |cffff0000攻速+55%|r /  / |cffff0080重创：50%造成5倍伤害|r /  / |cffc0c0c0十分厉害的的刀军刀，命中要害的几率及高
+
+== I036  瑞士军刀|cFFFF0754☆☆☆☆
+    class=Permanent, Level=5, abilList=A06W,A05J,A05C,A050, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+150|r /  / |cffff0000攻速+50%|r /  / |cffff0080重创：45%造成5倍伤害|r /  / |cffc0c0c0十分厉害的的刀军刀，命中要害的几率及高
+
+== I037  瑞士军刀|cFFFF0754☆☆☆
+    class=Permanent, Level=5, abilList=A06W,A05O,A01K,A059, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+125|r /  / |cffff0000攻速+40%|r /  / |cffff0080重创：45%造成4倍伤害|r /  / |cffc0c0c0十分厉害的的刀军刀，命中要害的几率及高
+
+== I038  瑞士军刀|cFFFF0754☆
+    class=Permanent, Level=5, abilList=A06W,A02R,A01E,A04B, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+60|r /  / |cffff0000攻速+35%|r /  / |cffff0080重创：45%造成3倍伤害|r /  / |cffc0c0c0十分厉害的的刀军刀，命中要害的几率及高
+
+== I039  太刀|cFFFF0754☆
+    class=Permanent, Level=5, abilList=A072,A01L,A01Q,A063, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+80|r /  / |cffff0000攻速-35%|r /  / |cffff0080重创：35%造成附加50伤害|r /  / |cffc0c0c0攻击了还算可以，就是有点笨重|r
+
+== I03A  太刀|cFFFF0754☆☆☆
+    class=Permanent, Level=5, abilList=A072,A056,A01Q,A037, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+300|r /  / |cffff0000攻速-35%|r /  / |cffff0080重创：45%造成附加150伤害|r /  / |cffc0c0c0攻击了还算可以，就是有点笨重|r
+
+== I03B  太刀|cFFFF0754☆☆☆☆☆
+    class=Permanent, Level=5, abilList=A072,A05D,A05H,A06E, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+350|r /  / |cffff0000攻速-20%|r /  / |cffff0080重创：50%造成附加250伤害|r /  / |cffc0c0c0攻击了还算可以，就是有点笨重|r
+
+== I03C  时间暂停
+    class=Campaign, Level=0, abilList=A04Q, cooldownID=A04Q, uses=1, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=440, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=0
+    Ubertip: 使用时间停止60秒！（晚上和白天都可以使用）{白天停止时间可以争取发展的时间，晚上停止可以杀死更多的敌人~
+
+== I03D  尼泊尔军刀|cFFFF0754★
+    class=Permanent, Level=5, abilList=A06Z,A06D,A056,A04B, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+300|r /  / |cffff0000攻速+35%|r /  / |cffff0080重创：15%造成25倍伤害|r /  / |cffc0c0c0十分顺手的尼泊尔军刀，打中要害一刀致命！|r
+
+== I03E  尼泊尔军刀|cFFFF0754☆☆☆
+    class=Permanent, Level=5, abilList=A06Z,A02W,A05C,A04X, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+150|r /  / |cffff0000攻速+25%|r /  / |cffff0080重创：10%造成15倍伤害|r /  / |cffc0c0c0十分顺手的尼泊尔军刀，打中要害一刀致命！|r
+
+== I03F  尼泊尔军刀|cFFFF0754☆☆
+    class=Permanent, Level=5, abilList=A06Z,A02T,A05F,A01N, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+130|r /  / |cffff0000攻速+10%|r /  / |cffff0080重创：5%造成15倍伤害|r /  / |cffc0c0c0十分顺手的尼泊尔军刀，打中要害一刀致命！|r
+
+== I03G  尼泊尔军刀|cFFFF0754☆
+    class=Permanent, Level=5, abilList=A06Z,A05L,A010,A01N, cooldownID=A011, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000攻击+90|r /  / |cffff0000攻速+10%|r /  / |cffff0080重创：5%造成10倍伤害|r /  / |cffc0c0c0十分顺手的尼泊尔军刀，打中要害一刀致命！|r
+
+== I03H  皮甲|cFFFF0754☆☆
+    class=Purchasable, Level=5, abilList=A03X,A012,A031, cooldownID=A011, usable=1, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000防御+35|r /  / |cffff0080特效：25%闪避|r /  / |cffc0c0c0十分灵敏皮甲，防御力及高|r
+
+== I03I  青甲|cFFFF0754☆☆
+    class=Purchasable, Level=5, abilList=A03Y,A03G,A012, cooldownID=A011, usable=1, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000防御+35|r /  / |cffff0080特效：增加能将敌人30%的近战攻击弹射回去。|r /  / |cffc0c0c0十分坚硬青甲，防御力及高|r
+
+== I03J  皮甲|cFFFF0754☆
+    class=Purchasable, Level=5, abilList=A03X,A01I,A030, cooldownID=A011, usable=1, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000防御+25|r /  / |cffff0080特效：15%闪避|r /  / |cffc0c0c0十分灵敏皮甲，防御力及高|r
+
+== I03K  青甲|cFFFF0754☆
+    class=Purchasable, Level=5, abilList=A03Y,A03G,A01I, cooldownID=A011, usable=1, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000防御+25|r /  / |cffff0080特效：增加能将敌人30%的近战攻击弹射回去。|r /  / |cffc0c0c0十分坚硬青甲，防御力及高|r
+
+== I03L  铸造秘籍（中级）
+    class=Campaign, Level=0, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=0
+    Ubertip: 中级的铸造秘籍用来做高级的武器和防具的！
+
+== I03M  皮甲|cFFFF0754☆☆☆
+    class=Purchasable, Level=5, abilList=A01J,A03X,A02Z, cooldownID=A011, usable=1, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000防御+45|r /  / |cffff0080特效：35%闪避|r /  / |cffc0c0c0十分灵敏皮甲，防御力及高|r
+
+== I03N  铸造秘籍（初级）
+    class=Campaign, Level=0, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=0
+    Ubertip: 初级的铸造秘籍用来做高级的武器和防具的！
+
+== I03O  铸造秘籍（高级）
+    class=Campaign, Level=0, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=0
+    Ubertip: 高级的铸造秘籍用来做高级的武器和防具的！
+
+== I03P  时间加速
+    class=Campaign, Level=0, abilList=A04Q, cooldownID=A04Q, uses=1, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=440, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=0
+    Ubertip: 使用时间加速到原来的2倍！（晚上和白天都可以使用）
+
+== I03Q  时间流沙
+    class=Campaign, Level=0, abilList=AIs1, cooldownID=AIs1, usable=0, perishable=1, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=100000, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=27
+    Ubertip: 时间流沙，控制着时间的物品。（加1点力量）
+
+== I03R  医疗宝石☆☆
+    class=Campaign, Level=6, abilList=AIl1, cooldownID=AIml, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=128
+    Ubertip: 增加幸存者的体力值。两个宝石☆☆可以合成医疗宝石☆☆☆
+
+== I03S  医疗宝石☆☆☆
+    class=Campaign, Level=6, abilList=AIl2, cooldownID=AIml, usable=0, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=128
+    Ubertip: 增加幸存者的体力值。两个宝石☆☆可以合成医疗宝石☆☆☆
+
+== I03T  烤肉
+    class=Charged, Level=0, abilList=A035, cooldownID=A02D, uses=3, usable=1, perishable=1, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=0, prio=121
+    Ubertip: 能恢复量体力，饥饿。
+
+== I03U  青甲|cFFFF0754☆☆☆☆☆
+    class=Purchasable, Level=5, abilList=A03Y,A03G,A01D, cooldownID=A011, usable=1, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000防御+65|r /  / |cffff0080特效：增加能将敌人30%的近战攻击弹射回去。|r /  / |cffc0c0c0十分坚硬青甲，防御力及高|r
+
+== I03V  青甲|cFFFF0754☆☆☆
+    class=Purchasable, Level=5, abilList=A03Y,A03G,A01J, cooldownID=A011, usable=1, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000防御+45|r /  / |cffff0080特效：增加能将敌人30%的近战攻击弹射回去。|r /  / |cffc0c0c0十分坚硬青甲，防御力及高|r
+
+== I03W  皮甲|cFFFF0754☆☆☆☆☆
+    class=Purchasable, Level=5, abilList=A03X,A033,A01D, cooldownID=A011, usable=1, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000防御+65|r /  / |cffff0080特效：55%闪避|r /  / |cffc0c0c0十分灵敏皮甲，防御力及高|r
+
+== I03X  皮甲|cFFFF0754☆☆☆☆
+    class=Purchasable, Level=5, abilList=A03X,A02Y,A014, cooldownID=A011, usable=1, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000防御+55|r /  / |cffff0080特效：45%闪避|r /  / |cffc0c0c0十分灵敏皮甲，防御力及高|r
+
+== I03Y  皮甲|cFFFF0754★
+    class=Purchasable, Level=5, abilList=A03X,A01G,A034, cooldownID=A011, usable=1, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000防御+75|r /  / |cffff0080特效：65%闪避|r /  / |cffc0c0c0十分灵敏皮甲，防御力及高|r
+
+== I03Z  青甲|cFFFF0754★
+    class=Purchasable, Level=5, abilList=A03Y,A01G,A03I, cooldownID=A011, usable=1, perishable=0, droppable=1, pawnable=0, stockMax=1, stockRegen=120, stockStart=0, goldcost=0, lumbercost=0, HP=75, armor=Wood, ignoreCD=0, sellable=0, powerup=0, morph=0, oldLevel=7, prio=49
+    Ubertip: |cffff0000防御+75|r /  / |cffff0080特效：增加能将敌人30%的近战攻击弹射回去。|r /  / |cffc0c0c0十分坚硬青甲，防御力及高|r
+

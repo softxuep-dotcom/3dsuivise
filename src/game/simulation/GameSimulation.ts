@@ -12,10 +12,11 @@ import {
 import { campGatePosition, isTerrainWalkable, terrainHeightAt } from "../terrain/TerrainModel";
 import { NavigationGrid } from "./NavigationGrid";
 import type {
-  BerryPatch,
+  CactusPatch,
   CampKind,
   CampDefinition,
   CampState,
+  DeathCause,
   GameEvent,
   GroundItem,
   InteractionHint,
@@ -23,7 +24,10 @@ import type {
   InventoryItemKind,
   Phase,
   PlayerState,
+  SurvivalCondition,
   Vec2,
+  WolfKind,
+  WolfRole,
   WolfState,
   WorldDefinition,
   WorldDrop,
@@ -40,21 +44,93 @@ const LATER_NIGHT_DURATION = 135;
 const MAX_WOLVES = 120;
 const DROP_LIFETIME = 180;
 
-// === 体温系统 ===
-// 体温是生死指标：0 = 冻死，100 = 中暑/过热死亡，50 = 中性起点
+// ============================================================================
+// 五轴生存模型 —— 移植自《荒漠幸存者》，详见 docs/荒漠幸存者-数值分析.md
+//
+//   体力(health)  恒定流失，是"该吃饭了"的硬心跳
+//   劳力(stamina) 采集与攻击的预算，休息回得快、行动回得慢
+//   体温(warmth)  白天有地板、夜晚有天花板 ⇒ 中暑只在白天、失温只在夜晚
+//   水分(water)   归零立即死亡
+//   饥饿(hunger)  归零立即死亡
+//
+// 原图昼夜周期 750 秒，我们是 240~255 秒，所以速率不是简单等比缩放，
+// 而是按"在一个昼夜内应该发生几次危机"重新配平，偏离处见下方注释。
+// ============================================================================
+
+// --- 体温 ---
 const WARMTH_MIN = 0;
 const WARMTH_MAX = 100;
-const WARMTH_INITIAL = 50;
-// 各项速率（每秒）—— 三者独立累加，皮衣/地形不再影响体温
-//   篝火：+3.0/s   白天：+1.2/s   夜晚：-1.6/s
-//   组合示例：白天火边 = 3 + 1.2 = +4.2/s；夜晚火边 = 3 - 1.6 = +1.4/s
-const WARMTH_FIRE_GAIN = 3.0;      // 篝火边回温（独立分量，始终为正）
-const WARMTH_DAY_REGEN = 1.2;      // 白天基础回暖（独立分量）
-const WARMTH_NIGHT_LOSS = 1.6;     // 夜间寒冷流失（独立分量，始终为负）
+const WARMTH_INITIAL = 22;
+/** 白天地板：低于此值会被拉回，所以白天冻不死。（原图 15） */
+const WARMTH_DAY_FLOOR = 15;
+/** 夜晚天花板：高于此值会被压回，所以夜晚中不了暑。（原图 80） */
+const WARMTH_NIGHT_CEILING = 80;
+/** 中暑触发/解除阈值，迟滞避免在边界反复横跳。（原图 100 / 95） */
+const WARMTH_HEAT_ENTER = 100;
+const WARMTH_HEAT_EXIT = 92;
+/** 失温触发/解除阈值。（原图 5 / 5，我们放宽解除以免瞬间反复） */
+const WARMTH_COLD_ENTER = 5;
+const WARMTH_COLD_EXIT = 14;
+/**
+ * 白天基础 +0.35/s：静止时 85 点体温要爬 243 秒，超过一个白天，所以站着不动不会中暑。
+ * 原图用"沙漠日晒"作为白天升温源，但直射日晒无法解释"静止也中暑"，这里改为劳作产热，见下。
+ */
+const WARMTH_DAY_BASE = 0.35;
+/** 夜间流失 -1.25/s：天花板 80 → 0 需 64 秒，约夜晚的一半。 */
+const WARMTH_NIGHT_LOSS = 1.25;
+/**
+ * 劳作产热 +0.9/s（搬东西时 ×1.4）。这是全作最关键的一条对称设计：
+ *   白天奔波 = 0.35 + 0.9 = +1.25/s → 68 秒就会中暑，必须靠喝水压温；
+ *   夜晚奔跑 = -1.25 + 0.9 = -0.35/s → 火灭了也能靠不停跑动多撑 3 分钟。
+ * 同一个动作，白天是危险、夜晚是活路。
+ */
+const WARMTH_EXERTION = 0.9;
+const WARMTH_EXERTION_CARRY = 1.4;
+/** 篝火 +3.4/s：夜晚静止净 +2.15/s，约 37 秒回满到天花板。 */
+const WARMTH_FIRE_GAIN = 3.4;
+/** 篝火有效半径：必须真正贴着火，不是"在营地里"就算。 */
+const FIRE_WARMTH_RADIUS = 5.5;
+
+// --- 体力：恒定流失（原图 600HP / -0.7/s ≈ 857 秒） ---
+const HEALTH_DECAY = 0.14; // 100 / 0.14 ≈ 714 秒 ≈ 3 个昼夜
+
+// --- 水分与饥饿（原图两者都是 -0.2/s，满值 500 秒） ---
+const WATER_DECAY = 0.42;  // 238 秒 ≈ 1 个昼夜
+const HUNGER_DECAY = 0.34; // 294 秒 ≈ 1.2 个昼夜
+/** 水分低于此值时，取水会抢占所有其它交互，避免玩家被拾取挡着渴死。 */
+const WATER_URGENT = 32;
+
+// --- 劳力（原图 225 上限、几乎不回复，靠睡觉补） ---
+const STAMINA_MAX = 100;
+const STAMINA_REST_REGEN = 7.5;   // 休息中
+const STAMINA_IDLE_REGEN = 1.6;   // 站着不动但没进入休息
+const STAMINA_ACTIVE_REGEN = 0.5; // 移动中
+const STAMINA_COST_CACTUS = 10;
+const STAMINA_COST_MINE = 20;
+const STAMINA_COST_DIG = 8;
+const STAMINA_COST_ATTACK = 4;
+/** 劳力低于此值时攻击仍可挥出，但伤害衰减到 EXHAUSTED_DAMAGE_SCALE。 */
+const STAMINA_EXHAUSTED = STAMINA_COST_ATTACK;
+const EXHAUSTED_DAMAGE_SCALE = 0.6;
+
+// --- 水源：两级结构，对应原图的「仙人掌取汁」和「干枯的井提水」---
+//   仙人掌：位置固定、产量有限，但**一刀即得**  —— 你得记住它们长在哪
+//   挖沙  ：随处可挖，但要 2.6 秒且常常空手      —— 走投无路时的保底
+// 两者都补水分并降体温（白天救命、夜里危险），差别只在效率和确定性。
+const DIG_SECONDS = 2.6;
+/** 挖沙的出水率：原图挖矿也有 45% 空手，这里同样让保底手段带挫败感。 */
+const DIG_SUCCESS_CHANCE = 0.55;
+const WATER_RESTORE = 26;
+/** 一份水降 14 点体温：正好能把刚中暑的 100 拉到解除线 92 以下。 */
+const WATER_WARMTH_COST = 14;
+
+// --- 终局 ---
+/** 累计击杀达标后头狼出场。（原图狼王需要 250 杀，按我们 3~4 夜的体量缩到 40） */
+const ALPHA_KILL_REQUIREMENT = 40;
 
 const CAMP_LABELS: Record<CampKind, string> = {
-  "windy-ridge": "风口高地",
-  "deep-cave": "背风崖穴",
+  "windy-ridge": "风蚀台地",
+  "deep-cave": "岩壁洞窟",
   "abandoned-camp": "废弃营地",
 };
 
@@ -62,7 +138,7 @@ export class GameSimulation {
   readonly world: WorldDefinition;
   readonly camps: CampState[];
   readonly items: GroundItem[];
-  readonly berries: BerryPatch[];
+  readonly cacti: CactusPatch[];
   readonly ironNodes: IronNode[];
   readonly player: PlayerState;
   readonly wolves: WolfState[] = [];
@@ -84,12 +160,19 @@ export class GameSimulation {
   private spawnCountdown = 3;
   private spawnedThisNight = 0;
   private navigationCountdown = 0;
+  private wildRespawnCountdown = 0;
+  /** 本帧玩家是否在移动 —— 劳作产热的输入。 */
+  private exerting = false;
   private objectiveStage = 0;
   private gameOverSent = false;
   private duskWarningSent = false;
   private largeWolfAnnounced = false;
+  private alphaSpawned = false;
+  /** 头狼被击杀后置位，胜利结算只跑一次。 */
+  private victorySent = false;
   // 死因记录，供 UI 显示游戏结束文案
-  deathCause: "frozen" | "overheated" | "killed" | null = null;
+  deathCause: DeathCause | null = null;
+  won = false;
 
   constructor(world: WorldDefinition) {
     this.world = world;
@@ -108,7 +191,7 @@ export class GameSimulation {
     const startCamp = world.camps[world.startCampId];
     this.camps = world.camps.map((camp) => ({ id: camp.id, fuel: camp.id === world.startCampId ? 42 : 0 }));
     this.items = world.initialItems.map((item) => ({ ...item }));
-    this.berries = world.initialBerries.map((patch) => ({ ...patch }));
+    this.cacti = world.initialCacti.map((patch) => ({ ...patch }));
     this.ironNodes = world.ironNodes.map((node) => ({ ...node }));
     this.player = {
       x: startCamp.x,
@@ -120,6 +203,10 @@ export class GameSimulation {
       defense: 2,
       warmth: WARMTH_INITIAL,
       hunger: 82,
+      water: 90,
+      stamina: STAMINA_MAX,
+      maxStamina: STAMINA_MAX,
+      condition: "normal",
       inventory: Array.from({ length: INVENTORY_CAPACITY }, () => null),
       carrying: null,
       hasLeatherCoat: false,
@@ -129,6 +216,7 @@ export class GameSimulation {
       attackCooldown: 0,
       attackFlash: 0,
       hurtFlash: 0,
+      gatherTimer: 0,
       kills: 0,
     };
     this.navigation.rebuild(this.player);
@@ -146,6 +234,7 @@ export class GameSimulation {
     this.player.attackFlash = Math.max(0, this.player.attackFlash - delta);
     this.player.hurtFlash = Math.max(0, this.player.hurtFlash - delta);
     const isMoving = Math.hypot(movement.x, movement.z) >= 0.08;
+    this.exerting = isMoving;
     this.updatePlayerMovement(delta, movement, isMoving);
     if (!this.clockStarted) return;
 
@@ -159,8 +248,9 @@ export class GameSimulation {
     }
 
     this.updateNeeds(delta);
+    this.updateWaterGather(delta);
     this.updateFires(delta);
-    this.updateBerries();
+    this.updateCacti();
     this.updateDrops();
     this.updateWolves(delta);
     this.updateRest(delta);
@@ -168,14 +258,15 @@ export class GameSimulation {
 
     if (this.phaseTime <= 0) this.advancePhase();
 
-    // 游戏结束判定：体温归零（冻死）/ 体温爆表（过热）/ 生命归零（被狼杀死或饿死）
+    // 游戏结束判定：水分或饥饿归零立即死亡（移植自原图触发器 002），生命归零为战斗/衰竭死。
+    // 体温越界不再致死，只施加中暑/失温的瘫痪状态，见 updateCondition()。
     if (!this.gameOverSent) {
-      if (this.player.warmth <= WARMTH_MIN) {
-        this.player.warmth = WARMTH_MIN;
-        this.endGame("frozen");
-      } else if (this.player.warmth >= WARMTH_MAX) {
-        this.player.warmth = WARMTH_MAX;
-        this.endGame("overheated");
+      if (this.player.water <= 0) {
+        this.player.water = 0;
+        this.endGame("dehydrated");
+      } else if (this.player.hunger <= 0) {
+        this.player.hunger = 0;
+        this.endGame("starved");
       } else if (this.player.health <= 0) {
         this.player.health = 0;
         this.endGame("killed");
@@ -183,7 +274,7 @@ export class GameSimulation {
     }
   }
 
-  private endGame(cause: "frozen" | "overheated" | "killed"): void {
+  private endGame(cause: DeathCause): void {
     this.setResting(false);
     this.running = false;
     this.gameOverSent = true;
@@ -191,9 +282,27 @@ export class GameSimulation {
     this.events.push({ type: "game-over" });
   }
 
+  private endGameWithVictory(): void {
+    if (this.victorySent) return;
+    this.setResting(false);
+    this.running = false;
+    this.victorySent = true;
+    this.won = true;
+    this.events.push({ type: "victory" });
+  }
+
   requestInteraction(): void {
     if (!this.running) return;
     this.noteActivity();
+
+    // 水分是"归零即死"的轴，而挖沙在正常情况下是交互优先级最低的兜底动作。
+    // 一旦玩家站在枯木堆里，E 会一直被拾取抢走，人就会活活渴死。
+    // 所以水分告急时把取水提到最高优先级 —— 致命需求永远要有出口。
+    if (this.player.water < WATER_URGENT && !this.player.carrying) {
+      this.beginWaterGather();
+      return;
+    }
+
     if (this.player.carrying) {
       const nearestCamp = this.findNearestCamp(4.3);
       if (nearestCamp && this.player.carrying === "wood") {
@@ -215,20 +324,22 @@ export class GameSimulation {
       return;
     }
 
-    const berryPatch = this.findNearestBerry(2.7);
-    if (berryPatch) {
-      if (!this.addInventory("berry", 1)) {
+    const cactusPatch = this.findNearestCactus(2.7);
+    if (cactusPatch) {
+      if (!this.spendStamina(STAMINA_COST_CACTUS, "割仙人掌")) return;
+      if (!this.addInventory("cactus-juice", 1)) {
         this.events.push({ type: "message", text: "背包已满" });
         return;
       }
-      berryPatch.berries -= 1;
-      if (berryPatch.berries === 0) berryPatch.regrowAt = this.elapsed + 180;
-      this.events.push({ type: "pickup", kind: "berry" });
+      cactusPatch.juice -= 1;
+      if (cactusPatch.juice === 0) cactusPatch.regrowAt = this.elapsed + 180;
+      this.events.push({ type: "pickup", kind: "cactus-juice" });
       return;
     }
 
     const ironNode = this.findNearestIron(2.8);
     if (ironNode) {
+      if (!this.spendStamina(STAMINA_COST_MINE, "挖矿")) return;
       if (!this.addInventory("iron-ore", 1)) {
         this.events.push({ type: "message", text: "背包已满" });
         return;
@@ -236,13 +347,68 @@ export class GameSimulation {
       ironNode.ore -= 1;
       this.events.push({ type: "pickup", kind: "iron-ore" });
       this.events.push({ type: "message", text: "获得铁矿 · 可在燃烧的篝火旁制作粗铁矛" });
+      return;
     }
+
+    // 没有别的可交互目标时，就地挖沙找水 —— 荒漠里最后的保底手段。
+    this.beginWaterGather();
+  }
+
+  /**
+   * 扣劳力；不足时给出提示并返回 false，调用方应中止该次采集。
+   * 劳力是本作对"无限点击采集"的唯一约束，移植自原图砍木头 150 魔法的设计。
+   */
+  private spendStamina(cost: number, label: string): boolean {
+    if (this.player.stamina < cost) {
+      this.events.push({ type: "exhausted" });
+      this.events.push({ type: "message", text: `劳力不足 · ${label}需要 ${cost} 点，站着不动可以恢复` });
+      return false;
+    }
+    this.player.stamina -= cost;
+    return true;
+  }
+
+  /** 挖沙找水：随处可用的保底水源，对应原图的"干枯的井"。 */
+  private beginWaterGather(): void {
+    if (this.player.gatherTimer > 0) return;
+    if (this.getInventoryCount("water") >= INVENTORY_STACK_LIMITS.water * 2) {
+      this.events.push({ type: "message", text: "水已经带够了" });
+      return;
+    }
+    if (!this.spendStamina(STAMINA_COST_DIG, "挖沙")) return;
+    this.player.gatherTimer = DIG_SECONDS;
+    this.events.push({ type: "dig-water" });
+  }
+
+  /**
+   * 挖沙结算：只有 55% 的概率见水，其余空手 —— 劳力已经花掉了。
+   * 这个挫败感是刻意的：它让"记住仙人掌长在哪"变成真正有价值的知识。
+   */
+  private updateWaterGather(delta: number): void {
+    if (this.player.gatherTimer <= 0) return;
+    this.player.gatherTimer -= delta;
+    if (this.player.gatherTimer > 0) return;
+    this.player.gatherTimer = 0;
+    if (this.random() > DIG_SUCCESS_CHANCE) {
+      this.events.push({ type: "message", text: "这片沙子底下是干的 · 试试找仙人掌" });
+      return;
+    }
+    if (!this.addInventory("water", 1)) {
+      this.events.push({ type: "message", text: "背包已满 · 水渗回沙里了" });
+      return;
+    }
+    this.events.push({ type: "pickup", kind: "water" });
   }
 
   requestAttack(): void {
     if (!this.running || this.player.attackCooldown > 0 || this.player.carrying) return;
     this.noteActivity();
-    this.player.attackCooldown = this.player.weapon === "iron-spear" ? 0.58 : 0.5;
+    // 劳力不足不会禁止挥砍，但伤害衰减到 60%，"脱力"是可感知的惩罚而不是硬锁。
+    const exhausted = this.player.stamina < STAMINA_EXHAUSTED;
+    if (exhausted) this.events.push({ type: "exhausted" });
+    else this.player.stamina = Math.max(0, this.player.stamina - STAMINA_COST_ATTACK);
+    const baseCooldown = this.player.weapon === "iron-spear" ? 0.58 : 0.5;
+    this.player.attackCooldown = baseCooldown * this.getConditionCooldownScale();
     this.player.attackFlash = 0.22;
     this.events.push({ type: "attack" });
     let hit = false;
@@ -257,10 +423,12 @@ export class GameSimulation {
       const towardWolf = direction(this.player, wolf);
       if (dot(this.player.facing, towardWolf) < -0.15) continue;
       const wasRetreating = wolf.mode === "retreating";
-      const conditionMultiplier = this.player.hunger < 15 || this.player.warmth < 20 ? 0.8 : 1;
-      const damage = Math.max(1, Math.round(this.player.attack * conditionMultiplier) - wolf.defense);
+      const needsMultiplier = this.player.hunger < 15 || this.player.water < 15 ? 0.8 : 1;
+      const staminaMultiplier = exhausted ? EXHAUSTED_DAMAGE_SCALE : 1;
+      const damage = Math.max(1, Math.round(this.player.attack * needsMultiplier * staminaMultiplier) - wolf.defense);
       wolf.health -= damage;
       wolf.hurtFlash = 0.18;
+      wolf.provoked = true;
       if (wolf.health <= 0) wolf.mode = "dead";
       else if (!wasRetreating) wolf.mode = "chase";
       wolf.lostTimer = 0;
@@ -280,8 +448,13 @@ export class GameSimulation {
     if (!hit && this.objectiveStage >= 3) this.events.push({ type: "message", text: "挥空会暴露位置" });
   }
 
-  consumeBerry(): void {
-    const slot = this.player.inventory.findIndex((stack) => stack?.kind === "berry");
+  consumeJuice(): void {
+    const slot = this.player.inventory.findIndex((stack) => stack?.kind === "cactus-juice");
+    if (slot >= 0) this.useInventorySlot(slot);
+  }
+
+  consumeWater(): void {
+    const slot = this.player.inventory.findIndex((stack) => stack?.kind === "water");
     if (slot >= 0) this.useInventorySlot(slot);
   }
 
@@ -290,20 +463,43 @@ export class GameSimulation {
     const stack = this.player.inventory[index];
     if (!stack) return;
     this.noteActivity();
-    if (stack.kind === "berry") {
-      if (this.player.hunger >= 99 && this.player.health >= this.player.maxHealth) return;
+
+    // 每种消耗品同时喂多条轴，权重不同 —— 移植自原图的食物表：
+    // 肉主要补体力和饥饿，仙人掌汁偏水分，水是纯水分且都要付体温代价。
+    // 仙人掌汁：补水为主、少量顶饿，并且和水一样降体温（原图 I00B 就是这么设计的）。
+    if (stack.kind === "cactus-juice") {
+      if (this.isNourishmentFull(9, 20, 3)) return;
       this.removeFromSlot(index, 1);
-      this.player.hunger = clamp(this.player.hunger + 18, 0, 100);
+      this.player.hunger = clamp(this.player.hunger + 9, 0, 100);
+      this.player.water = clamp(this.player.water + 20, 0, 100);
       this.player.health = clamp(this.player.health + 3, 0, this.player.maxHealth);
-      this.events.push({ type: "eat", kind: "berry" });
+      this.player.warmth = clamp(this.player.warmth - 9, WARMTH_MIN, WARMTH_MAX);
+      this.updateCondition();
+      this.events.push({ type: "eat", kind: "cactus-juice" });
       return;
     }
     if (stack.kind === "cooked-meat") {
-      if (this.player.hunger >= 99 && this.player.health >= this.player.maxHealth) return;
+      if (this.isNourishmentFull(38, 6, 14)) return;
       this.removeFromSlot(index, 1);
       this.player.hunger = clamp(this.player.hunger + 38, 0, 100);
-      this.player.health = clamp(this.player.health + 8, 0, this.player.maxHealth);
+      this.player.water = clamp(this.player.water + 6, 0, 100);
+      this.player.health = clamp(this.player.health + 14, 0, this.player.maxHealth);
       this.events.push({ type: "eat", kind: "cooked-meat" });
+      return;
+    }
+    if (stack.kind === "water") {
+      if (this.player.water >= 99) {
+        this.events.push({ type: "message", text: "水分已满" });
+        return;
+      }
+      this.removeFromSlot(index, 1);
+      this.player.water = clamp(this.player.water + WATER_RESTORE, 0, 100);
+      this.player.warmth = clamp(this.player.warmth - WATER_WARMTH_COST, WARMTH_MIN, WARMTH_MAX);
+      this.updateCondition();
+      this.events.push({ type: "drink" });
+      if (this.phase === "night" && this.player.warmth < 32) {
+        this.events.push({ type: "message", text: "夜里喝水会更冷 · 靠近篝火" });
+      }
       return;
     }
     if (stack.kind === "raw-meat") {
@@ -314,7 +510,7 @@ export class GameSimulation {
       this.removeFromSlot(index, 1);
       this.addInventory("cooked-meat", 1);
       this.events.push({ type: "cook" });
-      this.events.push({ type: "message", text: "生肉已经烤熟" });
+      this.events.push({ type: "message", text: "生肉已经烤熟 · 熟肉回复远高于生肉" });
       return;
     }
     if (stack.kind === "iron-ore") {
@@ -322,6 +518,14 @@ export class GameSimulation {
       return;
     }
     this.events.push({ type: "message", text: this.player.hasLeatherCoat ? "已经穿着基础皮衣" : "收集4张狼皮可制作基础皮衣" });
+  }
+
+  /** 三条轴都已经满到吃了也不回血的程度时，别浪费这份food。 */
+  private isNourishmentFull(hunger: number, water: number, health: number): boolean {
+    if (hunger > 0 && this.player.hunger < 99) return false;
+    if (water > 0 && this.player.water < 99) return false;
+    if (health > 0 && this.player.health < this.player.maxHealth) return false;
+    return true;
   }
 
   craftLeatherCoat(): boolean {
@@ -364,16 +568,22 @@ export class GameSimulation {
   }
 
   getInteractionHint(): InteractionHint {
+    if (this.player.gatherTimer > 0) return { action: "dig", text: "正在挖沙找水…" };
+    // 与 requestInteraction 保持一致：水分告急时，仙人掌优先、其次就地挖沙。
+    if (this.player.water < WATER_URGENT && !this.player.carrying) {
+      if (this.findNearestCactus(2.7)) return { action: "cactus", text: `水分告急 · 割仙人掌 · 劳力 ${STAMINA_COST_CACTUS}` };
+      return { action: "dig", text: `水分告急 · 挖沙找水 · 劳力 ${STAMINA_COST_DIG}` };
+    }
     if (this.player.carrying) {
       const camp = this.findNearestCamp(4.3);
-      if (camp && this.player.carrying === "wood") return { action: "feed", text: "添入圆木 · 篝火延长95秒" };
-      return { action: "drop", text: `放下${this.player.carrying === "wood" ? "圆木" : "大石"}${this.player.carrying === "stone" ? " · 一块即可封住窄口" : ""}` };
+      if (camp && this.player.carrying === "wood") return { action: "feed", text: "添入枯木 · 篝火延长95秒" };
+      return { action: "drop", text: `放下${this.player.carrying === "wood" ? "枯木" : "大石"}${this.player.carrying === "stone" ? " · 一块即可封住窄口" : ""}` };
     }
     const item = this.findNearestItem(2.5);
-    if (item) return { action: "pickup", text: `双手搬起${item.kind === "wood" ? "圆木" : "大石"}` };
-    if (this.findNearestBerry(2.7)) return { action: "berry", text: "采集野果到背包" };
-    if (this.findNearestIron(2.8)) return { action: "mine", text: "敲取铁矿 · 篝火旁可制作粗铁矛" };
-    return { action: "none", text: "" };
+    if (item) return { action: "pickup", text: `双手搬起${item.kind === "wood" ? "枯木" : "大石"}` };
+    if (this.findNearestCactus(2.7)) return { action: "cactus", text: `割仙人掌取汁 · 劳力 ${STAMINA_COST_CACTUS}` };
+    if (this.findNearestIron(2.8)) return { action: "mine", text: `敲取铁矿 · 劳力 ${STAMINA_COST_MINE}` };
+    return { action: "dig", text: `挖沙找水 · 劳力 ${STAMINA_COST_DIG} · 约五成出水` };
   }
 
   drainEvents(): GameEvent[] {
@@ -411,102 +621,202 @@ export class GameSimulation {
 
   getCurrentLocationLabel(): string {
     const camp = this.findNearestCamp(14);
-    return camp ? CAMP_LABELS[camp.kind] : "荒山雪原";
+    return camp ? CAMP_LABELS[camp.kind] : "无名沙海";
   }
 
   getNearestThreat(): WolfState | null {
     let nearest: WolfState | null = null;
     let best = 24 * 24;
+    let bestPriority = -1;
     for (const wolf of this.wolves) {
       if (wolf.mode === "dead" || wolf.mode === "retreating") continue;
       const value = distanceSquared(this.player, wolf);
-      if (value >= best) continue;
+      if (value >= 24 * 24) continue;
+      // 头狼永远优先显示，其次才按距离取最近的。
+      const priority = wolf.kind === "alpha" ? 1 : 0;
+      if (priority < bestPriority) continue;
+      if (priority === bestPriority && value >= best) continue;
       nearest = wolf;
       best = value;
+      bestPriority = priority;
     }
     return nearest;
   }
 
+  getAlpha(): WolfState | null {
+    return this.wolves.find((wolf) => wolf.kind === "alpha" && wolf.mode !== "dead") ?? null;
+  }
+
+  getAlphaProgress(): { kills: number; required: number; spawned: boolean } {
+    return { kills: this.player.kills, required: ALPHA_KILL_REQUIREMENT, spawned: this.alphaSpawned };
+  }
+
   getObjective(): string {
-    if (!this.clockStarted) return "移动或拿起圆木，开始第一天";
-    if (this.player.resting) return this.player.hunger < 40 ? "休息中 · 饥饿使恢复降至0.6/秒" : "休息中 · 生命每秒恢复1点";
-    // 体温端点警告（新机制）
-    if (this.player.warmth <= 10) return "即将冻死 · 立刻回到篝火边";
-    if (this.player.warmth >= 90) return "即将过热 · 远离篝火降温";
-    if (this.player.warmth < 25) return "体温过低 · 移动与攻击减弱";
-    if (this.player.warmth > 75) return "体温偏高 · 暂时离开篝火";
-    if (this.player.hunger <= 0) return "饥饿归零 · 生命正在流失";
-    if (this.player.hunger < 20) return "严重饥饿 · 无法休息且攻击减弱";
-    if (this.phase === "day" && this.day === 1 && this.phaseTime <= 14) return "天快黑了 · 用入口大石封住缺口";
+    if (!this.clockStarted) return "移动或拿起枯木，开始第一天";
+    if (this.player.gatherTimer > 0) return "取水中 · 别移动";
+
+    // 致命轴优先：水分和饥饿归零是立即死亡，必须压过其它所有提示。
+    if (this.player.water < 18) return "水分见底 · 立刻找水，归零即死";
+    if (this.player.hunger < 18) return "饥饿见底 · 立刻进食，归零即死";
+    // 其次是瘫痪状态。
+    if (this.player.condition === "hypothermia") return "失温 · 移动几乎停滞，爬向篝火";
+    if (this.player.condition === "heatstroke") return "中暑 · 离开火边，喝水降温";
+
+    if (this.player.resting) return "休息中 · 生命与劳力都在回复";
+    const alpha = this.getAlpha();
+    if (alpha) return `头狼 ${Math.max(0, Math.ceil(alpha.health))}/${alpha.maxHealth} · 杀死它即可获救`;
+
     if (this.phase === "night") {
+      if (this.player.warmth < 30) return "体温偏低 · 回篝火，或者靠不停跑动扛住";
       const lit = this.getNearestLitCamp();
       if (!lit) return "篝火熄灭 · 体温正在下降，尽快添柴";
-      if (lit.fuel < 25) return "火快灭了：再搬一根圆木";
-      return "守住火光；狼死亡会掉落肉和皮";
+      if (lit.fuel < 25) return "火快灭了：再搬一根枯木";
+      if (this.day === 1 && this.phaseTime > 60) return "守住火光 · 夜袭狼只掉肉，不掉皮";
+      return `守住火光 · 累计猎杀 ${this.player.kills}/${ALPHA_KILL_REQUIREMENT} 引出头狼`;
     }
+
+    if (this.phase === "day" && this.day === 1 && this.phaseTime <= 14) return "天快黑了 · 用入口大石封住缺口";
+    if (this.player.warmth > 78) return "劳作让体温快爆了 · 喝水或停下来歇会儿";
     const retreatingWolves = this.wolves.filter((wolf) => wolf.mode === "retreating").length;
     if (retreatingWolves > 0) return `天亮了 · ${retreatingWolves}只狼正在撤离`;
-    if (this.objectiveStage === 0) return "拿起身边的圆木";
-    if (this.objectiveStage === 1) return "把圆木送到篝火旁添柴";
+    if (this.objectiveStage === 0) return "拿起身边的枯木";
+    if (this.objectiveStage === 1) return "把枯木送到篝火旁添柴";
     if (this.objectiveStage === 2) return "找到入口旁的大石并搬到缺口中央";
+    if (this.getInventoryCount("water") === 0 && this.getInventoryCount("cactus-juice") === 0) return "先囤水 · 割仙人掌，或空地上挖沙";
     if (!this.player.hasLeatherCoat && this.getInventoryCount("wolf-hide") > 0) return "收集4张狼皮制作基础皮衣";
-    if (this.getInventoryCount("berry") === 0) return "搜集木材、野果与铁矿";
-    return "选择有利山坳，补充食物并准备武器";
+    const wildWolves = this.wolves.filter((wolf) => wolf.role === "wild" && wolf.mode !== "dead").length;
+    if (!this.player.hasLeatherCoat && wildWolves > 0) return `沙海上有 ${wildWolves} 只野狼 · 只有它们掉狼皮`;
+    return "白天备水备食，夜里守火";
   }
 
   private updatePlayerMovement(delta: number, rawMovement: Vec2, isMoving: boolean): void {
     if (!isMoving) return;
+    // 移动会打断取水，劳力不退还 —— 让取水成为一个需要站定的承诺。
+    if (this.player.gatherTimer > 0) {
+      this.player.gatherTimer = 0;
+      this.events.push({ type: "message", text: "取水被打断" });
+    }
     this.noteActivity();
     const movement = normalize(rawMovement);
     this.player.facing = movement;
     const carryingPenalty = this.player.carrying === "stone" ? 0.54 : this.player.carrying ? 0.82 : 1;
-    const conditionPenalty = this.player.warmth < 25 || this.player.hunger < 12 ? 0.84 : 1;
-    const speed = 8.2 * carryingPenalty * conditionPenalty;
+    const needsPenalty = this.player.hunger < 12 || this.player.water < 12 ? 0.84 : 1;
+    const speed = 8.2 * carryingPenalty * needsPenalty * this.getConditionSpeedScale();
     this.moveEntity(this.player, movement.x * speed * delta, movement.z * speed * delta, PLAYER_RADIUS, true);
   }
 
   private updateNeeds(delta: number): void {
-    // 饥饿下降速率 0.55/s，约 3 分钟满→空
-    this.player.hunger = clamp(this.player.hunger - delta * 0.55, 0, 100);
+    // --- 代谢：水分与饥饿独立衰减，任一归零立即死亡 ---
+    this.player.water = clamp(this.player.water - delta * WATER_DECAY, 0, 100);
+    this.player.hunger = clamp(this.player.hunger - delta * HUNGER_DECAY, 0, 100);
 
-    // === 体温系统 ===
-    // 规则：三个独立分量相加，互不依赖，皮衣/地形不再影响体温。
-    //   篝火边：+WARMTH_FIRE_GAIN（+3.0/s）
-    //   白天  ：+WARMTH_DAY_REGEN（+1.2/s）
-    //   夜晚  ：+WARMTH_NIGHT_LOSS（-1.6/s，本身是负值方向，用减法表达）
-    // 组合：
-    //   白天火边 = 3.0 + 1.2         = +4.2/s
-    //   白天无火 = 1.2               = +1.2/s
-    //   夜晚火边 = 3.0 - 1.6         = +1.4/s
-    //   夜晚无火 = -1.6              = -1.6/s
+    // --- 体力恒定流失：把"吃饭"从可拖延的提示变成硬心跳（原图 -0.7/600HP）---
+    this.player.health -= delta * HEALTH_DECAY;
+
+    // --- 劳力回复：休息最快，静止其次，移动最慢 ---
+    const staminaRegen = this.player.resting
+      ? STAMINA_REST_REGEN
+      : this.player.idleTime > 0.4
+        ? STAMINA_IDLE_REGEN
+        : STAMINA_ACTIVE_REGEN;
+    this.player.stamina = clamp(this.player.stamina + delta * staminaRegen, 0, this.player.maxStamina);
+
+    // === 体温 ===
+    // 四个独立分量相加：篝火、昼/夜基线、劳作产热。
+    //   白天奔波无火 = +1.25/s      白天静止无火 = +0.35/s
+    //   夜晚奔跑无火 = -0.35/s      夜晚静止无火 = -1.25/s
+    //   白天贴火奔波 = +4.65/s      夜晚贴火静止 = +2.15/s
     const nearFire = this.camps.some((camp) => {
       if (camp.fuel <= 0) return false;
-      return distanceSquared(this.player, this.world.camps[camp.id]) < 8.2 * 8.2;
+      return distanceSquared(this.player, this.world.camps[camp.id]) < FIRE_WARMTH_RADIUS * FIRE_WARMTH_RADIUS;
     });
     let warmthDelta = 0;
     if (nearFire) warmthDelta += WARMTH_FIRE_GAIN;
-    if (this.phase === "day") warmthDelta += WARMTH_DAY_REGEN;
+    if (this.phase === "day") warmthDelta += WARMTH_DAY_BASE;
     else warmthDelta -= WARMTH_NIGHT_LOSS;
-    this.player.warmth = clamp(this.player.warmth + delta * warmthDelta, WARMTH_MIN, WARMTH_MAX);
+    if (this.exerting) {
+      warmthDelta += WARMTH_EXERTION * (this.player.carrying ? WARMTH_EXERTION_CARRY : 1);
+    }
+    let warmth = this.player.warmth + delta * warmthDelta;
 
-    // 饥饿归零仍扣血（保留原机制），体温端点改为直接触发游戏结束（见 update()）
-    if (this.player.hunger <= 0) this.player.health -= delta * 2.6;
+    // 昼夜反向夹逼：白天有地板、夜晚有天花板。
+    // 结果是中暑只可能发生在白天、失温只可能发生在夜晚，两者的反制手段完全不同
+    // （白天靠喝水降温，夜晚靠篝火回温）。这是本作节奏的骨架。
+    if (this.phase === "day") warmth = Math.max(warmth, WARMTH_DAY_FLOOR);
+    else warmth = Math.min(warmth, WARMTH_NIGHT_CEILING);
+    this.player.warmth = clamp(warmth, WARMTH_MIN, WARMTH_MAX);
+
+    this.updateCondition();
   }
 
-  private updateRest(delta: number): void {
-    const nearbyThreat = this.wolves.some((wolf) => {
+  /** 体温越界的进入/解除带迟滞，避免在阈值上反复横跳。 */
+  private updateCondition(): void {
+    const warmth = this.player.warmth;
+    let next: SurvivalCondition = this.player.condition;
+    if (next === "heatstroke") {
+      if (warmth <= WARMTH_HEAT_EXIT) next = "normal";
+    } else if (next === "hypothermia") {
+      if (warmth >= WARMTH_COLD_EXIT) next = "normal";
+    } else if (warmth >= WARMTH_HEAT_ENTER) {
+      next = "heatstroke";
+    } else if (warmth <= WARMTH_COLD_ENTER) {
+      next = "hypothermia";
+    }
+    if (next === this.player.condition) return;
+    this.player.condition = next;
+    this.events.push({ type: "condition", condition: next });
+    if (next === "heatstroke") this.events.push({ type: "message", text: "中暑 · 行动迟缓，立刻离开火边并喝水降温" });
+    else if (next === "hypothermia") this.events.push({ type: "message", text: "失温 · 几乎迈不开腿，爬向最近的篝火" });
+    else this.events.push({ type: "message", text: "体温回到安全区间" });
+  }
+
+  /** 中暑 -60% 移速，失温 -75% 移速。（原图是 -85% / -99%，浏览器手感下放宽） */
+  private getConditionSpeedScale(): number {
+    if (this.player.condition === "heatstroke") return 0.4;
+    if (this.player.condition === "hypothermia") return 0.25;
+    return 1;
+  }
+
+  /** 中暑 -50% 攻速，失温 -65% 攻速，表现为攻击冷却被拉长。 */
+  private getConditionCooldownScale(): number {
+    if (this.player.condition === "heatstroke") return 2;
+    if (this.player.condition === "hypothermia") return 2.85;
+    return 1;
+  }
+
+  /**
+   * 休息被挡住时给出**具体**原因。
+   * 站定却不回复是玩家最容易误判为 bug 的情形，UI 必须能说清楚是哪一条挡住了。
+   * 返回 null 表示可以休息。
+   */
+  getRestBlocker(): string | null {
+    const player = this.player;
+    if (player.gatherTimer > 0) return "取水中";
+    if (player.condition === "heatstroke") return "中暑时无法休息 · 先喝水降温";
+    if (player.condition === "hypothermia") return "失温时无法休息 · 先回篝火";
+    if (player.hunger < 20) return "太饿睡不着 · 先吃东西";
+    if (player.water < 20) return "太渴睡不着 · 先喝水";
+    if (this.phase === "night" && player.warmth <= 30) return "冻得睡不着 · 靠近篝火再休息";
+    if (this.isThreatNearby()) return "附近有狼 · 无法休息";
+    if (player.idleTime < 5) return null;
+    return null;
+  }
+
+  private isThreatNearby(): boolean {
+    return this.wolves.some((wolf) => {
       if (wolf.mode === "dead") return false;
       const dangerRadius = wolf.mode === "chase" ? 20 : wolf.mode === "raid" ? 11 : 0;
       return dangerRadius > 0 && distanceSquared(wolf, this.player) < dangerRadius * dangerRadius;
     });
-    const temperatureAllowsRest = this.phase === "day" || this.player.warmth > 30;
-    const canRest = this.player.idleTime >= 5
-      && this.player.health < this.player.maxHealth
-      && this.player.hunger >= 20
-      && temperatureAllowsRest
-      && !nearbyThreat;
+  }
+
+  private updateRest(delta: number): void {
+    // 劳力没满时也值得休息 —— 休息是劳力的主要回复途径。
+    const wantsRecovery = this.player.health < this.player.maxHealth || this.player.stamina < this.player.maxStamina;
+    const canRest = this.player.idleTime >= 5 && wantsRecovery && this.getRestBlocker() === null;
     this.setResting(canRest);
-    const healingRate = this.player.hunger < 40 ? 0.6 : 1;
+    // 恒定流失是 HEALTH_DECAY，休息的净回复要减掉它才是玩家实际看到的速度。
+    const healingRate = (this.player.hunger < 40 || this.player.water < 40 ? 0.9 : 1.5) + HEALTH_DECAY;
     if (this.player.resting) this.player.health = clamp(this.player.health + delta * healingRate, 0, this.player.maxHealth);
   }
 
@@ -526,10 +836,10 @@ export class GameSimulation {
     for (const camp of this.camps) camp.fuel = Math.max(0, camp.fuel - delta);
   }
 
-  private updateBerries(): void {
-    for (const patch of this.berries) {
-      if (patch.berries === 0 && patch.regrowAt > 0 && this.elapsed >= patch.regrowAt) {
-        patch.berries = 2;
+  private updateCacti(): void {
+    for (const patch of this.cacti) {
+      if (patch.juice === 0 && patch.regrowAt > 0 && this.elapsed >= patch.regrowAt) {
+        patch.juice = 2;
         patch.regrowAt = 0;
       }
     }
@@ -550,13 +860,14 @@ export class GameSimulation {
   }
 
   private updateWolves(delta: number): void {
+    this.updateWildWolves(delta);
     const livingCount = this.wolves.filter((wolf) => wolf.mode !== "dead").length;
     // 每夜目标狼数大幅上调：D1 26→40，D2 36→55，D3+ 46→70，压力明显增强
     const target = Math.min(90, 40 + (this.day - 1) * 15);
     if (this.phase === "night" && livingCount < MAX_WOLVES && this.spawnedThisNight < target) {
       this.spawnCountdown -= delta;
       if (this.spawnCountdown <= 0) {
-        this.spawnWolf();
+        this.spawnWolf({ role: "raider" });
         this.spawnedThisNight += 1;
         const nightProgress = clamp(1 - this.phaseTime / this.getPhaseDuration(), 0, 1);
         const nightlyPressure = Math.max(0.78, 1 - (this.day - 1) * 0.09);
@@ -587,7 +898,11 @@ export class GameSimulation {
     }
 
     if (wolf.mode === "retreating") wolf.lostTimer += delta;
-    const canSeePlayer = this.phase === "night" && wolf.mode !== "retreating" && this.wolfCanSeePlayer(wolf);
+    // 夜袭狼靠视野主动锁定；白天的野狼只有被激怒后才会追击；头狼昼夜都在猎杀。
+    const hunting = wolf.kind === "alpha" ? true
+      : wolf.role === "wild" ? wolf.provoked
+        : this.phase === "night";
+    const canSeePlayer = hunting && wolf.mode !== "retreating" && this.wolfCanSeePlayer(wolf);
     if (canSeePlayer) {
       wolf.mode = "chase";
       wolf.lostTimer = 0;
@@ -690,9 +1005,34 @@ export class GameSimulation {
     wolf.health = 0;
     wolf.deathTimer = 0.8;
     this.player.kills += 1;
-    this.createDrop(wolf, "raw-meat", -0.65, wolf.kind === "large" ? 2 : 1);
-    this.createDrop(wolf, "wolf-hide", 0.65, wolf.kind === "large" ? 2 : 1);
+
+    if (wolf.kind === "alpha") {
+      this.createDrop(wolf, "raw-meat", -0.65, 3);
+      this.createDrop(wolf, "wolf-hide", 0.65, 4);
+      this.events.push({ type: "wolf-killed", wolfId: wolf.id });
+      this.endGameWithVictory();
+      return;
+    }
+
+    // 夜袭狼只掉肉不掉皮：把"守夜"和"打猎"拆成两件事。
+    // 皮革（也就是防具线）只能靠白天出门猎杀游荡野狼取得 —— 移植自原图
+    // "夜里 Player(11) 的狼不触发掉落"的判定。
+    const bulk = wolf.kind === "large" ? 2 : 1;
+    this.createDrop(wolf, "raw-meat", -0.65, bulk);
+    if (wolf.role === "wild") this.createDrop(wolf, "wolf-hide", 0.65, bulk);
     this.events.push({ type: "wolf-killed", wolfId: wolf.id });
+    this.maybeSpawnAlpha();
+  }
+
+  /** 累计击杀达标后，头狼在夜晚从地图边缘登场；白天达标则等到入夜。 */
+  private maybeSpawnAlpha(): void {
+    if (this.alphaSpawned || this.victorySent) return;
+    if (this.player.kills < ALPHA_KILL_REQUIREMENT) return;
+    if (this.phase !== "night") return;
+    this.alphaSpawned = true;
+    this.spawnWolf({ role: "raider", forceKind: "alpha" });
+    this.events.push({ type: "alpha-spawned" });
+    this.events.push({ type: "message", text: "头狼出现了 · 杀死它，这片沙海就安静了" });
   }
 
   private createDrop(position: Vec2, kind: InventoryItemKind, angleOffset: number, count = 1): void {
@@ -712,9 +1052,19 @@ export class GameSimulation {
     this.events.push({ type: "loot-drop", kind, dropId: drop.id });
   }
 
-  private spawnWolf(): void {
+  /**
+   * 每夜的成长曲线：+3 攻击、+12 生命、+4% 移速，且不封顶。
+   * 原图是每夜 +25 攻 +300 血（200 级上限），这里按我们 3~5 夜的体量缩放。
+   */
+  private getNightScaling(): { attack: number; health: number; speed: number } {
+    const nights = Math.max(0, this.day - 1);
+    return { attack: nights * 3, health: nights * 12, speed: 1 + nights * 0.04 };
+  }
+
+  private spawnWolf(options: { role?: WolfRole; forceKind?: WolfKind; origin?: Vec2 } = {}): void {
+    const role = options.role ?? "raider";
     const half = this.world.size / 2 - 2;
-    const tutorialWolf = this.day === 1 && this.spawnedThisNight === 0;
+    const tutorialWolf = role === "raider" && !options.forceKind && this.day === 1 && this.spawnedThisNight === 0;
     const side = Math.floor(this.random() * 4);
     const along = (this.random() - 0.5) * (this.world.size - 12);
     const edgeSpawn = side === 0 ? { x: -half, z: along }
@@ -724,38 +1074,76 @@ export class GameSimulation {
     const camp = tutorialWolf
       ? this.world.camps[this.world.startCampId]
       : this.world.camps[Math.floor(this.random() * this.world.camps.length)];
-    const spawnCandidate = tutorialWolf ? {
+    const spawnCandidate = options.origin ?? (tutorialWolf ? {
       x: camp.x + Math.cos(camp.entranceAngle) * (camp.radius + 18),
       z: camp.z + Math.sin(camp.entranceAngle) * (camp.radius + 18),
-    } : edgeSpawn;
+    } : edgeSpawn);
     const spawn = this.findNearestWalkablePoint(spawnCandidate);
+
+    const largeChance = Math.min(0.58, 0.22 + (this.day - 1) * 0.09);
+    const kind: WolfKind = options.forceKind
+      ?? (tutorialWolf || this.random() >= largeChance ? "small" : "large");
+    const scaling = this.getNightScaling();
+
+    let maxHealth: number;
+    let attack: number;
+    let defense: number;
+    let speed: number;
+    if (kind === "alpha") {
+      // 头狼：明显是一堵墙，但不是数值上不可战胜 —— 对应原图狼王 10000HP / 28 护甲。
+      maxHealth = 620 + scaling.health * 6;
+      attack = 26 + scaling.attack;
+      defense = 9;
+      speed = 3.5;
+    } else if (tutorialWolf) {
+      maxHealth = 28;
+      attack = 5;
+      defense = 0;
+      speed = 3.05;
+    } else if (kind === "large") {
+      maxHealth = 112 + scaling.health;
+      attack = 16 + scaling.attack;
+      defense = 5;
+      speed = (2.85 + this.random() * 0.55) * scaling.speed;
+    } else {
+      maxHealth = 58 + scaling.health;
+      attack = 10 + scaling.attack;
+      defense = 1;
+      speed = (3.65 + this.random() * 0.75) * scaling.speed;
+    }
+    // 野狼白天只在自己的地盘游荡，不参与夜袭的成长曲线，所以稍微弱一点。
+    if (role === "wild") {
+      maxHealth = Math.round(maxHealth * 0.85);
+      attack = Math.max(6, Math.round(attack * 0.8));
+    }
+
     const anchorAngle = this.random() * TAU;
     const anchorDistance = 12 + this.random() * 10;
+    const anchor = role === "wild"
+      ? this.findNearestWalkablePoint({ x: spawn.x, z: spawn.z })
+      : this.findNearestWalkablePoint({
+        x: camp.x + Math.cos(anchorAngle) * anchorDistance,
+        z: camp.z + Math.sin(anchorAngle) * anchorDistance,
+      });
+
     const raiderChance = Math.min(0.35, 0.16 + (this.day - 1) * 0.06);
-    const raider = tutorialWolf || this.random() < raiderChance;
-    const largeChance = Math.min(0.58, 0.22 + (this.day - 1) * 0.09);
-    const kind = tutorialWolf || this.random() >= largeChance ? "small" : "large";
-    const maxHealth = tutorialWolf ? 28 : kind === "large" ? 112 : 58;
-    const attack = tutorialWolf ? 5 : kind === "large" ? 16 + Math.min(4, this.day - 1) : 10 + Math.min(3, Math.floor((this.day - 1) * 0.7));
-    const defense = tutorialWolf ? 0 : kind === "large" ? 5 : 1;
-    const anchor = this.findNearestWalkablePoint({
-      x: camp.x + Math.cos(anchorAngle) * anchorDistance,
-      z: camp.z + Math.sin(anchorAngle) * anchorDistance,
-    });
+    const raider = role === "raider" && (tutorialWolf || kind === "alpha" || this.random() < raiderChance);
     this.wolves.push({
       id: this.wolfId++,
       kind,
+      role,
       ...spawn,
       facing: direction(spawn, anchor),
       health: maxHealth,
       maxHealth,
       attack,
       defense,
-      mode: raider ? "raid" : "entering",
+      mode: role === "wild" ? "patrol" : raider ? "raid" : "entering",
       raider,
+      provoked: false,
       anchor,
       patrolAngle: this.random() * TAU,
-      speed: tutorialWolf ? 3.05 : kind === "large" ? 2.85 + this.random() * 0.55 : 3.65 + this.random() * 0.75,
+      speed,
       attackCooldown: this.random(),
       lostTimer: 0,
       hurtFlash: 0,
@@ -763,9 +1151,32 @@ export class GameSimulation {
       dropsCreated: false,
     });
     if (tutorialWolf) this.events.push({ type: "message", text: "侦察小狼正在逼近 · 面向它攻击" });
-    if (kind === "large" && !this.largeWolfAnnounced) {
+    if (kind === "large" && role === "raider" && !this.largeWolfAnnounced) {
       this.largeWolfAnnounced = true;
       this.events.push({ type: "message", text: "发现大狼 · 生命、防御和破坏力都更高" });
+    }
+  }
+
+  /**
+   * 白天在远离玩家的地方补充游荡野狼。
+   * 它们不主动攻击，被打才反击 —— 是狼皮（进而是防具线）的唯一来源。
+   */
+  private updateWildWolves(delta: number): void {
+    if (this.phase !== "day") return;
+    this.wildRespawnCountdown -= delta;
+    if (this.wildRespawnCountdown > 0) return;
+    this.wildRespawnCountdown = 9;
+    const wildCount = this.wolves.filter((wolf) => wolf.role === "wild" && wolf.mode !== "dead").length;
+    if (wildCount >= 5) return;
+    for (let guard = 0; guard < 20; guard += 1) {
+      const point = {
+        x: (this.random() - 0.5) * (this.world.size - 24),
+        z: (this.random() - 0.5) * (this.world.size - 24),
+      };
+      if (distanceSquared(point, this.player) < 34 * 34) continue;
+      if (!isTerrainWalkable(this.world, point)) continue;
+      this.spawnWolf({ role: "wild", origin: point });
+      return;
     }
   }
 
@@ -861,15 +1272,22 @@ export class GameSimulation {
       this.spawnedThisNight = 0;
       this.objectiveStage = 3;
       this.events.push({ type: "phase", phase: "night", day: this.day });
-      this.events.push({ type: "message", text: "狼正从雪原边缘逐只进入" });
+      this.events.push({ type: "message", text: "狼正从沙海边缘逐只进入" });
+      // 白天打满击杀数的话，头狼会在入夜的这一刻登场。
+      this.maybeSpawnAlpha();
       return;
     }
     this.phase = "day";
     this.day += 1;
     this.phaseTime = LATER_DAY_DURATION;
-    for (const wolf of this.wolves) this.beginRetreat(wolf);
+    // 只有夜袭部队撤离；白天的野狼留在原地继续游荡，它们才是狼皮的来源。
+    // 头狼绝不撤退 —— 它一旦登场就必须被杀死，否则玩家再也没有通关途径。
+    for (const wolf of this.wolves) {
+      if (wolf.role === "raider" && wolf.kind !== "alpha") this.beginRetreat(wolf);
+    }
+    this.wildRespawnCountdown = 2;
     this.events.push({ type: "phase", phase: "day", day: this.day });
-    this.events.push({ type: "message", text: "天亮了 · 狼群停止攻击并撤向雪原边缘" });
+    this.events.push({ type: "message", text: "天亮了 · 狼群撤离；白天的野狼可以猎取狼皮" });
   }
 
   private updateObjectives(): void {
@@ -879,7 +1297,7 @@ export class GameSimulation {
     }
     if (this.objectiveStage === 0 && this.player.carrying) {
       this.objectiveStage = 1;
-      this.events.push({ type: "message", text: "圆木用于添火；入口旁的大石负责封路" });
+      this.events.push({ type: "message", text: "枯木用于添火；入口旁的大石负责封路" });
     } else if (this.objectiveStage === 1 && this.camps.some((camp) => camp.fuel > 90)) {
       this.objectiveStage = 2;
       this.events.push({ type: "message", text: "火已续上 · 把入口的大石搬到缺口中央" });
@@ -965,11 +1383,11 @@ export class GameSimulation {
     return nearest;
   }
 
-  private findNearestBerry(maxDistance: number): BerryPatch | null {
-    let nearest: BerryPatch | null = null;
+  private findNearestCactus(maxDistance: number): CactusPatch | null {
+    let nearest: CactusPatch | null = null;
     let best = maxDistance * maxDistance;
-    for (const patch of this.berries) {
-      if (patch.berries <= 0) continue;
+    for (const patch of this.cacti) {
+      if (patch.juice <= 0) continue;
       const value = distanceSquared(this.player, patch);
       if (value < best) {
         nearest = patch;

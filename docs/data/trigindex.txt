@@ -1,0 +1,1453 @@
+total triggers: 194
+
+### _Z                                 
+      Trig_ZActions takes nothing returns nothing
+      call SetUnitTimeScalePercent(gg_unit_h005_0042, 2.00)
+      call SetPlayerFlagBJ(PLAYER_STATE_GIVES_BOUNTY, false, Player(PLAYER_NEUTRAL_AGGRESSIVE))
+      call SetPlayerTechResearchedSwap(R002(生物力量（1级）,生物力量（2级）,生物力量（3级）,生物力量（4级）,生物力量（5级）,生物力量（6级）,生物力量（7级）,生物力量（8级）,生物力量（9级）,生物力量（10级）,生物力量（11级）,生物力量（12级）,生
+      call ForForce(YDWEGetPlayersAlliesNull(Player(0)), function Trig_ZFunc004A)
+      call SetPlayerAllianceStateBJ(Player(11), Player(PLAYER_NEUTRAL_AGGRESSIVE), bj_ALLIANCE_ALLIED_VISION)
+      call SetPlayerAllianceStateBJ(Player(PLAYER_NEUTRAL_AGGRESSIVE), Player(11), bj_ALLIANCE_ALLIED_VISION)
+
+### _____________0_0                   
+      Trig_____________0_0Actions takes nothing returns nothing
+      if ( ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 1)) == I00S(标志) ) and ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 2)) == I00H(蛇皮) ) and
+      call PlaySoundOnUnitBJ(gg_snd_HalloweenHumanTaunt01, 60.00, GetTriggerUnit())
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 1))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 2))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 3))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 4))
+      call UnitAddItemByIdSwapped(I03P(时间加速), GetTriggerUnit())
+      if ( ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 1)) == I005(沙鼠的肉) ) and ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 2)) == I004(沙虫的肉) )
+      call PlaySoundOnUnitBJ(gg_snd_HalloweenHumanTaunt01, 60.00, GetTriggerUnit())
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 1))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 2))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 3))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 4))
+      ... (+1 行)
+
+### ____________________001            每 5.00 秒
+      Trig____________________001Actions takes nothing returns nothing
+      call ForForce(YDWEGetPlayersAlliesNull(Player(0)), function Trig____________________001Func001A)
+
+### ____________________001_______u    每 2.50 秒   [初始关闭]
+      Trig____________________001_______uActions takes nothing returns nothing
+      call ForForce(YDWEGetPlayersAlliesNull(Player(0)), function Trig____________________001_______uFunc001A)
+
+### ____________________002            玩家状态 PLAYER_STATE_RESOURCE_GOLD LESS_THAN_OR_EQUAL 0.00 | 玩家状态 PLAYER_STATE_RESOURCE_FOOD_USED LESS_THAN_OR_EQUAL 0.00
+      Trig____________________002Actions takes nothing returns nothing
+      call ForGroupBJ(YDWEGetUnitsOfPlayerAndTypeIdNull(GetTriggerPlayer() , H000(幸存者)), function Trig____________________002Func003A)
+
+### ____________________003            
+      Trig____________________003Actions takes nothing returns nothing
+      call CreateNUnitsAtLoc(1, H000(幸存者), Player(0), GetPlayerStartLocationLoc(Player(0)), 270.00)
+      set udg_xcz[1]=GetLastCreatedUnit()
+
+### ____________________003________10  
+      Trig____________________003________10Actions takes nothing returns nothing
+      call CreateNUnitsAtLoc(1, H000(幸存者), Player(10), GetPlayerStartLocationLoc(Player(10)), 270.00)
+      set udg_xcz[11]=GetLastCreatedUnit()
+
+### ____________________003________2   
+      Trig____________________003________2Actions takes nothing returns nothing
+      call CreateNUnitsAtLoc(1, H000(幸存者), Player(2), GetPlayerStartLocationLoc(Player(0)), 270.00)
+      set udg_xcz[3]=GetLastCreatedUnit()
+
+### ____________________003________3   
+      Trig____________________003________3Actions takes nothing returns nothing
+      call CreateNUnitsAtLoc(1, H000(幸存者), Player(3), GetPlayerStartLocationLoc(Player(3)), 270.00)
+      set udg_xcz[4]=GetLastCreatedUnit()
+
+### ____________________003________4   
+      Trig____________________003________4Actions takes nothing returns nothing
+      call CreateNUnitsAtLoc(1, H000(幸存者), Player(4), GetPlayerStartLocationLoc(Player(4)), 270.00)
+      set udg_xcz[5]=GetLastCreatedUnit()
+
+### ____________________003________5   
+      Trig____________________003________5Actions takes nothing returns nothing
+      call CreateNUnitsAtLoc(1, H000(幸存者), Player(5), GetPlayerStartLocationLoc(Player(5)), 270.00)
+      set udg_xcz[6]=GetLastCreatedUnit()
+
+### ____________________003________6   
+      Trig____________________003________6Actions takes nothing returns nothing
+      call CreateNUnitsAtLoc(1, H000(幸存者), Player(6), GetPlayerStartLocationLoc(Player(6)), 270.00)
+      set udg_xcz[7]=GetLastCreatedUnit()
+
+### ____________________003________7   
+      Trig____________________003________7Actions takes nothing returns nothing
+      call CreateNUnitsAtLoc(1, H000(幸存者), Player(7), GetPlayerStartLocationLoc(Player(7)), 270.00)
+      set udg_xcz[8]=GetLastCreatedUnit()
+
+### ____________________003________8   
+      Trig____________________003________8Actions takes nothing returns nothing
+      call CreateNUnitsAtLoc(1, H000(幸存者), Player(8), GetPlayerStartLocationLoc(Player(8)), 270.00)
+      set udg_xcz[9]=GetLastCreatedUnit()
+
+### ____________________003________9   
+      Trig____________________003________9Actions takes nothing returns nothing
+      call CreateNUnitsAtLoc(1, H000(幸存者), Player(9), GetPlayerStartLocationLoc(Player(9)), 270.00)
+      set udg_xcz[10]=GetLastCreatedUnit()
+
+### ____________________003_______u    
+      Trig____________________003_______uActions takes nothing returns nothing
+      call CreateNUnitsAtLoc(1, H000(幸存者), Player(1), GetPlayerStartLocationLoc(Player(1)), 270.00)
+      set udg_xcz[2]=GetLastCreatedUnit()
+
+### ____________________004            PlayerSelectionEventBJ   [初始关闭]
+      Trig____________________004Actions takes nothing returns nothing
+      call SetCameraTargetControllerNoZForPlayer(GetTriggerPlayer(), GetTriggerUnit(), 0, 0, false)
+
+### ____________________004________10  PlayerSelectionEventBJ   [初始关闭]
+      Trig____________________004________10Actions takes nothing returns nothing
+      call SetCameraTargetControllerNoZForPlayer(GetTriggerPlayer(), GetTriggerUnit(), 0, 0, false)
+
+### ____________________004________2   PlayerSelectionEventBJ   [初始关闭]
+      Trig____________________004________2Actions takes nothing returns nothing
+      call SetCameraTargetControllerNoZForPlayer(GetTriggerPlayer(), GetTriggerUnit(), 0, 0, false)
+
+### ____________________004________3   PlayerSelectionEventBJ   [初始关闭]
+      Trig____________________004________3Actions takes nothing returns nothing
+      call SetCameraTargetControllerNoZForPlayer(GetTriggerPlayer(), GetTriggerUnit(), 0, 0, false)
+
+### ____________________004________4   PlayerSelectionEventBJ   [初始关闭]
+      Trig____________________004________4Actions takes nothing returns nothing
+      call SetCameraTargetControllerNoZForPlayer(GetTriggerPlayer(), GetTriggerUnit(), 0, 0, false)
+
+### ____________________004________5   PlayerSelectionEventBJ   [初始关闭]
+      Trig____________________004________5Actions takes nothing returns nothing
+      call SetCameraTargetControllerNoZForPlayer(GetTriggerPlayer(), GetTriggerUnit(), 0, 0, false)
+
+### ____________________004________6   PlayerSelectionEventBJ   [初始关闭]
+      Trig____________________004________6Actions takes nothing returns nothing
+      call SetCameraTargetControllerNoZForPlayer(GetTriggerPlayer(), GetTriggerUnit(), 0, 0, false)
+
+### ____________________004________7   PlayerSelectionEventBJ   [初始关闭]
+      Trig____________________004________7Actions takes nothing returns nothing
+      call SetCameraTargetControllerNoZForPlayer(GetTriggerPlayer(), GetTriggerUnit(), 0, 0, false)
+
+### ____________________004________8   PlayerSelectionEventBJ   [初始关闭]
+      Trig____________________004________8Actions takes nothing returns nothing
+      call SetCameraTargetControllerNoZForPlayer(GetTriggerPlayer(), GetTriggerUnit(), 0, 0, false)
+
+### ____________________004________9   PlayerSelectionEventBJ   [初始关闭]
+      Trig____________________004________9Actions takes nothing returns nothing
+      call SetCameraTargetControllerNoZForPlayer(GetTriggerPlayer(), GetTriggerUnit(), 0, 0, false)
+
+### ____________________004_______u    PlayerSelectionEventBJ   [初始关闭]
+      Trig____________________004_______uActions takes nothing returns nothing
+      call SetCameraTargetControllerNoZForPlayer(GetTriggerPlayer(), GetTriggerUnit(), 0, 0, false)
+
+### ____________________005_______u    EVENT_PLAYER_UNIT_DEATH
+    cond: H000(幸存者)
+      Trig____________________005_______uActions takes nothing returns nothing
+      call DisplayTextToForce(GetPlayersAll(), ( "|cffffcc00" + ( GetPlayerName(GetTriggerPlayer()) + "|cff808080死在这片大荒漠之中。" ) ))
+      call PlaySoundBJ(gg_snd_HalloweenGameOverFemaleScream)
+      call TriggerSleepAction(0.80)
+      call PlaySoundBJ(gg_snd_fallback)
+      call CustomDefeatEx(GetTriggerPlayer() , "TRIGSTR_8612")
+      call TriggerSleepAction(1.00)
+      call PlaySoundBJ(gg_snd_cso_result)
+
+### ____________________006            EVENT_PLAYER_UNIT_USE_ITEM
+    cond: I004(沙虫的肉)
+      Trig____________________006Actions takes nothing returns nothing
+      call AdjustPlayerStateBJ(GetRandomInt(1, 2), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+      call AdjustPlayerStateBJ(GetRandomInt(1, 2), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+
+### ____________________006________10  EVENT_PLAYER_UNIT_USE_ITEM
+    cond: I00A(水)
+      Trig____________________006________10Actions takes nothing returns nothing
+      call AdjustPlayerStateBJ(GetRandomInt(15, 45), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+      call AdjustPlayerStateBJ(GetRandomInt(2, 5), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+      call AdjustPlayerStateBJ(GetRandomInt(- 5, - 8), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_LUMBER)
+
+### ____________________006________11  EVENT_PLAYER_UNIT_USE_ITEM
+    cond: I00B(仙人掌的汁)
+      Trig____________________006________11Actions takes nothing returns nothing
+      call AdjustPlayerStateBJ(GetRandomInt(8, 16), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+      call AdjustPlayerStateBJ(GetRandomInt(1, 5), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+      call AdjustPlayerStateBJ(GetRandomInt(- 5, - 10), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_LUMBER)
+
+### ____________________006________12  EVENT_PLAYER_UNIT_USE_ITEM
+    cond: I00Q(狼的肉)
+      Trig____________________006________12Actions takes nothing returns nothing
+      call AdjustPlayerStateBJ(GetRandomInt(4, 7), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+      call AdjustPlayerStateBJ(GetRandomInt(15, 30), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+
+### ____________________006________13  EVENT_PLAYER_UNIT_USE_ITEM
+    cond: I01I(体力药水)
+      Trig____________________006________13Actions takes nothing returns nothing
+      call AdjustPlayerStateBJ(GetRandomInt(25, 35), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+      call AdjustPlayerStateBJ(GetRandomInt(30, 100), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+
+### ____________________006________14  EVENT_PLAYER_UNIT_USE_ITEM
+    cond: I01O(一布袋的肉)
+      Trig____________________006________14Actions takes nothing returns nothing
+      call AdjustPlayerStateBJ(GetRandomInt(3, 6), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+      call AdjustPlayerStateBJ(GetRandomInt(18, 30), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+
+### ____________________006________15  EVENT_PLAYER_UNIT_USE_ITEM
+    cond: I01Q(僵尸的肉)
+      Trig____________________006________15Actions takes nothing returns nothing
+      call AdjustPlayerStateBJ(GetRandomInt(1, 4), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+      call AdjustPlayerStateBJ(GetRandomInt(5, 10), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+
+### ____________________006________16  EVENT_PLAYER_UNIT_USE_ITEM
+    cond: I01W(骆驼的肉)
+      Trig____________________006________16Actions takes nothing returns nothing
+      call AdjustPlayerStateBJ(GetRandomInt(2, 8), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+      call AdjustPlayerStateBJ(GetRandomInt(18, 32), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+
+### ____________________006________17  EVENT_PLAYER_UNIT_USE_ITEM
+    cond: I01X(骆驼水)
+      Trig____________________006________17Actions takes nothing returns nothing
+      call AdjustPlayerStateBJ(GetRandomInt(25, 32), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+      call AdjustPlayerStateBJ(GetRandomInt(1, 5), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+      call AdjustPlayerStateBJ(GetRandomInt(- 5, - 12), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_LUMBER)
+
+### ____________________006________18  EVENT_PLAYER_UNIT_USE_ITEM
+    cond: I01K(人肉)
+      Trig____________________006________18Actions takes nothing returns nothing
+      call AdjustPlayerStateBJ(GetRandomInt(35, 60), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+      call AdjustPlayerStateBJ(GetRandomInt(60, 100), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+
+### ____________________006________19  EVENT_PLAYER_UNIT_USE_ITEM
+    cond: I02P(小狼的肉)
+      Trig____________________006________19Actions takes nothing returns nothing
+      call AdjustPlayerStateBJ(GetRandomInt(1, 5), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+      call AdjustPlayerStateBJ(GetRandomInt(5, 25), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+
+### ____________________006________2   EVENT_PLAYER_UNIT_USE_ITEM
+    cond: I006(白颈鼠的肉)
+      Trig____________________006________2Actions takes nothing returns nothing
+      call AdjustPlayerStateBJ(GetRandomInt(1, 5), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+      call AdjustPlayerStateBJ(GetRandomInt(8, 16), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+
+### ____________________006________20  EVENT_PLAYER_UNIT_USE_ITEM
+    cond: I03T(烤肉)
+      Trig____________________006________20Actions takes nothing returns nothing
+      call AdjustPlayerStateBJ(GetRandomInt(5, 10), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+      call AdjustPlayerStateBJ(GetRandomInt(20, 35), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+
+### ____________________006________3   EVENT_PLAYER_UNIT_USE_ITEM
+    cond: I001(眼镜蛇的肉)
+      Trig____________________006________3Actions takes nothing returns nothing
+      call AdjustPlayerStateBJ(GetRandomInt(1, 6), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+      call AdjustPlayerStateBJ(GetRandomInt(10, 16), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+
+### ____________________006________4   EVENT_PLAYER_UNIT_USE_ITEM
+    cond: I003(蜘蛛的肉)
+      Trig____________________006________4Actions takes nothing returns nothing
+      call AdjustPlayerStateBJ(GetRandomInt(1, 3), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+      call AdjustPlayerStateBJ(GetRandomInt(4, 8), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+
+### ____________________006________5   EVENT_PLAYER_UNIT_USE_ITEM
+    cond: I007(蝎子的肉)
+      Trig____________________006________5Actions takes nothing returns nothing
+      call AdjustPlayerStateBJ(GetRandomInt(1, 4), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+      call AdjustPlayerStateBJ(GetRandomInt(3, 7), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+
+### ____________________006________6   EVENT_PLAYER_UNIT_USE_ITEM
+    cond: I000(蜥蜴的肉)
+      Trig____________________006________6Actions takes nothing returns nothing
+      call AdjustPlayerStateBJ(GetRandomInt(2, 5), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+      call AdjustPlayerStateBJ(GetRandomInt(3, 6), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+
+### ____________________006________7   EVENT_PLAYER_UNIT_USE_ITEM
+    cond: I009(甲壳虫的肉)
+      Trig____________________006________7Actions takes nothing returns nothing
+      call AdjustPlayerStateBJ(GetRandomInt(1, 4), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+      call AdjustPlayerStateBJ(GetRandomInt(1, 3), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+
+### ____________________006________8   EVENT_PLAYER_UNIT_USE_ITEM
+    cond: I002(秃鹰的肉)
+      Trig____________________006________8Actions takes nothing returns nothing
+      call AdjustPlayerStateBJ(GetRandomInt(1, 5), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+      call AdjustPlayerStateBJ(GetRandomInt(16, 28), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+
+### ____________________006________9   EVENT_PLAYER_UNIT_USE_ITEM
+    cond: I008(野兔的肉)
+      Trig____________________006________9Actions takes nothing returns nothing
+      call AdjustPlayerStateBJ(GetRandomInt(2, 8), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+      call AdjustPlayerStateBJ(GetRandomInt(15, 25), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+
+### ____________________006_______u    EVENT_PLAYER_UNIT_USE_ITEM
+    cond: I005(沙鼠的肉)
+      Trig____________________006_______uActions takes nothing returns nothing
+      call AdjustPlayerStateBJ(GetRandomInt(1, 4), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+      call AdjustPlayerStateBJ(GetRandomInt(6, 14), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+
+### ____________________007            EVENT_PLAYER_UNIT_DEATH
+    cond: n001(沙虫)
+      Trig____________________007Actions takes nothing returns nothing
+      call CreateItemLoc(I004(沙虫的肉), GetUnitLoc(GetTriggerUnit()))
+
+### ____________________007________10  EVENT_PLAYER_UNIT_DEATH
+    cond: h001(胡同树)
+      Trig____________________007________10Actions takes nothing returns nothing
+      call CreateItemLoc(I00E(木头), GetUnitLoc(GetTriggerUnit()))
+      call CreateItemLoc(I00E(木头), GetUnitLoc(GetTriggerUnit()))
+
+### ____________________007________11  EVENT_PLAYER_UNIT_DEATH
+    cond: n00D(狼)
+      Trig____________________007________11Actions takes nothing returns nothing
+      call CreateItemLoc(I00Q(狼的肉), GetUnitLoc(GetTriggerUnit()))
+      call CreateItemLoc(I00I(狼皮), GetUnitLoc(GetTriggerUnit()))
+
+### ____________________007________11______________u EVENT_PLAYER_UNIT_DEATH
+    cond: n00Q(小白狼), n00S(狼仔)
+      Trig____________________007________11______________uActions takes nothing returns nothing
+      if ( ( GetOwningPlayer(GetTriggerUnit()) != Player(11) ) ) then
+      call CreateItemLoc(I02P(小狼的肉), GetUnitLoc(GetTriggerUnit()))
+      call CreateItemLoc(I00I(狼皮), GetUnitLoc(GetTriggerUnit()))
+      call CreateItemLoc(I02P(小狼的肉), GetUnitLoc(GetTriggerUnit()))
+
+### ____________________007________11_______u EVENT_PLAYER_UNIT_DEATH
+    cond: n00J(大灰狼), n00R(恶狼), n00T(母狼), n00P(独眼狼)
+      Trig____________________007________11_______uActions takes nothing returns nothing
+      if ( ( GetOwningPlayer(GetTriggerUnit()) != Player(11) ) ) then
+      call CreateItemLoc(I00Q(狼的肉), GetUnitLoc(GetTriggerUnit()))
+      call CreateItemLoc(I00I(狼皮), GetUnitLoc(GetTriggerUnit()))
+      call CreateItemLoc(I00Q(狼的肉), GetUnitLoc(GetTriggerUnit()))
+
+### ____________________007________12  EVENT_PLAYER_UNIT_DEATH
+    cond: n00Z(丧尸), n00K(僵尸), n00W(幽灵), n00V(恶魔感染体), n00X(死亡感染体), n00Y(母体)
+      Trig____________________007________12Actions takes nothing returns nothing
+      call CreateItemLoc(I01Q(僵尸的肉), GetUnitLoc(GetTriggerUnit()))
+
+### ____________________007________13  EVENT_PLAYER_UNIT_DEATH
+    cond: u001(僵尸终结者)
+      Trig____________________007________13Actions takes nothing returns nothing
+      call CreateItemLoc(I01Q(僵尸的肉), GetUnitLoc(GetTriggerUnit()))
+      call CreateItemLoc(I01R(僵尸终结者的头颅), GetUnitLoc(GetTriggerUnit()))
+
+### ____________________007________14  EVENT_PLAYER_UNIT_DEATH
+    cond: h006(骆驼)
+      Trig____________________007________14Actions takes nothing returns nothing
+      call CreateItemLoc(I01X(骆驼水), GetUnitLoc(GetTriggerUnit()))
+      call CreateItemLoc(I01W(骆驼的肉), GetUnitLoc(GetTriggerUnit()))
+
+### ____________________007________15  EVENT_PLAYER_UNIT_DEATH
+    cond: h002(仙人掌)
+      Trig____________________007________15Actions takes nothing returns nothing
+      call CreateItemLoc(I00B(仙人掌的汁), GetUnitLoc(GetTriggerUnit()))
+      call CreateItemLoc(I00B(仙人掌的汁), GetUnitLoc(GetTriggerUnit()))
+
+### ____________________007________16  EVENT_PLAYER_UNIT_DEATH
+    cond: H000(幸存者)
+      Trig____________________007________16Actions takes nothing returns nothing
+      call CreateItemLoc(I01K(人肉), GetUnitLoc(GetTriggerUnit()))
+
+### ____________________007________2   EVENT_PLAYER_UNIT_DEATH
+    cond: n004(白颈鼠)
+      Trig____________________007________2Actions takes nothing returns nothing
+      call CreateItemLoc(I006(白颈鼠的肉), GetUnitLoc(GetTriggerUnit()))
+      call CreateItemLoc(I00J(鼠皮), GetUnitLoc(GetTriggerUnit()))
+
+### ____________________007________3   EVENT_PLAYER_UNIT_DEATH
+    cond: n006(眼镜蛇)
+      Trig____________________007________3Actions takes nothing returns nothing
+      call CreateItemLoc(I001(眼镜蛇的肉), GetUnitLoc(GetTriggerUnit()))
+      call CreateItemLoc(I00H(蛇皮), GetUnitLoc(GetTriggerUnit()))
+      call CreateItemLoc(I00L(蛇牙), GetUnitLoc(GetTriggerUnit()))
+      call CreateItemLoc(I00M(蛇毒), GetUnitLoc(GetTriggerUnit()))
+
+### ____________________007________4   EVENT_PLAYER_UNIT_DEATH
+    cond: n000(蜘蛛)
+      Trig____________________007________4Actions takes nothing returns nothing
+      call CreateItemLoc(I003(蜘蛛的肉), GetUnitLoc(GetTriggerUnit()))
+      call CreateItemLoc(I00F(蜘蛛丝), GetUnitLoc(GetTriggerUnit()))
+      call CreateItemLoc(I00R(毒液), GetUnitLoc(GetTriggerUnit()))
+
+### ____________________007________5   EVENT_PLAYER_UNIT_DEATH
+    cond: n005(蜥蜴)
+      Trig____________________007________5Actions takes nothing returns nothing
+      call CreateItemLoc(I000(蜥蜴的肉), GetUnitLoc(GetTriggerUnit()))
+
+### ____________________007________6   EVENT_PLAYER_UNIT_DEATH
+    cond: n003(蝎子)
+      Trig____________________007________6Actions takes nothing returns nothing
+      call CreateItemLoc(I007(蝎子的肉), GetUnitLoc(GetTriggerUnit()))
+      call CreateItemLoc(I00K(毒针), GetUnitLoc(GetTriggerUnit()))
+
+### ____________________007________7   EVENT_PLAYER_UNIT_DEATH
+    cond: u000(甲壳虫)
+      Trig____________________007________7Actions takes nothing returns nothing
+      call CreateItemLoc(I009(甲壳虫的肉), GetUnitLoc(GetTriggerUnit()))
+
+### ____________________007________8   EVENT_PLAYER_UNIT_DEATH
+    cond: n008(野兔)
+      Trig____________________007________8Actions takes nothing returns nothing
+      call CreateItemLoc(I008(野兔的肉), GetUnitLoc(GetTriggerUnit()))
+      call CreateItemLoc(I00J(鼠皮), GetUnitLoc(GetTriggerUnit()))
+
+### ____________________007________9   EVENT_PLAYER_UNIT_DEATH
+    cond: n007(秃鹰)
+      Trig____________________007________9Actions takes nothing returns nothing
+      call CreateItemLoc(I002(秃鹰的肉), GetUnitLoc(GetTriggerUnit()))
+
+### ____________________007_______u    EVENT_PLAYER_UNIT_DEATH
+    cond: n002(沙鼠)
+      Trig____________________007_______uActions takes nothing returns nothing
+      call CreateItemLoc(I005(沙鼠的肉), GetUnitLoc(GetTriggerUnit()))
+      call CreateItemLoc(I00J(鼠皮), GetUnitLoc(GetTriggerUnit()))
+
+### ____________________008            玩家状态 PLAYER_STATE_RESOURCE_FOOD_USED GREATER_THAN 100.00
+      Trig____________________008Actions takes nothing returns nothing
+      call SetPlayerStateBJ(GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED, 100)
+
+### ____________________008________2   玩家状态 PLAYER_STATE_RESOURCE_FOOD_USED LESS_THAN 0.00
+      Trig____________________008________2Actions takes nothing returns nothing
+      call SetPlayerStateBJ(GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED, 0)
+
+### ____________________008_______u    玩家状态 PLAYER_STATE_RESOURCE_GOLD GREATER_THAN 100.00
+      Trig____________________008_______uActions takes nothing returns nothing
+      if ( ( IsPlayerEnemy(GetTriggerPlayer(), Player(11)) == true ) ) then
+      call SetPlayerStateBJ(GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD, 100)
+
+### ____________________009            EVENT_PLAYER_UNIT_SPELL_CAST
+    cond: A004(提水)
+      Trig____________________009Actions takes nothing returns nothing
+      call CreateItemLoc(I00A(水), GetUnitLoc(GetTriggerUnit()))
+
+### ____________________010            EVENT_PLAYER_UNIT_DEATH
+    cond: n000(蜘蛛)
+      Trig____________________010Actions takes nothing returns nothing
+      call CreateNUnitsAtLoc(1, n000(蜘蛛), Player(PLAYER_NEUTRAL_AGGRESSIVE), GetRandomLocInRect(GetPlayableMapRect()), bj_UNIT_FACING)
+
+### ____________________010________10  EVENT_PLAYER_UNIT_DEATH
+    cond: h001(胡同树)
+      Trig____________________010________10Actions takes nothing returns nothing
+      call CreateNUnitsAtLoc(1, h001(胡同树), Player(PLAYER_NEUTRAL_PASSIVE), GetRandomLocInRect(GetPlayableMapRect()), bj_UNIT_FACING)
+
+### ____________________010________11  EVENT_PLAYER_UNIT_DEATH
+    cond: h002(仙人掌)
+      Trig____________________010________11Actions takes nothing returns nothing
+      call CreateNUnitsAtLoc(1, h002(仙人掌), Player(PLAYER_NEUTRAL_PASSIVE), GetRandomLocInRect(GetPlayableMapRect()), bj_UNIT_FACING)
+
+### ____________________010________12  EVENT_PLAYER_UNIT_DEATH
+    cond: n00D(狼)
+      Trig____________________010________12Actions takes nothing returns nothing
+      call CreateNUnitsAtLoc(1, n00D(狼), Player(PLAYER_NEUTRAL_AGGRESSIVE), GetRandomLocInRect(GetPlayableMapRect()), bj_UNIT_FACING)
+
+### ____________________010________13  EVENT_PLAYER_UNIT_DEATH
+    cond: h006(骆驼)
+      Trig____________________010________13Actions takes nothing returns nothing
+      call CreateNUnitsAtLoc(1, h006(骆驼), Player(PLAYER_NEUTRAL_AGGRESSIVE), GetRandomLocInRect(GetPlayableMapRect()), bj_UNIT_FACING)
+
+### ____________________010________14  EVENT_PLAYER_UNIT_DEATH
+    cond: n00U(沙尘暴)
+      Trig____________________010________14Actions takes nothing returns nothing
+      call TriggerSleepAction(60.00)
+      call CreateNUnitsAtLoc(1, n00U(沙尘暴), Player(PLAYER_NEUTRAL_AGGRESSIVE), GetRandomLocInRect(GetEntireMapRect()), bj_UNIT_FACING)
+
+### ____________________010________15  EVENT_PLAYER_UNIT_DEATH
+    cond: n00J(大灰狼)
+      Trig____________________010________15Actions takes nothing returns nothing
+      call CreateNUnitsAtLoc(1, n00J(大灰狼), Player(PLAYER_NEUTRAL_AGGRESSIVE), GetRandomLocInRect(GetPlayableMapRect()), bj_UNIT_FACING)
+
+### ____________________010________15________2 EVENT_PLAYER_UNIT_DEATH
+    cond: n00R(恶狼)
+      Trig____________________010________15________2Actions takes nothing returns nothing
+      call CreateNUnitsAtLoc(1, n00R(恶狼), Player(PLAYER_NEUTRAL_AGGRESSIVE), GetRandomLocInRect(GetPlayableMapRect()), bj_UNIT_FACING)
+
+### ____________________010________15________3 EVENT_PLAYER_UNIT_DEATH
+    cond: n00T(母狼)
+      Trig____________________010________15________3Actions takes nothing returns nothing
+      call CreateNUnitsAtLoc(1, n00T(母狼), Player(PLAYER_NEUTRAL_AGGRESSIVE), GetRandomLocInRect(GetPlayableMapRect()), bj_UNIT_FACING)
+
+### ____________________010________15________4 EVENT_PLAYER_UNIT_DEATH
+    cond: n00P(独眼狼)
+      Trig____________________010________15________4Actions takes nothing returns nothing
+      call CreateNUnitsAtLoc(1, n00P(独眼狼), Player(PLAYER_NEUTRAL_AGGRESSIVE), GetRandomLocInRect(GetPlayableMapRect()), bj_UNIT_FACING)
+
+### ____________________010________15_______u EVENT_PLAYER_UNIT_DEATH
+    cond: n00Q(小白狼)
+      Trig____________________010________15_______uActions takes nothing returns nothing
+      call CreateNUnitsAtLoc(1, n00Q(小白狼), Player(PLAYER_NEUTRAL_AGGRESSIVE), GetRandomLocInRect(GetPlayableMapRect()), bj_UNIT_FACING)
+
+### ____________________010________2   EVENT_PLAYER_UNIT_DEATH
+    cond: n006(眼镜蛇)
+      Trig____________________010________2Actions takes nothing returns nothing
+      call CreateNUnitsAtLoc(1, n006(眼镜蛇), Player(PLAYER_NEUTRAL_AGGRESSIVE), GetRandomLocInRect(GetPlayableMapRect()), bj_UNIT_FACING)
+
+### ____________________010________3   EVENT_PLAYER_UNIT_DEATH
+    cond: u000(甲壳虫)
+      Trig____________________010________3Actions takes nothing returns nothing
+      call CreateNUnitsAtLoc(1, u000(甲壳虫), Player(PLAYER_NEUTRAL_AGGRESSIVE), GetRandomLocInRect(GetPlayableMapRect()), bj_UNIT_FACING)
+
+### ____________________010________4   EVENT_PLAYER_UNIT_DEATH
+    cond: n001(沙虫)
+      Trig____________________010________4Actions takes nothing returns nothing
+      call CreateNUnitsAtLoc(1, n001(沙虫), Player(PLAYER_NEUTRAL_AGGRESSIVE), GetRandomLocInRect(GetPlayableMapRect()), bj_UNIT_FACING)
+
+### ____________________010________5   EVENT_PLAYER_UNIT_DEATH
+    cond: n002(沙鼠)
+      Trig____________________010________5Actions takes nothing returns nothing
+      call CreateNUnitsAtLoc(1, n002(沙鼠), Player(PLAYER_NEUTRAL_AGGRESSIVE), GetRandomLocInRect(GetPlayableMapRect()), bj_UNIT_FACING)
+
+### ____________________010________6   EVENT_PLAYER_UNIT_DEATH
+    cond: n007(秃鹰)
+      Trig____________________010________6Actions takes nothing returns nothing
+      call CreateNUnitsAtLoc(1, n007(秃鹰), Player(PLAYER_NEUTRAL_AGGRESSIVE), GetRandomLocInRect(GetPlayableMapRect()), bj_UNIT_FACING)
+
+### ____________________010________7   EVENT_PLAYER_UNIT_DEATH
+    cond: n003(蝎子)
+      Trig____________________010________7Actions takes nothing returns nothing
+      call CreateNUnitsAtLoc(1, n003(蝎子), Player(PLAYER_NEUTRAL_AGGRESSIVE), GetRandomLocInRect(GetPlayableMapRect()), bj_UNIT_FACING)
+
+### ____________________010________8   EVENT_PLAYER_UNIT_DEATH
+    cond: n005(蜥蜴)
+      Trig____________________010________8Actions takes nothing returns nothing
+      call CreateNUnitsAtLoc(1, n005(蜥蜴), Player(PLAYER_NEUTRAL_AGGRESSIVE), GetRandomLocInRect(GetPlayableMapRect()), bj_UNIT_FACING)
+
+### ____________________010________9   EVENT_PLAYER_UNIT_DEATH
+    cond: n004(白颈鼠)
+      Trig____________________010________9Actions takes nothing returns nothing
+      call CreateNUnitsAtLoc(1, n004(白颈鼠), Player(PLAYER_NEUTRAL_AGGRESSIVE), GetRandomLocInRect(GetPlayableMapRect()), bj_UNIT_FACING)
+
+### ____________________010_______u    EVENT_PLAYER_UNIT_DEATH
+    cond: n008(野兔)
+      Trig____________________010_______uActions takes nothing returns nothing
+      call CreateNUnitsAtLoc(1, n008(野兔), Player(PLAYER_NEUTRAL_AGGRESSIVE), GetRandomLocInRect(GetPlayableMapRect()), bj_UNIT_FACING)
+
+### ____________________011            EVENT_PLAYER_UNIT_SPELL_CAST
+    cond: A009(睡眠)
+      Trig____________________011Actions takes nothing returns nothing
+      call SetUnitLifeBJ(GetSpellTargetUnit(), ( GetUnitStateSwap(UNIT_STATE_LIFE, GetSpellTargetUnit()) + 444.00 ))
+
+### ____________________012            EVENT_PLAYER_UNIT_SPELL_FINISH
+    cond: A02L(挖坑)
+      Trig____________________012Actions takes nothing returns nothing
+      set udg_ck[1]=GetRandomInt(1, 5)
+      set udg_ck[2]=GetRandomInt(1, 6)
+      set udg_ck[3]=GetRandomInt(1, 8)
+      set udg_ck[4]=GetRandomInt(1, 10)
+      set udg_ck[5]=GetRandomInt(1, 13)
+      set udg_ck[6]=GetRandomInt(1, 15)
+      call TriggerSleepAction(0.10)
+      if ( ( udg_ck[1] == 1 ) ) then
+      call CreateItemLoc(I00G(石头), GetUnitLoc(GetTriggerUnit()))
+      if ( ( udg_ck[2] == 2 ) ) then
+      call CreateItemLoc(I014(铁), GetUnitLoc(GetTriggerUnit()))
+      if ( ( udg_ck[3] == 3 ) ) then
+      call CreateItemLoc(I016(钢), GetUnitLoc(GetTriggerUnit()))
+      ... (+10 行)
+
+### ____________________013            每 5.00 秒
+      Trig____________________013Actions takes nothing returns nothing
+      call ForForce(YDWEGetPlayersAlliesNull(Player(0)), function Trig____________________013Func001A)
+
+### ____________________013_______u    每 2.60 秒   [初始关闭]
+      Trig____________________013_______uActions takes nothing returns nothing
+      call ForForce(YDWEGetPlayersAlliesNull(Player(0)), function Trig____________________013_______uFunc001A)
+
+### ____________________014            EVENT_PLAYER_UNIT_SPELL_CAST
+    cond: A00C(仙人掌的汁)
+      Trig____________________014Actions takes nothing returns nothing
+      call CreateItemLoc(I00B(仙人掌的汁), GetUnitLoc(GetTriggerUnit()))
+
+### ____________________015            EVENT_PLAYER_UNIT_SPELL_CAST
+      Trig____________________015Actions takes nothing returns nothing
+      call CreateTextTagLocBJ(GetAbilityName(GetSpellAbilityId()), GetUnitLoc(GetTriggerUnit()), 8.00, 10.00, GetRandomReal(0, 100.00), GetRandomReal(0, 100
+      call SetTextTagVelocityBJ(GetLastCreatedTextTag(), 64, ( ( 180.00 + GetUnitFacing(GetTriggerUnit()) ) + 0.00 ))
+      call SetTextTagPermanent(GetLastCreatedTextTag(), false)
+      call SetTextTagLifespan(GetLastCreatedTextTag(), 1.25)
+
+### ____________________016            EVENT_PLAYER_UNIT_SPELL_CAST
+    cond: A00O(木条)
+      Trig____________________016Actions takes nothing returns nothing
+      call CreateItemLoc(I00D(木条), GetUnitLoc(GetTriggerUnit()))
+
+### ____________________017            EVENT_PLAYER_UNIT_SPELL_CAST
+    cond: A00P(木头)
+      Trig____________________017Actions takes nothing returns nothing
+      call CreateItemLoc(I00E(木头), GetUnitLoc(GetTriggerUnit()))
+
+### ____________________018            EVENT_PLAYER_UNIT_PICKUP_ITEM
+    cond: I00G(石头)
+      Trig____________________018Actions takes nothing returns nothing
+      call CreateItemLoc(I00G(石头), GetRandomLocInRect(GetPlayableMapRect()))
+
+### ____________________019            EVENT_PLAYER_UNIT_PICKUP_ITEM
+    cond: I00E(木头)
+      Trig____________________019Actions takes nothing returns nothing
+      call CreateItemLoc(I00E(木头), GetRandomLocInRect(GetPlayableMapRect()))
+
+### ____________________020            EVENT_PLAYER_UNIT_PICKUP_ITEM
+    cond: I00C(植被)
+      Trig____________________020Actions takes nothing returns nothing
+      call CreateItemLoc(I00C(植被), GetRandomLocInRect(GetPlayableMapRect()))
+
+### ____________________021            EVENT_PLAYER_UNIT_DROP_ITEM
+    cond: I00G(石头), I00E(木头), I00C(植被), I014(铁), I016(钢), I018(银), I017(金), I019(金刚石)
+      Trig____________________021Actions takes nothing returns nothing
+      call RemoveItem(RandomItemInRectSimpleBJ(GetEntireMapRect()))
+
+### ____________________022            EVENT_PLAYER_UNIT_USE_ITEM
+    cond: I00T(解毒药)
+      Trig____________________022Actions takes nothing returns nothing
+      call UnitRemoveBuffBJ('Bpsd', GetTriggerUnit())
+      call UnitRemoveBuffBJ('Bpoi', GetTriggerUnit())
+      call UnitRemoveBuffBJ('B002', GetTriggerUnit())
+      call UnitRemoveBuffBJ('B008', GetTriggerUnit())
+      call UnitRemoveBuffBJ('B005', GetTriggerUnit())
+      call UnitRemoveBuffBJ('B007', GetTriggerUnit())
+      call UnitRemoveBuffBJ('B000', GetTriggerUnit())
+      call UnitRemoveBuffBJ('B006', GetTriggerUnit())
+
+### ____________________023            每 3.00 秒
+      Trig____________________023Actions takes nothing returns nothing
+      call ForForce(YDWEGetPlayersAlliesNull(Player(0)), function Trig____________________023Func001A)
+
+### ____________________023_______u    每 1.50 秒
+      Trig____________________023_______uActions takes nothing returns nothing
+      call ForForce(YDWEGetPlayersAlliesNull(Player(0)), function Trig____________________023_______uFunc001A)
+
+### ____________________024            游戏时间 EQUAL 18.00
+      Trig____________________024Actions takes nothing returns nothing
+      call DisableTrigger(gg_trg____________________023)
+      call DisableTrigger(gg_trg____________________041______________u)
+      call EnableTrigger(gg_trg____________________023_______u)
+      call EnableTrigger(gg_trg____________________041_______u)
+
+### ____________________024_______u    游戏时间 EQUAL 6.00
+      Trig____________________024_______uActions takes nothing returns nothing
+      call DisableTrigger(gg_trg____________________023_______u)
+      call DisableTrigger(gg_trg____________________041_______u)
+      call EnableTrigger(gg_trg____________________023)
+      call EnableTrigger(gg_trg____________________041______________u)
+
+### ____________________025            EVENT_PLAYER_UNIT_PICKUP_ITEM
+    cond: I014(铁)
+      Trig____________________025Actions takes nothing returns nothing
+      call CreateItemLoc(I014(铁), GetRandomLocInRect(GetPlayableMapRect()))
+
+### ____________________026            
+      Trig____________________026Actions takes nothing returns nothing
+      call DisplayTimedTextToForce(GetPlayersAll(), 30.00, "TRIGSTR_754")
+
+### ____________________027            聊天 "-A"   [初始关闭]
+      Trig____________________027Actions takes nothing returns nothing
+      call PlaySoundBJ(gg_snd_cso_result)
+      call ForForce(YDWEGetPlayersAlliesNull(Player(0)), function Trig____________________027Func002A)
+      call DisableTrigger(gg_trg_qsb)
+      call DisableTrigger(gg_trg_qsb_______u)
+      call TriggerExecute(gg_trg_scms)
+      call QuestMessageBJ(GetPlayersAll(), bj_QUESTMESSAGE_DISCOVERED, "TRIGSTR_1664")
+      call CreateQuestBJ(bj_QUESTTYPE_OPT_DISCOVERED, "TRIGSTR_1665", "TRIGSTR_1666", "WAR3MAPPREVIEW.tga")
+      call TriggerExecute(gg_trg____________________057)
+      call TriggerExecute(gg_trg____________________036_______u)
+      call TriggerExecute(gg_trg____________________057)
+      call DisableTrigger(gg_trg____________________027________2)
+      call DisableTrigger(gg_trg____________________027_______u)
+      call DisableTrigger(gg_trg____________________013)
+      ... (+5 行)
+
+### ____________________027________2   聊天 "-C"
+      Trig____________________027________2Actions takes nothing returns nothing
+      call PlaySoundBJ(gg_snd_cso_result)
+      call SetPlayerName(Player(11), "TRIGSTR_7232")
+      call ForForce(YDWEGetPlayersAlliesNull(Player(0)), function Trig____________________027________2Func003A)
+      call CreateMultiboardBJ(2, 2, "TRIGSTR_1821")
+      call MultiboardSetTitleTextColorBJ(GetLastCreatedMultiboard(), 100, 0.00, 0.00, 0)
+      call MultiboardSetItemsStyle(GetLastCreatedMultiboard(), true, false)
+      call YDWEMultiboardSetItemValueBJNull(GetLastCreatedMultiboard() , 1 , 1 , "TRIGSTR_1822")
+      call YDWEMultiboardSetItemValueBJNull(GetLastCreatedMultiboard() , 2 , 1 , "TRIGSTR_1823")
+      call YDWEMultiboardSetItemValueBJNull(GetLastCreatedMultiboard() , 1 , 2 , udg_js)
+      call YDWEMultiboardSetItemValueBJNull(GetLastCreatedMultiboard() , 2 , 2 , udg_js1)
+      call TriggerExecute(gg_trg_swmsddw_______u)
+      call TriggerExecute(gg_trg____________________036)
+      call EnableTrigger(gg_trg____________________050)
+      ... (+13 行)
+
+### ____________________027_______u    聊天 "-B"
+      Trig____________________027_______uActions takes nothing returns nothing
+      call PlaySoundBJ(gg_snd_cso_result)
+      call SetPlayerName(Player(11), "TRIGSTR_7233")
+      call ForForce(YDWEGetPlayersAlliesNull(Player(0)), function Trig____________________027_______uFunc003A)
+      call CreateMultiboardBJ(2, 2, "TRIGSTR_1814")
+      call MultiboardSetTitleTextColorBJ(GetLastCreatedMultiboard(), 100, 0.00, 0.00, 0)
+      call MultiboardSetItemsStyle(GetLastCreatedMultiboard(), true, false)
+      call YDWEMultiboardSetItemValueBJNull(GetLastCreatedMultiboard() , 1 , 1 , "TRIGSTR_1816")
+      call YDWEMultiboardSetItemValueBJNull(GetLastCreatedMultiboard() , 2 , 1 , "TRIGSTR_1817")
+      call YDWEMultiboardSetItemValueBJNull(GetLastCreatedMultiboard() , 1 , 2 , udg_lq)
+      call YDWEMultiboardSetItemValueBJNull(GetLastCreatedMultiboard() , 2 , 2 , udg_lq1)
+      call TriggerExecute(gg_trg_swmsddw)
+      call TriggerExecute(gg_trg____________________036)
+      call EnableTrigger(gg_trg____________________049)
+      ... (+13 行)
+
+### ____________________028            游戏时间 EQUAL 18.00   [初始关闭]
+      Trig____________________028Actions takes nothing returns nothing
+      call PlaySoundBJ(gg_snd_ljs)
+      call ForForce(YDWEGetPlayersAlliesNull(Player(0)), function Trig____________________028Func002A)
+      call EnableTrigger(gg_trg____________________029)
+      call EnableTrigger(gg_trg____________________035)
+      call EnableTrigger(gg_trg____________________059)
+      call DisableTrigger(gg_trg____________________031)
+      call DisableTrigger(gg_trg____________________034)
+      call DisplayTextToForce(GetPlayersAll(), "TRIGSTR_1226")
+      call TriggerSleepAction(1.00)
+      set bj_forLoopAIndex=1
+      set bj_forLoopAIndexEnd=8
+      exitwhen bj_forLoopAIndex > bj_forLoopAIndexEnd
+      set udg_dian[1]=GetRectCenter(gg_rct_M1)
+      ... (+14 行)
+
+### ____________________028_______u    游戏时间 EQUAL 18.00   [初始关闭]
+      Trig____________________028_______uActions takes nothing returns nothing
+      call PlaySoundBJ(gg_snd_zombi_coming_2)
+      call TriggerWaitForSound(gg_snd_zombi_coming_2, 0.50)
+      call PlaySoundBJ(gg_snd_HalloweenHumanTaunt04)
+      call ForForce(YDWEGetPlayersAlliesNull(Player(0)), function Trig____________________028_______uFunc004A)
+      call EnableTrigger(gg_trg____________________029_______u)
+      call EnableTrigger(gg_trg____________________035_______u)
+      call EnableTrigger(gg_trg____________________059)
+      call DisableTrigger(gg_trg____________________031_______u)
+      call DisableTrigger(gg_trg____________________034_______u)
+      call DisplayTextToForce(GetPlayersAll(), "TRIGSTR_1590")
+      call TriggerSleepAction(1.00)
+      call CreateNUnitsAtLoc(1, u001(僵尸终结者), Player(11), GetRectCenter(gg_rct_M2), 90.00)
+      set bj_forLoopAIndex=1
+      ... (+17 行)
+
+### ____________________029            每 50.00 秒   [初始关闭]
+      Trig____________________029Actions takes nothing returns nothing
+      call ForForce(YDWEGetPlayersEnemiesNull(Player(11)), function Trig____________________029Func001A)
+
+### ____________________029_______u    每 50.00 秒   [初始关闭]
+      Trig____________________029_______uActions takes nothing returns nothing
+      call ForForce(YDWEGetPlayersEnemiesNull(Player(11)), function Trig____________________029_______uFunc001A)
+
+### ____________________030            游戏时间 EQUAL 6.00   [初始关闭]
+      Trig____________________030Actions takes nothing returns nothing
+      call PlaySoundBJ(gg_snd_HalloweenOwl1)
+      call ForForce(YDWEGetPlayersAlliesNull(Player(0)), function Trig____________________030Func002A)
+      call ForForce(YDWEGetPlayersAlliesNull(Player(0)), function Trig____________________030Func003A)
+      set udg_dian[1]=GetRectCenter(gg_rct_M2)
+      call IssuePointOrderLoc(GroupPickRandomUnit(YDWEGetRandomSubGroupNull(100 , (YDWEGetUnitsOfPlayerMatchingNull((Player(11)) , null)))), "move", udg_dia
+      call EnableTrigger(gg_trg____________________031)
+      call EnableTrigger(gg_trg____________________034)
+      call DisableTrigger(gg_trg____________________059)
+      call DisableTrigger(gg_trg____________________035)
+      call DisableTrigger(gg_trg____________________029)
+      call DisplayTextToForce(GetPlayersAll(), "TRIGSTR_1254")
+
+### ____________________030_______u    游戏时间 EQUAL 5.80   [初始关闭]
+      Trig____________________030_______uActions takes nothing returns nothing
+      call PlaySoundBJ(gg_snd_HalloweenOwl2)
+      call ForForce(YDWEGetPlayersAlliesNull(Player(0)), function Trig____________________030_______uFunc002A)
+      call ForForce(YDWEGetPlayersAlliesNull(Player(0)), function Trig____________________030_______uFunc003A)
+      set udg_dian[1]=GetRectCenter(gg_rct_M2)
+      call IssuePointOrderLoc(GroupPickRandomUnit(YDWEGetRandomSubGroupNull(100 , (YDWEGetUnitsOfPlayerMatchingNull((Player(11)) , null)))), "move", udg_dia
+      call EnableTrigger(gg_trg____________________031_______u)
+      call EnableTrigger(gg_trg____________________034_______u)
+      call DisableTrigger(gg_trg____________________059)
+      call DisableTrigger(gg_trg____________________035_______u)
+      call DisableTrigger(gg_trg____________________029_______u)
+      call DisplayTextToForce(GetPlayersAll(), "TRIGSTR_1592")
+
+### ____________________031               [初始关闭]
+      Trig____________________031Actions takes nothing returns nothing
+      call RemoveUnit(GetTriggerUnit())
+
+### ____________________031_______u       [初始关闭]
+      Trig____________________031_______uActions takes nothing returns nothing
+      call RemoveUnit(GetTriggerUnit())
+
+### ____________________032            EVENT_PLAYER_UNIT_PICKUP_ITEM
+    cond: I00D(木条)
+      Trig____________________032Actions takes nothing returns nothing
+      call CreateItemLoc(I00D(木条), GetRandomLocInRect(GetPlayableMapRect()))
+
+### ____________________033            EVENT_PLAYER_UNIT_SPELL_CAST
+    cond: A016(变回树桩)
+      Trig____________________033Actions takes nothing returns nothing
+      call RemoveUnit(GetTriggerUnit())
+      call CreateItemLoc(I015(树桩（1）), GetUnitLoc(GetTriggerUnit()))
+
+### ____________________034            25.00 秒后一次   [初始关闭]
+      Trig____________________034Actions takes nothing returns nothing
+      call ForGroupBJ((YDWEGetUnitsOfPlayerMatchingNull((Player(11)) , null)), function Trig____________________034Func001A) // INLINED!!
+
+### ____________________034_______u    25.00 秒后一次   [初始关闭]
+      Trig____________________034_______uActions takes nothing returns nothing
+      call ForGroupBJ((YDWEGetUnitsOfPlayerMatchingNull((Player(11)) , null)), function Trig____________________034_______uFunc001A) // INLINED!!
+
+### ____________________035            每 30.00 秒   [初始关闭]
+      Trig____________________035Actions takes nothing returns nothing
+      call CreateNUnitsAtLoc(1, udg_swsmddw[GetRandomInt(1, 6)], Player(11), GetRectCenter(gg_rct_M1), 0.00)
+      call CreateNUnitsAtLoc(1, udg_swsmddw[GetRandomInt(1, 6)], Player(11), GetRectCenter(gg_rct_M2), 90.00)
+      call CreateNUnitsAtLoc(1, udg_swsmddw[GetRandomInt(1, 6)], Player(11), GetRectCenter(gg_rct_M3), 90.00)
+      call CreateNUnitsAtLoc(1, udg_swsmddw[GetRandomInt(1, 6)], Player(11), GetRectCenter(gg_rct_M4), 0.00)
+      call CreateNUnitsAtLoc(1, udg_swsmddw[GetRandomInt(1, 6)], Player(11), GetRectCenter(gg_rct_M5), 180.00)
+
+### ____________________035_______u    每 26.00 秒   [初始关闭]
+      Trig____________________035_______uActions takes nothing returns nothing
+      call CreateNUnitsAtLoc(1, udg_swsmddw[GetRandomInt(1, 6)], Player(11), GetRectCenter(gg_rct_M1), 0.00)
+      call CreateNUnitsAtLoc(1, udg_swsmddw[GetRandomInt(1, 6)], Player(11), GetRectCenter(gg_rct_M2), 90.00)
+      call CreateNUnitsAtLoc(1, udg_swsmddw[GetRandomInt(1, 6)], Player(11), GetRectCenter(gg_rct_M3), 90.00)
+      call CreateNUnitsAtLoc(1, udg_swsmddw[GetRandomInt(1, 6)], Player(11), GetRectCenter(gg_rct_M4), 0.00)
+      call CreateNUnitsAtLoc(1, udg_swsmddw[GetRandomInt(1, 6)], Player(11), GetRectCenter(gg_rct_M5), 180.00)
+
+### ____________________036               [初始关闭]
+      Trig____________________036Actions takes nothing returns nothing
+      set bj_forLoopBIndex=1
+      set bj_forLoopBIndexEnd=40
+      exitwhen bj_forLoopBIndex > bj_forLoopBIndexEnd
+      call CreateNUnitsAtLoc(1, h002(仙人掌), Player(PLAYER_NEUTRAL_PASSIVE), GetRandomLocInRect(GetPlayableMapRect()), GetRandomReal(0, 360.00))
+      set bj_forLoopBIndex=bj_forLoopBIndex + 1
+      set bj_forLoopBIndex=1
+      set bj_forLoopBIndexEnd=45
+      exitwhen bj_forLoopBIndex > bj_forLoopBIndexEnd
+      call CreateNUnitsAtLoc(1, h001(胡同树), Player(PLAYER_NEUTRAL_PASSIVE), GetRandomLocInRect(GetPlayableMapRect()), GetRandomReal(0, 360.00))
+      set bj_forLoopBIndex=bj_forLoopBIndex + 1
+      set bj_forLoopBIndex=1
+      set bj_forLoopBIndexEnd=27
+      exitwhen bj_forLoopBIndex > bj_forLoopBIndexEnd
+      ... (+92 行)
+
+### ____________________036_______u       [初始关闭]
+      Trig____________________036_______uActions takes nothing returns nothing
+      set bj_forLoopBIndex=1
+      set bj_forLoopBIndexEnd=16
+      exitwhen bj_forLoopBIndex > bj_forLoopBIndexEnd
+      call CreateNUnitsAtLoc(1, h002(仙人掌), Player(PLAYER_NEUTRAL_PASSIVE), GetRandomLocInRect(GetPlayableMapRect()), GetRandomReal(0, 360.00))
+      set bj_forLoopBIndex=bj_forLoopBIndex + 1
+      set bj_forLoopBIndex=1
+      set bj_forLoopBIndexEnd=15
+      exitwhen bj_forLoopBIndex > bj_forLoopBIndexEnd
+      call CreateNUnitsAtLoc(1, h001(胡同树), Player(PLAYER_NEUTRAL_PASSIVE), GetRandomLocInRect(GetPlayableMapRect()), GetRandomReal(0, 360.00))
+      set bj_forLoopBIndex=bj_forLoopBIndex + 1
+      set bj_forLoopBIndex=1
+      set bj_forLoopBIndexEnd=13
+      exitwhen bj_forLoopBIndex > bj_forLoopBIndexEnd
+      ... (+62 行)
+
+### ____________________037            EVENT_PLAYER_UNIT_PICKUP_ITEM
+    cond: I016(钢)
+      Trig____________________037Actions takes nothing returns nothing
+      call CreateItemLoc(I016(钢), GetRandomLocInRect(GetPlayableMapRect()))
+
+### ____________________038            EVENT_PLAYER_UNIT_PICKUP_ITEM
+    cond: I018(银)
+      Trig____________________038Actions takes nothing returns nothing
+      call CreateItemLoc(I018(银), GetRandomLocInRect(GetPlayableMapRect()))
+
+### ____________________038________2   EVENT_PLAYER_UNIT_PICKUP_ITEM
+    cond: I019(金刚石)
+      Trig____________________038________2Actions takes nothing returns nothing
+      call CreateItemLoc(I019(金刚石), GetRandomLocInRect(GetPlayableMapRect()))
+
+### ____________________038_______u    EVENT_PLAYER_UNIT_PICKUP_ITEM
+    cond: I017(金)
+      Trig____________________038_______uActions takes nothing returns nothing
+      call CreateItemLoc(I017(金), GetRandomLocInRect(GetPlayableMapRect()))
+
+### ____________________039            EVENT_PLAYER_UNIT_SPELL_CAST
+    cond: A029(睡眠)
+      Trig____________________039Actions takes nothing returns nothing
+      call SetUnitLifeBJ(GetSpellTargetUnit(), ( GetUnitStateSwap(UNIT_STATE_LIFE, GetSpellTargetUnit()) + 188.00 ))
+      call AdjustPlayerStateBJ(GetRandomInt(- 45, - 58), GetOwningPlayer(GetSpellTargetUnit()), PLAYER_STATE_RESOURCE_LUMBER)
+
+### ____________________040            EVENT_PLAYER_UNIT_SPELL_CAST
+    cond: A01W(投石)
+      Trig____________________040Actions takes nothing returns nothing
+      call CreateItemLoc(I00G(石头), GetSpellTargetLoc())
+
+### ____________________041            玩家状态 PLAYER_STATE_RESOURCE_LUMBER GREATER_THAN_OR_EQUAL 100.00
+    cond: H000(幸存者)
+      Trig____________________041Actions takes nothing returns nothing
+      call SetPlayerStateBJ(GetTriggerPlayer(), PLAYER_STATE_RESOURCE_LUMBER, 100)
+      call ForGroupBJ(YDWEGetUnitsOfPlayerAndTypeIdNull(GetTriggerPlayer() , H000(幸存者)), function Trig____________________041Func003A)
+      exitwhen ( (GetPlayerState(GetTriggerPlayer(), PLAYER_STATE_RESOURCE_LUMBER) <= 95) ) // INLINED!!
+      call TriggerSleepAction(RMaxBJ(bj_WAIT_FOR_COND_MIN_INTERVAL, 2.00))
+      call ForGroupBJ(YDWEGetUnitsOfPlayerAndTypeIdNull(GetTriggerPlayer() , H000(幸存者)), function Trig____________________041Func005A)
+
+### ____________________041________2   玩家状态 PLAYER_STATE_RESOURCE_LUMBER LESS_THAN_OR_EQUAL 1.00
+    cond: H000(幸存者)
+      Trig____________________041________2Actions takes nothing returns nothing
+      call SetPlayerStateBJ(GetTriggerPlayer(), PLAYER_STATE_RESOURCE_LUMBER, 1)
+      call ForGroupBJ(YDWEGetUnitsOfPlayerAndTypeIdNull(GetTriggerPlayer() , H000(幸存者)), function Trig____________________041________2Func003A)
+      exitwhen ( (GetPlayerState(GetTriggerPlayer(), PLAYER_STATE_RESOURCE_LUMBER) >= 5) ) // INLINED!!
+      call TriggerSleepAction(RMaxBJ(bj_WAIT_FOR_COND_MIN_INTERVAL, 2.00))
+      call ForGroupBJ(YDWEGetUnitsOfPlayerAndTypeIdNull(GetTriggerPlayer() , H000(幸存者)), function Trig____________________041________2Func005A)
+
+### ____________________041______________u 玩家状态 PLAYER_STATE_RESOURCE_LUMBER LESS_THAN 15.00   [初始关闭]
+      Trig____________________041______________uActions takes nothing returns nothing
+      call SetPlayerStateBJ(GetTriggerPlayer(), PLAYER_STATE_RESOURCE_LUMBER, 15)
+
+### ____________________041_______u    玩家状态 PLAYER_STATE_RESOURCE_LUMBER GREATER_THAN 80.00   [初始关闭]
+      Trig____________________041_______uActions takes nothing returns nothing
+      call SetPlayerStateBJ(GetTriggerPlayer(), PLAYER_STATE_RESOURCE_LUMBER, 80)
+
+### ____________________042            每 1.98 秒
+      Trig____________________042Actions takes nothing returns nothing
+      set bj_forLoopAIndex=1
+      set bj_forLoopAIndexEnd=11
+      exitwhen bj_forLoopAIndex > bj_forLoopAIndexEnd
+      if ( ( UnitHasBuffBJ(udg_xcz[bj_forLoopAIndex], 'B00I') == true ) ) then
+      call AdjustPlayerStateBJ(3, ConvertedPlayer(bj_forLoopAIndex), PLAYER_STATE_RESOURCE_LUMBER)
+      set bj_forLoopAIndex=bj_forLoopAIndex + 1
+
+### ____________________043            EVENT_PLAYER_UNIT_SPELL_EFFECT
+    cond: A027(灭火)
+      Trig____________________043Actions takes nothing returns nothing
+      call PlaySoundOnUnitBJ(gg_snd_HunterWingClip, 50.00, GetTriggerUnit())
+      call RemoveUnit(GetTriggerUnit())
+      call CreateNUnitsAtLoc(1, n00L(没有火的火窖), GetTriggerPlayer(), GetUnitLoc(GetTriggerUnit()), bj_UNIT_FACING)
+
+### ____________________044            EVENT_PLAYER_UNIT_DEATH
+    cond: n00C(火窖)
+      Trig____________________044Actions takes nothing returns nothing
+      call CreateNUnitsAtLoc(1, n00L(没有火的火窖), GetTriggerPlayer(), GetUnitLoc(GetTriggerUnit()), bj_UNIT_FACING)
+
+### ____________________045            EVENT_PLAYER_UNIT_PICKUP_ITEM
+    cond: n00C(火窖), I00C(植被), I00E(木头)
+      Trig____________________045Actions takes nothing returns nothing
+      call RemoveItem(GetManipulatedItem())
+      call SetUnitLifePercentBJ(GetTriggerUnit(), 100)
+
+### ____________________046            EVENT_PLAYER_UNIT_SPELL_EFFECT
+    cond: A02B(尿)
+      Trig____________________046Actions takes nothing returns nothing
+      call AdjustPlayerStateBJ(- 15, GetOwningPlayer(GetTriggerUnit()), PLAYER_STATE_RESOURCE_LUMBER)
+
+### ____________________047            EVENT_PLAYER_UNIT_USE_ITEM
+    cond: I01V(洗脸水)
+      Trig____________________047Actions takes nothing returns nothing
+      call AdjustPlayerStateBJ(GetRandomInt(- 25, - 50), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_LUMBER)
+      call AdjustPlayerStateBJ(GetRandomInt(10, 25), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+
+### ____________________048            PlayerEventLeave
+      Trig____________________048Actions takes nothing returns nothing
+      call DisplayTimedTextToForce(GetPlayersAll(), 25.00, ( GetPlayerName(GetTriggerPlayer()) + "逃出了这里，他用了卑鄙的方法—（退出游戏~~）" ))
+
+### ____________________049            EVENT_PLAYER_UNIT_DEATH   [初始关闭]
+      Trig____________________049Actions takes nothing returns nothing
+      set udg_lqs=( udg_lqs - 1 )
+      set udg_lqs1=( udg_lqs1 + 1 )
+      set udg_lq=I2S(udg_lqs)
+      set udg_lq1=I2S(udg_lqs1)
+      call YDWEMultiboardSetItemValueBJNull(GetLastCreatedMultiboard() , 1 , 2 , udg_lq)
+      call YDWEMultiboardSetItemValueBJNull(GetLastCreatedMultiboard() , 2 , 2 , udg_lq1)
+      call TriggerExecute(gg_trg____________________052)
+
+### ____________________050            EVENT_PLAYER_UNIT_DEATH   [初始关闭]
+      Trig____________________050Actions takes nothing returns nothing
+      set udg_jss=( udg_jss - 1 )
+      set udg_jss1=( udg_jss1 + 1 )
+      set udg_js=I2S(udg_jss)
+      set udg_js1=I2S(udg_jss1)
+      call YDWEMultiboardSetItemValueBJNull(GetLastCreatedMultiboard() , 1 , 2 , udg_js)
+      call YDWEMultiboardSetItemValueBJNull(GetLastCreatedMultiboard() , 2 , 2 , udg_js1)
+      call TriggerExecute(gg_trg____________________053)
+
+### ____________________051            
+      Trig____________________051Actions takes nothing returns nothing
+      set udg_lq=I2S(udg_lqs)
+      set udg_lq1=I2S(udg_lqs1)
+      set udg_js=I2S(udg_jss)
+      set udg_js1=I2S(udg_jss1)
+
+### ____________________052            
+      Trig____________________052Actions takes nothing returns nothing
+      if ( ( I2S(udg_lqs) == "0" ) ) then
+      call PlaySoundBJ(gg_snd_ljs)
+      call TriggerSleepAction(2.00)
+      call PlaySoundBJ(gg_snd_jssy)
+      call CreateNUnitsAtLoc(1, n00O(狼王), Player(11), GetRectCenter(gg_rct_M2), 270.00)
+      call DisableTrigger(gg_trg____________________049)
+      call DisplayTextToForce(GetPlayersAll(), "TRIGSTR_1826")
+      call PlaySoundBJ(gg_snd_cso_result)
+
+### ____________________053            
+      Trig____________________053Actions takes nothing returns nothing
+      if ( ( I2S(udg_jss) == "0" ) ) then
+      call PlaySoundBJ(gg_snd_zombi_coming_2)
+      call TriggerSleepAction(1.65)
+      call PlaySoundBJ(gg_snd_HalloweenUndeadTaunt01)
+      call TriggerSleepAction(1.65)
+      call PlaySoundBJ(gg_snd_HalloweenUndeadTaunt02)
+      call TriggerSleepAction(1.65)
+      call PlaySoundBJ(gg_snd_HalloweenUndeadTaunt03)
+      call TriggerSleepAction(1.65)
+      call PlaySoundBJ(gg_snd_HalloweenUndeadTaunt04)
+      call CreateNUnitsAtLoc(1, n00N(僵尸王), Player(11), GetRectCenter(gg_rct_M2), 270.00)
+      call DisableTrigger(gg_trg____________________050)
+      call DisplayTextToForce(GetPlayersAll(), "TRIGSTR_1827")
+      ... (+1 行)
+
+### ____________________054            EVENT_PLAYER_UNIT_DEATH
+    cond: n00O(狼王)
+      Trig____________________054Actions takes nothing returns nothing
+      call DisplayTextToForce(GetPlayersAll(), "TRIGSTR_1828")
+      call TriggerSleepAction(2)
+      call ForForce(YDWEGetPlayersEnemiesNull(Player(11)), function Trig____________________054Func003A)
+      call ForForce(YDWEGetPlayersAlliesNull(Player(11)), function Trig____________________054Func004A)
+
+### ____________________054_______u    EVENT_PLAYER_UNIT_DEATH
+    cond: n00N(僵尸王)
+      Trig____________________054_______uActions takes nothing returns nothing
+      call DisplayTextToForce(GetPlayersAll(), "TRIGSTR_1829")
+      call TriggerSleepAction(2)
+      call ForForce(YDWEGetPlayersEnemiesNull(Player(11)), function Trig____________________054_______uFunc003A)
+      call ForForce(YDWEGetPlayersAlliesNull(Player(11)), function Trig____________________054_______uFunc004A)
+
+### ____________________055            EVENT_PLAYER_UNIT_USE_ITEM
+    cond: I03P(时间加速)
+      Trig____________________055Actions takes nothing returns nothing
+      call SetTimeOfDayScalePercentBJ(200.00)
+      call DisplayTimedTextToForce(GetPlayersAll(), 20.00, ( GetPlayerName(GetTriggerPlayer()) + "|Cff00ff00使用了|Cff00ff00时间加速|Cff00ff00时间加速为2倍！持续60秒！" ))
+      call TriggerSleepAction(60.00)
+      call SetTimeOfDayScalePercentBJ(100.00)
+      call DisplayTimedTextToForce(GetPlayersAll(), 10.00, "TRIGSTR_8570")
+
+### ____________________056            EVENT_PLAYER_UNIT_SPELL_CAST
+    cond: A01T(诱捕)
+      Trig____________________056Actions takes nothing returns nothing
+      call UnitRemoveAbility(GetSpellTargetUnit(), Awan(游荡者))
+      call SetUnitOwner(GetSpellTargetUnit(), GetTriggerPlayer(), false)
+
+### ____________________057               [初始关闭]
+      Trig____________________057Actions takes nothing returns nothing
+      set bj_forLoopBIndex=1
+      set bj_forLoopBIndexEnd=50
+      exitwhen bj_forLoopBIndex > bj_forLoopBIndexEnd
+      call CreateItemLoc(I00E(木头), GetRandomLocInRect(GetPlayableMapRect()))
+      set bj_forLoopBIndex=bj_forLoopBIndex + 1
+      set bj_forLoopBIndex=1
+      set bj_forLoopBIndexEnd=52
+      exitwhen bj_forLoopBIndex > bj_forLoopBIndexEnd
+      call CreateItemLoc(I00G(石头), GetRandomLocInRect(GetPlayableMapRect()))
+      set bj_forLoopBIndex=bj_forLoopBIndex + 1
+      set bj_forLoopBIndex=1
+      set bj_forLoopBIndexEnd=52
+      exitwhen bj_forLoopBIndex > bj_forLoopBIndexEnd
+      ... (+32 行)
+
+### ____________________058            EVENT_PLAYER_UNIT_SPELL_CAST
+    cond: A04K(拆除)
+      Trig____________________058Actions takes nothing returns nothing
+      call RemoveUnit(GetTriggerUnit())
+
+### ____________________059               [初始关闭]
+      Trig____________________059Actions takes nothing returns nothing
+      call ForForce(YDWEGetPlayersEnemiesNull(Player(11)), function Trig____________________059Func001A)
+
+### ____________________060            EVENT_PLAYER_UNIT_USE_ITEM
+    cond: I020( 锄头)
+      Trig____________________060Actions takes nothing returns nothing
+      call SetUnitAnimation(GetTriggerUnit(), "Stand Work")
+
+### ____________________061            EVENT_PLAYER_UNIT_USE_ITEM
+    cond: I03C(时间暂停)
+      Trig____________________061Actions takes nothing returns nothing
+      call SetTimeOfDayScalePercentBJ(0.00)
+      call DisplayTimedTextToForce(GetPlayersAll(), 20.00, ( GetPlayerName(GetTriggerPlayer()) + "|Cff00ff00使用了|Cff00ff00时间暂停|Cff00ff00时间停止60秒！" ))
+      call TriggerSleepAction(60.00)
+      call SetTimeOfDayScalePercentBJ(100.00)
+      call DisplayTimedTextToForce(GetPlayersAll(), 10.00, "TRIGSTR_8051")
+
+### ____________________062            EVENT_PLAYER_UNIT_SPELL_EFFECT
+    cond: A06M(活埋)
+      Trig____________________062Actions takes nothing returns nothing
+      call AdjustPlayerStateBJ(25, GetTriggerPlayer(), PLAYER_STATE_RESOURCE_LUMBER)
+
+### ____________________063            EVENT_PLAYER_UNIT_SPELL_EFFECT
+    cond: A02C(装逼)
+      Trig____________________063Actions takes nothing returns nothing
+      call SetUnitAnimation(GetTriggerUnit(), "stand flesh first")
+      call TriggerSleepAction(1.25)
+      call SetUnitAnimation(GetTriggerUnit(), "stand flesh second")
+
+### ____________________064            EVENT_PLAYER_UNIT_SPELL_CAST
+    cond: A06O(报复人类)
+      Trig____________________064Actions takes nothing returns nothing
+      call SetPlayerAllianceBJ(Player(11), ALLIANCE_PASSIVE, true, GetTriggerPlayer())
+      call ForForce(YDWEGetPlayersAlliesNull(Player(11)), function Trig____________________064Func002A)
+      call ForForce(YDWEGetPlayersEnemiesNull(Player(11)), function Trig____________________064Func003A)
+      call SetPlayerAllianceStateBJ(GetTriggerPlayer(), Player(PLAYER_NEUTRAL_AGGRESSIVE), bj_ALLIANCE_UNALLIED)
+      call ForGroupBJ((YDWEGetUnitsOfPlayerMatchingNull((GetTriggerPlayer()) , null)), function Trig____________________064Func005A) // INLINED!!
+      call CreateNUnitsAtLoc(1, H008(白天生物), GetTriggerPlayer(), GetRectCenter(gg_rct________006), bj_UNIT_FACING)
+      call RemoveUnit(GetTriggerUnit())
+      call PanCameraToTimedLocForPlayer(GetTriggerPlayer(), GetRectCenter(gg_rct________006), 0.50)
+      call DisplayTextToForce(GetPlayersAll(), ( "|cffffcc00" + ( GetPlayerName(GetTriggerPlayer()) + "成为生物~~！" ) ))
+      call SetPlayerName(GetTriggerPlayer(), ( GetPlayerName(GetOwningPlayer(GetTriggerUnit())) + "（报复人类）" ))
+
+### ____________________065            EVENT_PLAYER_UNIT_SPELL_CAST
+    cond: A06P(拯救人类)
+      Trig____________________065Actions takes nothing returns nothing
+      call CreateNUnitsAtLoc(1, H007(天使), GetTriggerPlayer(), GetUnitLoc(GetTriggerUnit()), bj_UNIT_FACING)
+      call RemoveUnit(GetTriggerUnit())
+      call DisplayTextToForce(GetPlayersAll(), ( "|cffffcc00" + ( GetPlayerName(GetTriggerPlayer()) + "成为了拯救人类的天使~~！" ) ))
+      call SetPlayerName(GetTriggerPlayer(), ( GetPlayerName(GetOwningPlayer(GetTriggerUnit())) + "（拯救人类）" ))
+
+### ____________________066            EVENT_PLAYER_UNIT_SPELL_CAST
+    cond: A06Q(自杀)
+      Trig____________________066Actions takes nothing returns nothing
+      call TriggerSleepAction(0.50)
+      call DisplayTextToForce(GetPlayersAll(), ( (YDWEBase___yd_PlayerColor[GetPlayerId((GetOwningPlayer(GetTriggerUnit()) ))] + ( GetPlayerName(GetOwningPl
+      call KillUnit(GetTriggerUnit())
+
+### ____________________068            EVENT_PLAYER_UNIT_SPELL_CAST
+    cond: A041(跳跃)
+      Trig____________________068Actions takes nothing returns nothing
+      call YDWEJumpTimer(GetTriggerUnit() , GetUnitFacing(GetTriggerUnit()) , 500.00 , 0.58 , 0.01 , 325.00)
+
+### _______________________________u   聊天 "-生存？"
+      Trig_______________________________uActions takes nothing returns nothing
+      call DestroyTrigger(GetTriggeringTrigger())
+
+### ________________u                  
+      Trig________________uActions takes nothing returns nothing
+      call EndThematicMusic()
+      call QuestMessageBJ(GetPlayersAll(), bj_QUESTMESSAGE_DISCOVERED, "TRIGSTR_1663")
+      call ForForce(GetPlayersAll(), function Trig________________uFunc003A)
+      call SetTimeOfDay(6.00)
+      call SetCreepCampFilterState(false)
+      call SetAllyColorFilterState(2)
+      call EnableMinimapFilterButtons(true, false)
+      call FogEnableOn()
+      call FogMaskEnableOn()
+      call SetMapFlag(MAP_FOG_HIDE_TERRAIN, true)
+      call CreateQuestBJ(bj_QUESTTYPE_REQ_DISCOVERED, "TRIGSTR_1840", "TRIGSTR_1841", "ReplaceableTextures\\CommandButtons\\BTNStaffOfPreservation.blp")
+      call CreateQuestBJ(bj_QUESTTYPE_REQ_DISCOVERED, "TRIGSTR_1634", "TRIGSTR_1635", "ReplaceableTextures\\CommandButtons\\BTNStaffOfPreservation.blp")
+      call CreateQuestBJ(bj_QUESTTYPE_REQ_DISCOVERED, "TRIGSTR_1661", "TRIGSTR_1662", "ReplaceableTextures\\CommandButtons\\BTNStaffOfPreservation.blp")
+      ... (+8 行)
+
+### _____________i                     EVENT_PLAYER_UNIT_PICKUP_ITEM
+    cond: n00C(火窖), I006(白颈鼠的肉), I00Q(狼的肉), I005(沙鼠的肉), I01W(骆驼的肉), I002(秃鹰的肉), I02P(小狼的肉), I008(野兔的肉), I001(眼镜蛇的肉), I000(蜥蜴的肉)
+      Trig_____________iActions takes nothing returns nothing
+      call RemoveItem(GetManipulatedItem())
+      call CreateItemLoc(I03T(烤肉), GetUnitLoc(GetTriggerUnit()))
+
+### _____________u                     
+      Trig_____________uActions takes nothing returns nothing
+      call ForForce(GetPlayersAll(), function Trig_____________uFunc009A)
+
+### _cshwq                             0.50 秒后一次
+      Trig_cshwqActions takes nothing returns nothing
+      call YDWENewItemsFormula(I01N(医疗宝石☆) , 2 , I01N(医疗宝石☆) , 0 , ches(奶酪) , 0 , ches(奶酪) , 0 , ches(奶酪) , 0 , ches(奶酪) , 0 , I03R(医疗宝石☆☆))
+      call YDWENewItemsFormula(I03R(医疗宝石☆☆) , 2 , ches(奶酪) , 0 , ches(奶酪) , 0 , ches(奶酪) , 0 , ches(奶酪) , 0 , ches(奶酪) , 0 , I03S(医疗宝石☆☆☆))
+      call YDWENewItemsFormula(I01M(加速手套) , 2 , ches(奶酪) , 0 , ches(奶酪) , 0 , ches(奶酪) , 0 , ches(奶酪) , 0 , ches(奶酪) , 0 , I01T(高级加速手套))
+
+### _fj__________________u             EVENT_PLAYER_UNIT_SPELL_CAST
+    cond: A04H(终极防具合成)
+      Trig_fj__________________uActions takes nothing returns nothing
+      if ( ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 1)) == I03W(皮甲☆☆☆☆☆) ) and ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 2)) == I019(金刚石)
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 1))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 2))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 3))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 4))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 5))
+      call UnitAddItemByIdSwapped(I03Y(皮甲★), GetTriggerUnit())
+      if ( ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 1)) == I03U(青甲☆☆☆☆☆) ) and ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 2)) == I019(金刚石)
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 1))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 2))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 3))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 4))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 5))
+      ... (+4 行)
+
+### _fj_______________u                EVENT_PLAYER_UNIT_SPELL_CAST
+    cond: A04G(超级防具合成)
+      Trig_fj_______________uActions takes nothing returns nothing
+      if ( ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 1)) == I03X(皮甲☆☆☆☆) ) and ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 2)) == I017(金) ) 
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 1))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 2))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 3))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 4))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 5))
+      call UnitAddItemByIdSwapped(I03W(皮甲☆☆☆☆☆), GetTriggerUnit())
+      if ( ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 1)) == I02I(青甲☆☆☆☆) ) and ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 2)) == I017(金) ) 
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 1))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 2))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 3))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 4))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 5))
+      ... (+4 行)
+
+### _fj____________u                   EVENT_PLAYER_UNIT_SPELL_CAST
+    cond: A04J(高级防具合成)
+      Trig_fj____________uActions takes nothing returns nothing
+      if ( ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 1)) == I03M(皮甲☆☆☆) ) and ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 2)) == I016(钢) ) a
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 1))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 2))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 3))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 4))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 5))
+      call UnitAddItemByIdSwapped(I03X(皮甲☆☆☆☆), GetTriggerUnit())
+      if ( ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 1)) == I03V(青甲☆☆☆) ) and ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 2)) == I018(银) ) a
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 1))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 2))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 3))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 4))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 5))
+      ... (+4 行)
+
+### _fj_________u                      EVENT_PLAYER_UNIT_SPELL_CAST
+    cond: A04M(中级防具合成)
+      Trig_fj_________uActions takes nothing returns nothing
+      if ( ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 1)) == I03H(皮甲☆☆) ) and ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 2)) == I014(铁) ) an
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 1))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 2))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 3))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 4))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 5))
+      call UnitAddItemByIdSwapped(I03M(皮甲☆☆☆), GetTriggerUnit())
+      if ( ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 1)) == I03I(青甲☆☆) ) and ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 2)) == I014(铁) ) an
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 1))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 2))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 3))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 4))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 5))
+      ... (+4 行)
+
+### _fj______u                         EVENT_PLAYER_UNIT_SPELL_CAST
+    cond: A04D(初级防具合成)
+      Trig_fj______uActions takes nothing returns nothing
+      if ( ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 1)) == I03J(皮甲☆) ) and ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 2)) == I00I(狼皮) ) an
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 1))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 2))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 3))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 4))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 5))
+      call UnitAddItemByIdSwapped(I03H(皮甲☆☆), GetTriggerUnit())
+      if ( ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 1)) == I03K(青甲☆) ) and ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 2)) == I014(铁) ) and
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 1))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 2))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 3))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 4))
+      call UnitAddItemByIdSwapped(I03I(青甲☆☆), GetTriggerUnit())
+      ... (+3 行)
+
+### _fj___u                            EVENT_PLAYER_UNIT_SPELL_CAST
+    cond: A018(低级防具合成)
+      Trig_fj___uActions takes nothing returns nothing
+      if ( ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 1)) == I00I(狼皮) ) and ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 2)) == I00I(狼皮) ) and
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 1))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 2))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 3))
+      call UnitAddItemByIdSwapped(I03J(皮甲☆), GetTriggerUnit())
+      if ( ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 1)) == I014(铁) ) and ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 2)) == I014(铁) ) and (
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 1))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 2))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 3))
+      call UnitAddItemByIdSwapped(I03K(青甲☆), GetTriggerUnit())
+      call CreateTextTagUnitBJ("TRIGSTR_8670", GetTriggerUnit(), 2.00, 10, ( GetRandomReal(0, 50.00) * 1.80 ), ( GetRandomReal(0, 40.00) * 2.00 ), ( GetRand
+      call SetTextTagVelocityBJ(GetLastCreatedTextTag(), 64, 90)
+      call YDWETimerDestroyTextTag(2 , GetLastCreatedTextTag())
+
+### _gjhc                              EVENT_PLAYER_UNIT_SPELL_CAST
+    cond: A04R(道具合成)
+      Trig_gjhcActions takes nothing returns nothing
+      if ( ( ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 1)) == I00R(毒液) ) or ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 1)) == I00M(蛇毒) ) ) 
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 1))
+      call UnitAddItemByIdSwapped(I00T(解毒药), GetTriggerUnit())
+      if ( ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 1)) == I00Q(狼的肉) ) and ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 2)) == I00Q(狼的肉) ) a
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 1))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 2))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 3))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 4))
+      call UnitAddItemByIdSwapped(I01I(体力药水), GetTriggerUnit())
+      if ( ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 1)) == I00K(毒针) ) and ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 2)) == I00L(蛇牙) ) ) t
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 1))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 2))
+      call UnitAddItemByIdSwapped(I01J( 毒爪), GetTriggerUnit())
+      ... (+68 行)
+
+### _hc                                EVENT_PLAYER_UNIT_SPELL_CAST
+    cond: A00L(合成)
+      Trig_hcActions takes nothing returns nothing
+      if ( ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 1)) == I00C(植被) ) and ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 2)) == I00E(木头) ) and
+      call PlaySoundOnUnitBJ(gg_snd_HalloweenHumanTaunt01, 60.00, GetTriggerUnit())
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 1))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 2))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 3))
+      call UnitAddItemByIdSwapped(I00N(火窖), GetTriggerUnit())
+      call CreateTextTagUnitBJ("TRIGSTR_463", GetTriggerUnit(), 2.00, 10, ( GetRandomReal(0, 50.00) * 1.80 ), ( GetRandomReal(0, 40.00) * 2.00 ), ( GetRando
+      call SetTextTagVelocityBJ(GetLastCreatedTextTag(), 64, 90)
+      call SetTextTagPermanent(GetLastCreatedTextTag(), false)
+      call SetTextTagLifespan(GetLastCreatedTextTag(), 2.00)
+      if ( ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 1)) == I00E(木头) ) and ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 2)) == I00G(石头) ) and
+      call PlaySoundOnUnitBJ(gg_snd_HalloweenHumanTaunt01, 60.00, GetTriggerUnit())
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 1))
+      ... (+122 行)
+
+### _hc3                               EVENT_PLAYER_UNIT_SPELL_CAST
+    cond: A013(工具合成)
+      Trig_hc3Actions takes nothing returns nothing
+      if ( ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 1)) == I00G(石头) ) and ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 2)) == I00G(石头) ) and
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 1))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 2))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 3))
+      call UnitAddItemByIdSwapped(I014(铁), GetTriggerUnit())
+      if ( ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 1)) == I014(铁) ) and ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 2)) == I014(铁) ) and (
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 1))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 2))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 3))
+      call UnitAddItemByIdSwapped(I016(钢), GetTriggerUnit())
+      if ( ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 1)) == I016(钢) ) and ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 2)) == I016(钢) ) and (
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 1))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 2))
+      ... (+16 行)
+
+### _hy                                EVENT_PLAYER_UNIT_SPELL_CAST
+    cond: A028(点燃火焰)
+      Trig_hyActions takes nothing returns nothing
+      if ( ( ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 1)) == I00C(植被) ) or ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 1)) == I00E(木头) ) ) 
+      call PlaySoundOnUnitBJ(gg_snd_MageFireballCast, 60.00, GetTriggerUnit())
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 1))
+      call RemoveUnit(GetTriggerUnit())
+      call CreateNUnitsAtLoc(1, n00C(火窖), GetTriggerPlayer(), GetUnitLoc(GetTriggerUnit()), bj_UNIT_FACING)
+      call CreateTextTagUnitBJ("TRIGSTR_1724", GetTriggerUnit(), 2.00, 10, ( GetRandomReal(0, 50.00) * 1.80 ), ( GetRandomReal(0, 40.00) * 2.00 ), ( GetRand
+      call SetTextTagVelocityBJ(GetLastCreatedTextTag(), 64, 90)
+      call SetTextTagPermanent(GetLastCreatedTextTag(), false)
+      call SetTextTagLifespan(GetLastCreatedTextTag(), 2.00)
+
+### _jslms                                [初始关闭]
+      Trig_jslmsActions takes nothing returns nothing
+      call ForForce(YDWEGetPlayersAlliesNull(Player(0)), function Trig_jslmsFunc001A)
+
+### _qsb                               25.00 秒后一次
+      Trig_qsbActions takes nothing returns nothing
+      call DisplayTextToForce(GetPlayersAll(), ( "|cFFFF0000警告：请" + ( GetPlayerName(Player(0)) + "快点选择模式，否则10秒后游戏失败！！" ) ))
+
+### _qsb_______u                       35.00 秒后一次
+      Trig_qsb_______uActions takes nothing returns nothing
+      call DisplayTextToForce(GetPlayersAll(), ( "|cFFFF0000" + ( GetPlayerName(Player(0)) + ( "死那去了？重来吧！" ) ) ))
+      call TriggerSleepAction(0.50)
+      call ForForce(GetPlayersAll(), function Trig_qsb_______uFunc003A)
+
+### _scms                                 [初始关闭]
+      Trig_scmsActions takes nothing returns nothing
+      call ForForce(YDWEGetPlayersAlliesNull(Player(0)), function Trig_scmsFunc001A)
+
+### _swmsddw                              [初始关闭]
+      Trig_swmsddwActions takes nothing returns nothing
+      set udg_swsmddw[1]=n00J(大灰狼)
+      set udg_swsmddw[2]=n00Q(小白狼)
+      set udg_swsmddw[3]=n00R(恶狼)
+      set udg_swsmddw[4]=n00T(母狼)
+      set udg_swsmddw[5]=n00P(独眼狼)
+      set udg_swsmddw[6]=n00S(狼仔)
+
+### _swmsddw_______u                      [初始关闭]
+      Trig_swmsddw_______uActions takes nothing returns nothing
+      set udg_swsmddw[1]=n00K(僵尸)
+      set udg_swsmddw[2]=n00W(幽灵)
+      set udg_swsmddw[3]=n00V(恶魔感染体)
+      set udg_swsmddw[4]=n00X(死亡感染体)
+      set udg_swsmddw[5]=n00Y(母体)
+      set udg_swsmddw[6]=n00Z(丧尸)
+
+### _wq1                               EVENT_PLAYER_UNIT_SPELL_CAST
+    cond: A019(低级武器合成)
+      Trig_wq1Actions takes nothing returns nothing
+      if ( ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 1)) == I01B( 斩马刀) ) and ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 2)) == I014(铁) ) an
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 1))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 2))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 3))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 4))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 5))
+      call UnitAddItemByIdSwapped(I028(中国唐刀☆), GetTriggerUnit())
+      if ( ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 1)) == I022( 佩刀) ) and ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 2)) == I014(铁) ) and
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 1))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 2))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 3))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 4))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 5))
+      ... (+54 行)
+
+### _wq2                               EVENT_PLAYER_UNIT_SPELL_CAST
+    cond: A04C(初级武器合成)
+      Trig_wq2Actions takes nothing returns nothing
+      if ( ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 1)) == I028(中国唐刀☆) ) and ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 2)) == I016(钢) ) a
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 1))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 2))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 3))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 4))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 5))
+      call UnitAddItemByIdSwapped(I027(中国唐刀☆☆), GetTriggerUnit())
+      if ( ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 1)) == I02G(武士刀☆) ) and ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 2)) == I016(钢) ) an
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 1))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 2))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 3))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 4))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 5))
+      ... (+54 行)
+
+### _wq3                               EVENT_PLAYER_UNIT_SPELL_CAST
+    cond: A04L(中级武器合成)
+      Trig_wq3Actions takes nothing returns nothing
+      if ( ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 1)) == I023(刺刀☆☆) ) and ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 2)) == I018(银) ) an
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 1))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 2))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 3))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 4))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 5))
+      call UnitAddItemByIdSwapped(I02C(刺刀☆☆☆), GetTriggerUnit())
+      if ( ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 1)) == I02K(德国开山刀☆☆) ) and ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 2)) == I018(银) )
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 1))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 2))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 3))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 4))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 5))
+      ... (+53 行)
+
+### _wq4                               EVENT_PLAYER_UNIT_SPELL_CAST
+    cond: A04I(高级武器合成)
+      Trig_wq4Actions takes nothing returns nothing
+      if ( ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 1)) == I02C(刺刀☆☆☆) ) and ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 2)) == I018(银) ) a
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 1))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 2))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 3))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 4))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 5))
+      call UnitAddItemByIdSwapped(I02B(刺刀☆☆☆☆), GetTriggerUnit())
+      if ( ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 1)) == I02R(德国开山刀☆☆☆) ) and ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 2)) == I018(银) 
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 1))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 2))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 3))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 4))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 5))
+      ... (+53 行)
+
+### _wq5                               EVENT_PLAYER_UNIT_SPELL_CAST
+    cond: A04F(超级武器合成)
+      Trig_wq5Actions takes nothing returns nothing
+      if ( ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 1)) == I02B(刺刀☆☆☆☆) ) and ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 2)) == I019(金刚石) 
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 1))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 2))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 3))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 4))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 5))
+      call UnitAddItemByIdSwapped(I029(刺刀☆☆☆☆☆), GetTriggerUnit())
+      if ( ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 1)) == I02Q(德国开山刀☆☆☆☆) ) and ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 2)) == I019(金刚
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 1))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 2))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 3))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 4))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 5))
+      ... (+60 行)
+
+### _wq6                               EVENT_PLAYER_UNIT_SPELL_CAST
+    cond: A04O(终极武器合成)
+      Trig_wq6Actions takes nothing returns nothing
+      if ( ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 1)) == I029(刺刀☆☆☆☆☆) ) and ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 2)) == I019(金刚石)
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 1))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 2))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 3))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 4))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 5))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 6))
+      call UnitAddItemByIdSwapped(I02D(刺刀★), GetTriggerUnit())
+      if ( ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 1)) == I02T(德国开山刀☆☆☆☆☆) ) and ( GetItemTypeId(UnitItemInSlotBJ(GetTriggerUnit(), 2)) == I019(金
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 1))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 2))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 3))
+      call RemoveItem(UnitItemInSlotBJ(GetTriggerUnit(), 4))
+      ... (+62 行)
+

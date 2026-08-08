@@ -1,0 +1,203 @@
+item-use triggers: 38
+
+I000 蜥蜴的肉                          | 饥饿 2~5 ; 水分 3~6
+I001 眼镜蛇的肉                         | 饥饿 1~6 ; 水分 10~16
+I002 秃鹰的肉                          | 饥饿 1~5 ; 水分 16~28
+I003 蜘蛛的肉                          | 饥饿 1~3 ; 水分 4~8
+I004 沙虫的肉                          | 饥饿 1~2 ; 水分 1~2
+I005 沙鼠的肉                          | 饥饿 1~4 ; 水分 6~14
+I006 白颈鼠的肉, I00Q 狼的肉, I005 沙鼠的肉, I01W 骆驼的肉, I002 秃鹰的肉, I02P 小狼的肉, I008 野兔的肉, I001 眼镜蛇的肉, I000 蜥蜴的肉 | createItem I03T(烤肉)
+I006 白颈鼠的肉                         | 饥饿 1~5 ; 水分 8~16
+I007 蝎子的肉                          | 饥饿 1~4 ; 水分 3~7
+I008 野兔的肉                          | 饥饿 2~8 ; 水分 15~25
+I009 甲壳虫的肉                         | 饥饿 1~4 ; 水分 1~3
+I00A 水                             | 饥饿 15~45 ; 水分 2~5 ; 体温 GetRandomInt(- 5, - 8)
+I00B 仙人掌的汁                         | 饥饿 8~16 ; 水分 1~5 ; 体温 GetRandomInt(- 5, - 10)
+I00C 植被, I00E 木头                   | (no state change)
+I00C 植被                            | createItem I00C(植被)
+I00D 木条                            | createItem I00D(木条)
+I00E 木头                            | createItem I00E(木头)
+I00G 石头, I00E 木头, I00C 植被, I014 铁, I016 钢, I018 银, I017 金, I019 金刚石 | (no state change)
+I00G 石头                            | createItem I00G(石头)
+I00Q 狼的肉                           | 饥饿 4~7 ; 水分 15~30
+I00T 解毒药                           | (no state change)
+I014 铁                             | createItem I014(铁)
+I016 钢                             | createItem I016(钢)
+I017 金                             | createItem I017(金)
+I018 银                             | createItem I018(银)
+I019 金刚石                           | createItem I019(金刚石)
+I01I 体力药水                          | 饥饿 25~35 ; 水分 30~100
+I01K 人肉                            | 饥饿 35~60 ; 水分 60~100
+I01O 一布袋的肉                         | 饥饿 3~6 ; 水分 18~30
+I01Q 僵尸的肉                          | 饥饿 1~4 ; 水分 5~10
+I01V 洗脸水                           | 体温 GetRandomInt(- 25, - 50) ; 饥饿 10~25
+I01W 骆驼的肉                          | 饥饿 2~8 ; 水分 18~32
+I01X 骆驼水                           | 饥饿 25~32 ; 水分 1~5 ; 体温 GetRandomInt(- 5, - 12)
+I020  锄头                           | (no state change)
+I02P 小狼的肉                          | 饥饿 1~5 ; 水分 5~25
+I03C 时间暂停                          | (no state change)
+I03P 时间加速                          | (no state change)
+I03T 烤肉                            | 饥饿 5~10 ; 水分 20~35
+
+======================================================================
+RAW BODIES (non-trivial)
+--- I000 蜥蜴的肉 [Trig____________________006________6]
+    call AdjustPlayerStateBJ(GetRandomInt(2, 5), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+    call AdjustPlayerStateBJ(GetRandomInt(3, 6), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+    //===========================================================================
+--- I001 眼镜蛇的肉 [Trig____________________006________3]
+    call AdjustPlayerStateBJ(GetRandomInt(1, 6), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+    call AdjustPlayerStateBJ(GetRandomInt(10, 16), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+    //===========================================================================
+--- I002 秃鹰的肉 [Trig____________________006________8]
+    call AdjustPlayerStateBJ(GetRandomInt(1, 5), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+    call AdjustPlayerStateBJ(GetRandomInt(16, 28), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+    //===========================================================================
+--- I003 蜘蛛的肉 [Trig____________________006________4]
+    call AdjustPlayerStateBJ(GetRandomInt(1, 3), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+    call AdjustPlayerStateBJ(GetRandomInt(4, 8), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+    //===========================================================================
+--- I004 沙虫的肉 [Trig____________________006]
+    call AdjustPlayerStateBJ(GetRandomInt(1, 2), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+    call AdjustPlayerStateBJ(GetRandomInt(1, 2), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+    //===========================================================================
+--- I005 沙鼠的肉 [Trig____________________006_______u]
+    call AdjustPlayerStateBJ(GetRandomInt(1, 4), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+    call AdjustPlayerStateBJ(GetRandomInt(6, 14), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+    //===========================================================================
+--- I006 白颈鼠的肉, I00Q 狼的肉, I005 沙鼠的肉, I01W 骆驼的肉, I002 秃鹰的肉, I02P 小狼的肉, I008 野兔的肉, I001 眼镜蛇的肉, I000 蜥蜴的肉 [Trig_____________i]
+    call RemoveItem(GetManipulatedItem())
+    call CreateItemLoc('I03T', GetUnitLoc(GetTriggerUnit()))
+    //===========================================================================
+--- I006 白颈鼠的肉 [Trig____________________006________2]
+    call AdjustPlayerStateBJ(GetRandomInt(1, 5), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+    call AdjustPlayerStateBJ(GetRandomInt(8, 16), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+    //===========================================================================
+--- I007 蝎子的肉 [Trig____________________006________5]
+    call AdjustPlayerStateBJ(GetRandomInt(1, 4), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+    call AdjustPlayerStateBJ(GetRandomInt(3, 7), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+    //===========================================================================
+--- I008 野兔的肉 [Trig____________________006________9]
+    call AdjustPlayerStateBJ(GetRandomInt(2, 8), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+    call AdjustPlayerStateBJ(GetRandomInt(15, 25), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+    //===========================================================================
+--- I009 甲壳虫的肉 [Trig____________________006________7]
+    call AdjustPlayerStateBJ(GetRandomInt(1, 4), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+    call AdjustPlayerStateBJ(GetRandomInt(1, 3), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+    //===========================================================================
+--- I00A 水 [Trig____________________006________10]
+    call AdjustPlayerStateBJ(GetRandomInt(15, 45), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+    call AdjustPlayerStateBJ(GetRandomInt(2, 5), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+    call AdjustPlayerStateBJ(GetRandomInt(- 5, - 8), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_LUMBER)
+    //===========================================================================
+--- I00B 仙人掌的汁 [Trig____________________006________11]
+    call AdjustPlayerStateBJ(GetRandomInt(8, 16), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+    call AdjustPlayerStateBJ(GetRandomInt(1, 5), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+    call AdjustPlayerStateBJ(GetRandomInt(- 5, - 10), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_LUMBER)
+    //===========================================================================
+--- I00C 植被, I00E 木头 [Trig____________________045]
+    call RemoveItem(GetManipulatedItem())
+    call RemoveLocation(GetItemLoc(GetLastCreatedItem()))
+    call SetUnitLifePercentBJ(GetTriggerUnit(), 100)
+    //===========================================================================
+--- I00C 植被 [Trig____________________020]
+    call CreateItemLoc('I00C', GetRandomLocInRect(GetPlayableMapRect()))
+    call RemoveLocation(GetItemLoc(GetLastCreatedItem()))
+    //===========================================================================
+--- I00D 木条 [Trig____________________032]
+    call CreateItemLoc('I00D', GetRandomLocInRect(GetPlayableMapRect()))
+    call RemoveLocation(GetItemLoc(GetLastCreatedItem()))
+    //===========================================================================
+--- I00E 木头 [Trig____________________019]
+    call CreateItemLoc('I00E', GetRandomLocInRect(GetPlayableMapRect()))
+    call RemoveLocation(GetItemLoc(GetLastCreatedItem()))
+    //===========================================================================
+--- I00G 石头 [Trig____________________018]
+    call CreateItemLoc('I00G', GetRandomLocInRect(GetPlayableMapRect()))
+    call RemoveLocation(GetItemLoc(GetLastCreatedItem()))
+    //===========================================================================
+--- I00Q 狼的肉 [Trig____________________006________12]
+    call AdjustPlayerStateBJ(GetRandomInt(4, 7), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+    call AdjustPlayerStateBJ(GetRandomInt(15, 30), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+    //===========================================================================
+--- I00T 解毒药 [Trig____________________022]
+    call UnitRemoveBuffBJ('Bpsd', GetTriggerUnit())
+    call UnitRemoveBuffBJ('Bpoi', GetTriggerUnit())
+    call UnitRemoveBuffBJ('B002', GetTriggerUnit())
+    call UnitRemoveBuffBJ('B008', GetTriggerUnit())
+    call UnitRemoveBuffBJ('B005', GetTriggerUnit())
+    call UnitRemoveBuffBJ('B007', GetTriggerUnit())
+    call UnitRemoveBuffBJ('B000', GetTriggerUnit())
+    call UnitRemoveBuffBJ('B006', GetTriggerUnit())
+    //===========================================================================
+--- I014 铁 [Trig____________________025]
+    call CreateItemLoc('I014', GetRandomLocInRect(GetPlayableMapRect()))
+    call RemoveLocation(GetItemLoc(GetLastCreatedItem()))
+    //===========================================================================
+--- I016 钢 [Trig____________________037]
+    call CreateItemLoc('I016', GetRandomLocInRect(GetPlayableMapRect()))
+    call RemoveLocation(GetItemLoc(GetLastCreatedItem()))
+    //===========================================================================
+--- I017 金 [Trig____________________038_______u]
+    call CreateItemLoc('I017', GetRandomLocInRect(GetPlayableMapRect()))
+    call RemoveLocation(GetItemLoc(GetLastCreatedItem()))
+    //===========================================================================
+--- I018 银 [Trig____________________038]
+    call CreateItemLoc('I018', GetRandomLocInRect(GetPlayableMapRect()))
+    call RemoveLocation(GetItemLoc(GetLastCreatedItem()))
+    //===========================================================================
+--- I019 金刚石 [Trig____________________038________2]
+    call CreateItemLoc('I019', GetRandomLocInRect(GetPlayableMapRect()))
+    call RemoveLocation(GetItemLoc(GetLastCreatedItem()))
+    //===========================================================================
+--- I01I 体力药水 [Trig____________________006________13]
+    call AdjustPlayerStateBJ(GetRandomInt(25, 35), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+    call AdjustPlayerStateBJ(GetRandomInt(30, 100), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+    //===========================================================================
+--- I01K 人肉 [Trig____________________006________18]
+    call AdjustPlayerStateBJ(GetRandomInt(35, 60), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+    call AdjustPlayerStateBJ(GetRandomInt(60, 100), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+    //===========================================================================
+--- I01O 一布袋的肉 [Trig____________________006________14]
+    call AdjustPlayerStateBJ(GetRandomInt(3, 6), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+    call AdjustPlayerStateBJ(GetRandomInt(18, 30), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+    //===========================================================================
+--- I01Q 僵尸的肉 [Trig____________________006________15]
+    call AdjustPlayerStateBJ(GetRandomInt(1, 4), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+    call AdjustPlayerStateBJ(GetRandomInt(5, 10), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+    //===========================================================================
+--- I01V 洗脸水 [Trig____________________047]
+    call AdjustPlayerStateBJ(GetRandomInt(- 25, - 50), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_LUMBER)
+    call AdjustPlayerStateBJ(GetRandomInt(10, 25), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+    //===========================================================================
+--- I01W 骆驼的肉 [Trig____________________006________16]
+    call AdjustPlayerStateBJ(GetRandomInt(2, 8), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+    call AdjustPlayerStateBJ(GetRandomInt(18, 32), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+    //===========================================================================
+--- I01X 骆驼水 [Trig____________________006________17]
+    call AdjustPlayerStateBJ(GetRandomInt(25, 32), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+    call AdjustPlayerStateBJ(GetRandomInt(1, 5), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+    call AdjustPlayerStateBJ(GetRandomInt(- 5, - 12), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_LUMBER)
+    //===========================================================================
+--- I02P 小狼的肉 [Trig____________________006________19]
+    call AdjustPlayerStateBJ(GetRandomInt(1, 5), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+    call AdjustPlayerStateBJ(GetRandomInt(5, 25), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+    //===========================================================================
+--- I03C 时间暂停 [Trig____________________061]
+    call SetTimeOfDayScalePercentBJ(0.00)
+    call DisplayTimedTextToForce(GetPlayersAll(), 20.00, ( GetPlayerName(GetTriggerPlayer()) + "|Cff00ff00使用了|Cff00ff00时间暂停|Cff00ff00时间停止60秒！" ))
+    call TriggerSleepAction(60.00)
+    call SetTimeOfDayScalePercentBJ(100.00)
+    call DisplayTimedTextToForce(GetPlayersAll(), 10.00, "TRIGSTR_8051")
+    //===========================================================================
+--- I03P 时间加速 [Trig____________________055]
+    call SetTimeOfDayScalePercentBJ(200.00)
+    call DisplayTimedTextToForce(GetPlayersAll(), 20.00, ( GetPlayerName(GetTriggerPlayer()) + "|Cff00ff00使用了|Cff00ff00时间加速|Cff00ff00时间加速为2倍！持续60秒！" ))
+    call TriggerSleepAction(60.00)
+    call SetTimeOfDayScalePercentBJ(100.00)
+    call DisplayTimedTextToForce(GetPlayersAll(), 10.00, "TRIGSTR_8570")
+    //===========================================================================
+--- I03T 烤肉 [Trig____________________006________20]
+    call AdjustPlayerStateBJ(GetRandomInt(5, 10), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_FOOD_USED)
+    call AdjustPlayerStateBJ(GetRandomInt(20, 35), GetTriggerPlayer(), PLAYER_STATE_RESOURCE_GOLD)
+    //===========================================================================

@@ -114,10 +114,15 @@ export function terrainMoistureAt(world: TerrainWorld, point: Vec2): number {
   return clamp(noise * 0.72 + clamp((1.8 - height) / 7, 0, 0.35), 0, 1);
 }
 
-export function terrainSnowAt(world: TerrainWorld, point: Vec2): number {
+/**
+ * 盐碱地覆盖度：低洼、平坦、且噪声允许的地方会泛出白色盐壳。
+ * 这一项取代了原先的积雪 —— 同样是"高对比度的白色斑块"，
+ * 但分布规律相反：积雪在高处，盐碱在洼地。
+ */
+export function terrainSaltAt(world: TerrainWorld, point: Vec2): number {
   const height = terrainHeightAt(world, point);
   const slope = terrainSlopeAt(world, point, 1.1);
-  const drift = valueNoise(point.x / 11, point.z / 11, world.terrain.seed + 503) * 0.5 + 0.5;
-  const altitude = smoothstep(11.5, 13.5, height);
-  return clamp(altitude * (1 - smoothstep(0.38, 0.9, slope)) * smoothstep(0.58, 0.82, drift), 0, 1);
+  const drift = valueNoise(point.x / 13, point.z / 13, world.terrain.seed + 503) * 0.5 + 0.5;
+  const basin = 1 - smoothstep(0.5, 4.2, height);
+  return clamp(basin * (1 - smoothstep(0.18, 0.55, slope)) * smoothstep(0.52, 0.8, drift), 0, 1);
 }

@@ -27,7 +27,7 @@ export class SynthAudio {
     if (!this.enabled || !this.context || !this.master) return;
     switch (event.type) {
       case "pickup":
-        this.tone(event.kind === "berry" ? 620 : 360, 0.08, "sine", 0.6, 1.25);
+        this.tone(event.kind === "cactus-juice" ? 620 : 360, 0.08, "sine", 0.6, 1.25);
         break;
       case "drop":
         this.tone(event.kind === "stone" ? 95 : 150, 0.1, "triangle", 0.85, 0.7);
@@ -38,6 +38,30 @@ export class SynthAudio {
         break;
       case "eat":
         this.tone(480, 0.11, "sine", 0.4, 1.2);
+        break;
+      case "drink":
+        this.tone(680, 0.14, "sine", 0.32, 0.55);
+        break;
+      case "dig-water":
+        this.noise(0.22, 0.22);
+        break;
+      case "exhausted":
+        this.tone(140, 0.13, "triangle", 0.3, 0.6);
+        break;
+      case "condition":
+        // 中暑往上滑、失温往下滑，恢复正常则是一个安定的中音。
+        if (event.condition === "heatstroke") this.tone(300, 0.4, "sawtooth", 0.4, 1.9);
+        else if (event.condition === "hypothermia") this.tone(300, 0.5, "sine", 0.45, 0.35);
+        else this.tone(430, 0.22, "sine", 0.3, 1.15);
+        break;
+      case "alpha-spawned":
+        this.tone(85, 0.9, "sawtooth", 0.95, 0.6);
+        window.setTimeout(() => this.tone(120, 0.7, "square", 0.6, 0.5), 260);
+        break;
+      case "victory":
+        this.tone(420, 0.3, "triangle", 0.6, 1.35);
+        window.setTimeout(() => this.tone(560, 0.32, "triangle", 0.55, 1.3), 180);
+        window.setTimeout(() => this.tone(720, 0.6, "sine", 0.5, 1.2), 380);
         break;
       case "loot-drop":
         this.tone(event.kind === "wolf-hide" ? 280 : 190, 0.1, "triangle", 0.35, 1.4);

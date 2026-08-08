@@ -2,7 +2,7 @@ import * as THREE from "three";
 import type { GameSimulation } from "../game/simulation/GameSimulation";
 import { clamp, lerp, mulberry32 } from "../game/simulation/geometry";
 import type { CampDefinition, GroundItem, Vec2, WolfState, WorldDefinition, WorldDrop } from "../game/simulation/types";
-import { distanceToCampApproach, terrainHeightAt, terrainMoistureAt, terrainSlopeAt, terrainSnowAt } from "../game/terrain/TerrainModel";
+import { distanceToCampApproach, terrainHeightAt, terrainMoistureAt, terrainSaltAt, terrainSlopeAt } from "../game/terrain/TerrainModel";
 
 interface CampView {
   flame: THREE.Group;
@@ -21,6 +21,25 @@ const makeMaterial = (color: THREE.ColorRepresentation, roughness = 0.9): THREE.
 const smoothTerrainBlend = (edge0: number, edge1: number, value: number): number => {
   const t = clamp((value - edge0) / Math.max(0.0001, edge1 - edge0), 0, 1);
   return t * t * (3 - 2 * t);
+};
+
+// 头狼是全场唯一的巨型剪影；白天的野狼用浅沙色，和夜袭狼的暗褐区分开。
+const wolfScale = (wolf: WolfState): number => (
+  wolf.kind === "alpha" ? 1.85 : wolf.kind === "large" ? 1.22 : 0.84
+);
+
+const wolfBodyColor = (wolf: WolfState): number => {
+  if (wolf.kind === "alpha") return 0x2a211a;
+  if (wolf.role === "wild") return 0xb59a6d;
+  if (wolf.kind === "large") return 0x4a3a29;
+  return wolf.raider ? 0x604a34 : 0x7d6449;
+};
+
+const wolfEyeColor = (wolf: WolfState): number => {
+  if (wolf.kind === "alpha") return 0xff2b1f;
+  if (wolf.role === "wild") return 0xe8d9a8;
+  if (wolf.kind === "large") return 0xff4938;
+  return wolf.raider ? 0xff784d : 0xf3c668;
 };
 
 export class GameRenderer {
@@ -45,14 +64,14 @@ export class GameRenderer {
   private readonly playerCoat: THREE.Group;
   private readonly campViews = new Map<number, CampView>();
   private readonly itemViews = new Map<number, THREE.Object3D>();
-  private readonly berryViews = new Map<number, THREE.Object3D>();
+  private readonly cactusViews = new Map<number, THREE.Object3D>();
   private readonly ironViews = new Map<number, THREE.Object3D>();
   private readonly wolfViews = new Map<number, WolfView>();
   private readonly dropViews = new Map<number, THREE.Object3D>();
   private readonly hemisphere: THREE.HemisphereLight;
   private readonly sun: THREE.DirectionalLight;
   private readonly fireLight = new THREE.PointLight(0xff8b38, 0, 22, 2);
-  private readonly snow: THREE.Points;
+  private readonly sand: THREE.Points;
   private cameraShake = 0;
   private time = 0;
 
@@ -69,11 +88,12 @@ export class GameRenderer {
     this.canvas = this.renderer.domElement;
     root.appendChild(this.canvas);
 
-    this.scene.background = new THREE.Color(0x9bb8c2);
-    this.scene.fog = new THREE.FogExp2(0x8ca8b1, 0.008);
-    this.hemisphere = new THREE.HemisphereLight(0xdff7ff, 0x52616a, 2.2);
+    // 荒漠白天：泛黄的尘霾天空，地面反照强烈。
+    this.scene.background = new THREE.Color(0xd8bf8d);
+    this.scene.fog = new THREE.FogExp2(0xcbae7d, 0.0075);
+    this.hemisphere = new THREE.HemisphereLight(0xffeec4, 0x8a6a44, 2.2);
     this.scene.add(this.hemisphere);
-    this.sun = new THREE.DirectionalLight(0xfff1d4, 3.2);
+    this.sun = new THREE.DirectionalLight(0xfff0cc, 3.2);
     this.sun.position.set(-35, 55, 25);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(1024, 1024);
@@ -91,7 +111,7 @@ export class GameRenderer {
     this.buildGroundCover();
     this.buildLandmarks();
     this.buildCamps();
-    this.buildBerryPatches();
+    this.buildCacti();
     this.buildIronNodes();
     this.playerBodyMaterial = makeMaterial(0x2f7b8d, 0.75);
     const player = this.buildPlayer();
@@ -102,8 +122,8 @@ export class GameRenderer {
     this.spear = player.spear;
     this.playerCoat = player.coat;
     this.scene.add(this.playerGroup);
-    this.snow = this.buildSnow();
-    this.scene.add(this.snow);
+    this.sand = this.buildSand();
+    this.scene.add(this.sand);
 
     this.cameraFocus.set(simulation.player.x, this.worldHeight(simulation.player.x, simulation.player.z), simulation.player.z);
     this.resize();
@@ -122,14 +142,14 @@ export class GameRenderer {
     this.time += delta;
     this.syncPlayer(delta);
     this.syncItems();
-    this.syncBerries();
+    this.syncCacti();
     this.syncIronNodes();
     this.syncWolves(delta);
     this.syncDrops();
     this.syncFires();
     this.syncDayNight();
     this.updateCamera(delta);
-    this.updateSnow(delta);
+    this.updateSand(delta);
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -165,11 +185,12 @@ export class GameRenderer {
     const geometry = new THREE.PlaneGeometry(size, size, segments, segments);
     const positions = geometry.getAttribute("position") as THREE.BufferAttribute;
     const colors = new Float32Array(positions.count * 3);
-    const dryGrass = new THREE.Color(0x77775c);
-    const dampGrass = new THREE.Color(0x59664e);
-    const soil = new THREE.Color(0x5a4532);
-    const rock = new THREE.Color(0x666b67);
-    const snow = new THREE.Color(0xc3cbc4);
+    // 荒漠调色：明亮的沙丘 → 湿润洼地的暗砾石 → 踩实的土路 → 裸岩 → 盐碱壳
+    const sand = new THREE.Color(0xc9a86a);
+    const gravel = new THREE.Color(0x9c7f52);
+    const packedEarth = new THREE.Color(0x8a6435);
+    const rock = new THREE.Color(0x8d7355);
+    const salt = new THREE.Color(0xe2ddc9);
     const color = new THREE.Color();
     for (let index = 0; index < positions.count; index += 1) {
       const x = positions.getX(index);
@@ -178,8 +199,8 @@ export class GameRenderer {
       const height = terrainHeightAt(this.world, point);
       const slope = terrainSlopeAt(this.world, point, 1.15);
       const moisture = terrainMoistureAt(this.world, point);
-      const snowAmount = terrainSnowAt(this.world, point);
-      color.copy(dryGrass).lerp(dampGrass, moisture * 0.72);
+      const saltAmount = terrainSaltAt(this.world, point);
+      color.copy(sand).lerp(gravel, moisture * 0.72);
       let campWear = 0;
       for (const camp of this.world.camps) {
         const distance = Math.hypot(x - camp.x, z - camp.z);
@@ -191,12 +212,12 @@ export class GameRenderer {
         const pathDistance = distanceToCampApproach(camp, point);
         pathWear = Math.max(pathWear, 1 - smoothTerrainBlend(camp.approachWidth * 0.48, camp.approachWidth * 0.48 + 1.65, pathDistance));
       }
-      color.lerp(soil, campWear);
+      color.lerp(packedEarth, campWear);
       color.lerp(rock, smoothTerrainBlend(0.42, 0.86, slope));
-      // The access road must remain legible while it crosses the steep ramp.
-      // Paint it after the cliff tint and keep windswept tracks mostly snow-free.
-      color.lerp(soil, pathWear * 0.84);
-      color.lerp(snow, snowAmount * 0.9 * (1 - pathWear * 0.82));
+      // 上坡的通路要始终看得清，所以土路色在裸岩色之后再刷一遍，
+      // 并且踩实的路面不会结盐壳。
+      color.lerp(packedEarth, pathWear * 0.84);
+      color.lerp(salt, saltAmount * 0.85 * (1 - pathWear * 0.82));
       const variation = 0.93 + Math.sin(x * 0.71 + z * 0.37) * 0.025 + Math.sin(z * 1.13) * 0.018;
       color.multiplyScalar(variation);
       positions.setZ(index, height);
@@ -308,8 +329,8 @@ export class GameRenderer {
   private buildTrees(): void {
     const trunkGeometry = new THREE.CylinderGeometry(0.22, 0.4, 3.4, 6);
     const branchGeometry = new THREE.ConeGeometry(1.25, 3.5, 7);
-    const trunkMaterial = makeMaterial(0x51453d, 1);
-    const branchMaterial = makeMaterial(0x3f5548, 1);
+    const trunkMaterial = makeMaterial(0x7a6446, 1);
+    const branchMaterial = makeMaterial(0x8a7550, 1);
     const trunks = new THREE.InstancedMesh(trunkGeometry, trunkMaterial, this.world.trees.length);
     const branches = new THREE.InstancedMesh(branchGeometry, branchMaterial, this.world.trees.length);
     const matrix = new THREE.Matrix4();
@@ -356,17 +377,17 @@ export class GameRenderer {
     const pebblePoints = collect(260, 0.62, -0.18);
     const grass = new THREE.InstancedMesh(
       this.createGrassTuftGeometry(),
-      new THREE.MeshStandardMaterial({ color: 0x68704c, roughness: 1, side: THREE.DoubleSide }),
+      new THREE.MeshStandardMaterial({ color: 0x9c8a5a, roughness: 1, side: THREE.DoubleSide }),
       grassPoints.length,
     );
     const heath = new THREE.InstancedMesh(
       new THREE.IcosahedronGeometry(0.3, 0),
-      makeMaterial(0x53624b, 1),
+      makeMaterial(0x7d6a45, 1),
       heathPoints.length,
     );
     const pebbles = new THREE.InstancedMesh(
       new THREE.DodecahedronGeometry(0.2, 0),
-      makeMaterial(0x626862, 1),
+      makeMaterial(0x9c8b70, 1),
       pebblePoints.length,
     );
     const matrix = new THREE.Matrix4();
@@ -395,9 +416,9 @@ export class GameRenderer {
   }
 
   private buildLandmarks(): void {
-    const deadwoodMaterial = makeMaterial(0x4f4135, 1);
+    const deadwoodMaterial = makeMaterial(0x7a6446, 1);
     const ironMaterial = makeMaterial(0x5e554a, 0.95);
-    const stoneMaterial = makeMaterial(0x535b55, 1);
+    const stoneMaterial = makeMaterial(0x8a7a63, 1);
     for (const landmark of this.world.landmarks) {
       const group = new THREE.Group();
       group.position.set(landmark.x, this.worldHeight(landmark.x, landmark.z), landmark.z);
@@ -455,7 +476,7 @@ export class GameRenderer {
   }
 
   private buildIronNodes(): void {
-    const rockMaterial = makeMaterial(0x4c5250, 1);
+    const rockMaterial = makeMaterial(0x7d6a52, 1);
     const oreMaterial = new THREE.MeshStandardMaterial({
       color: 0xa26a45,
       emissive: 0x32170b,
@@ -606,24 +627,47 @@ export class GameRenderer {
     }
   }
 
-  private buildBerryPatches(): void {
-    const shrubMaterial = makeMaterial(0x496b54, 1);
-    const berryMaterial = new THREE.MeshStandardMaterial({ color: 0xbc4050, roughness: 0.7, emissive: 0x31040a });
-    for (const patch of this.simulation.berries) {
+  /** 仙人掌：柱状主干 + 两条手臂 + 顶花，是荒漠里唯一稳定的水源。 */
+  private buildCacti(): void {
+    const fleshMaterial = makeMaterial(0x4f7a48, 0.95);
+    const flowerMaterial = new THREE.MeshStandardMaterial({ color: 0xe0567a, roughness: 0.6, emissive: 0x3a0a18 });
+    const spineMaterial = makeMaterial(0xd8cba4, 0.8);
+    const random = mulberry32(4127);
+    for (const patch of this.simulation.cacti) {
       const group = new THREE.Group();
-      const shrub = new THREE.Mesh(new THREE.IcosahedronGeometry(0.72, 0), shrubMaterial);
-      shrub.position.y = 0.54;
-      shrub.scale.set(1.25, 0.7, 1.05);
-      group.add(shrub);
-      for (let index = 0; index < 4; index += 1) {
-        const berry = new THREE.Mesh(new THREE.IcosahedronGeometry(0.14, 0), berryMaterial);
-        const angle = (index / 4) * Math.PI * 2;
-        berry.position.set(Math.cos(angle) * 0.46, 0.68 + (index % 2) * 0.18, Math.sin(angle) * 0.4);
-        group.add(berry);
+      const trunkHeight = 1.6 + random() * 0.9;
+      const trunk = new THREE.Mesh(new THREE.CapsuleGeometry(0.3, trunkHeight, 3, 7), fleshMaterial);
+      trunk.position.y = trunkHeight / 2 + 0.3;
+      trunk.castShadow = true;
+      group.add(trunk);
+      // 两条手臂朝相反方向伸出，高度略有差异，避免看起来太对称。
+      for (let side = 0; side < 2; side += 1) {
+        const dir = side === 0 ? 1 : -1;
+        const armHeight = 0.55 + random() * 0.4;
+        const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.18, armHeight, 3, 6), fleshMaterial);
+        arm.position.set(dir * 0.42, 0.75 + side * 0.42 + armHeight / 2, 0);
+        arm.castShadow = true;
+        group.add(arm);
+        const elbow = new THREE.Mesh(new THREE.CapsuleGeometry(0.18, 0.34, 3, 6), fleshMaterial);
+        elbow.rotation.z = Math.PI / 2;
+        elbow.position.set(dir * 0.24, 0.75 + side * 0.42, 0);
+        group.add(elbow);
       }
+      const flower = new THREE.Mesh(new THREE.IcosahedronGeometry(0.16, 0), flowerMaterial);
+      flower.position.y = trunkHeight + 0.42;
+      group.add(flower);
+      for (let index = 0; index < 3; index += 1) {
+        const spine = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.2, 4), spineMaterial);
+        const angle = (index / 3) * Math.PI * 2;
+        spine.position.set(Math.cos(angle) * 0.31, 0.6 + index * 0.42, Math.sin(angle) * 0.31);
+        spine.rotation.z = -Math.cos(angle) * 1.2;
+        spine.rotation.x = Math.sin(angle) * 1.2;
+        group.add(spine);
+      }
+      group.rotation.y = random() * Math.PI * 2;
       group.position.set(patch.x, this.worldHeight(patch.x, patch.z), patch.z);
       this.scene.add(group);
-      this.berryViews.set(patch.id, group);
+      this.cactusViews.set(patch.id, group);
     }
   }
 
@@ -702,17 +746,19 @@ export class GameRenderer {
     return { group, carriedWood, carriedStone, club, spear, coat };
   }
 
-  private buildSnow(): THREE.Points {
-    const count = 190;
+  /** 风沙：贴地横向吹，而不是从天上落下来。 */
+  private buildSand(): THREE.Points {
+    const count = 240;
     const positions = new Float32Array(count * 3);
     for (let index = 0; index < count; index += 1) {
-      positions[index * 3] = (Math.random() - 0.5) * 65;
-      positions[index * 3 + 1] = Math.random() * 28;
-      positions[index * 3 + 2] = (Math.random() - 0.5) * 65;
+      positions[index * 3] = (Math.random() - 0.5) * 70;
+      // 绝大部分沙粒贴着地面走，只有少量被卷到高处。
+      positions[index * 3 + 1] = Math.pow(Math.random(), 2.4) * 9;
+      positions[index * 3 + 2] = (Math.random() - 0.5) * 70;
     }
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-    const material = new THREE.PointsMaterial({ color: 0xf5fcff, size: 0.13, transparent: true, opacity: 0.42, depthWrite: false });
+    const material = new THREE.PointsMaterial({ color: 0xe6cd9a, size: 0.16, transparent: true, opacity: 0.4, depthWrite: false });
     const points = new THREE.Points(geometry, material);
     points.frustumCulled = false;
     return points;
@@ -787,10 +833,11 @@ export class GameRenderer {
     return view;
   }
 
-  private syncBerries(): void {
-    for (const patch of this.simulation.berries) {
-      const view = this.berryViews.get(patch.id);
-      if (view) view.visible = patch.berries > 0;
+  private syncCacti(): void {
+    for (const patch of this.simulation.cacti) {
+      const view = this.cactusViews.get(patch.id);
+      // 割光的仙人掌整株隐藏，等它自己长回来。
+      if (view) view.visible = patch.juice > 0;
     }
   }
 
@@ -815,18 +862,17 @@ export class GameRenderer {
       }
       view.group.position.set(wolf.x, this.worldHeight(wolf.x, wolf.z) + (wolf.mode === "dead" ? 0.2 : 0), wolf.z);
       view.group.rotation.y = -Math.atan2(wolf.facing.z, wolf.facing.x);
+      const kindScale = wolfScale(wolf);
       if (wolf.mode === "dead") {
         view.group.rotation.z = lerp(view.group.rotation.z, Math.PI / 2, delta * 8);
-        const kindScale = wolf.kind === "large" ? 1.22 : 0.84;
         view.group.scale.setScalar(clamp(wolf.deathTimer / 0.8, 0, 1) * kindScale);
       } else {
         view.group.rotation.z = 0;
-        view.group.scale.setScalar(wolf.kind === "large" ? 1.22 : 0.84);
+        view.group.scale.setScalar(kindScale);
         view.group.position.y = Math.abs(Math.sin(this.time * 8 + wolf.id)) * 0.04;
       }
       view.bodyMaterial.color.setHex(
-        wolf.hurtFlash > 0 ? 0xe04a46 : wolf.mode === "retreating" ? 0x7d9094
-          : wolf.kind === "large" ? 0x303b40 : wolf.raider ? 0x46545a : 0x65757a,
+        wolf.hurtFlash > 0 ? 0xe04a46 : wolf.mode === "retreating" ? 0x7d9094 : wolfBodyColor(wolf),
       );
       view.bodyMaterial.emissive.setHex(wolf.mode === "chase" ? 0x160000 : 0x000000);
     }
@@ -886,7 +932,7 @@ export class GameRenderer {
 
   private createWolfView(wolf: WolfState): WolfView {
     const group = new THREE.Group();
-    const bodyMaterial = makeMaterial(wolf.kind === "large" ? 0x303b40 : wolf.raider ? 0x46545a : 0x65757a, 0.95);
+    const bodyMaterial = makeMaterial(wolfBodyColor(wolf), 0.95);
     const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.36, 1.05, 3, 5), bodyMaterial);
     body.rotation.z = Math.PI / 2;
     body.position.set(0, 0.75, 0);
@@ -902,7 +948,7 @@ export class GameRenderer {
     tail.rotation.z = Math.PI / 2.35;
     tail.position.set(-0.85, 0.88, 0);
     group.add(tail);
-    const eyeMaterial = new THREE.MeshBasicMaterial({ color: wolf.kind === "large" ? 0xff4938 : wolf.raider ? 0xff784d : 0xf3c668 });
+    const eyeMaterial = new THREE.MeshBasicMaterial({ color: wolfEyeColor(wolf) });
     const eye = new THREE.Mesh(new THREE.SphereGeometry(0.055, 5, 4), eyeMaterial);
     eye.position.set(1.12, 0.98, 0.29);
     group.add(eye);
@@ -940,15 +986,16 @@ export class GameRenderer {
 
   private syncDayNight(): void {
     const daylight = this.simulation.getDaylight();
-    // 夜晚基础亮度整体抬高：天空从深蓝偏向月夜蓝，避免一片漆黑
-    const sky = new THREE.Color().lerpColors(new THREE.Color(0x4a6080), new THREE.Color(0x9bb8c2), daylight);
+    // 沙漠昼夜温差极大，配色也走两个极端：
+    // 白天是被尘霾漂白的暖黄，夜晚是冷到发青的深蓝 —— 视觉上直接对应体温轴的两端。
+    const sky = new THREE.Color().lerpColors(new THREE.Color(0x2c3d5c), new THREE.Color(0xd8bf8d), daylight);
     this.scene.background = sky;
     if (this.scene.fog) this.scene.fog.color.copy(sky);
-    this.hemisphere.color.lerpColors(new THREE.Color(0xa8bbe0), new THREE.Color(0xdff7ff), daylight);
-    this.hemisphere.groundColor.lerpColors(new THREE.Color(0x475160), new THREE.Color(0x52616a), daylight);
+    this.hemisphere.color.lerpColors(new THREE.Color(0x8fa6cf), new THREE.Color(0xffeec4), daylight);
+    this.hemisphere.groundColor.lerpColors(new THREE.Color(0x3a4356), new THREE.Color(0x8a6a44), daylight);
     // 夜晚半球光强度从 1.34 提到 1.85，让地形细节可见
     this.hemisphere.intensity = lerp(1.85, 2.2, daylight);
-    this.sun.color.lerpColors(new THREE.Color(0xb8c8e8), new THREE.Color(0xfff1d4), daylight);
+    this.sun.color.lerpColors(new THREE.Color(0xa8bce0), new THREE.Color(0xfff0cc), daylight);
     // 夜晚太阳（当作月光）强度从 0.82 提到 1.45，地面不再糊成一片
     this.sun.intensity = lerp(1.45, 3.2, daylight);
     // 夜晚曝光略提，让篝火光圈外也能辨识
@@ -976,24 +1023,27 @@ export class GameRenderer {
     this.sun.target.updateMatrixWorld();
   }
 
-  private updateSnow(delta: number): void {
-    const attribute = this.snow.geometry.getAttribute("position") as THREE.BufferAttribute;
+  private updateSand(delta: number): void {
+    const attribute = this.sand.geometry.getAttribute("position") as THREE.BufferAttribute;
     const array = attribute.array as Float32Array;
     for (let index = 0; index < attribute.count; index += 1) {
       const offset = index * 3;
-      array[offset] += delta * 0.65;
-      array[offset + 1] -= delta * (2.3 + (index % 9) * 0.12);
-      array[offset + 2] += delta * 0.28;
-      if (array[offset + 1] < 0) {
-        array[offset] = (Math.random() - 0.5) * 65;
-        array[offset + 1] = 24 + Math.random() * 5;
-        array[offset + 2] = (Math.random() - 0.5) * 65;
+      // 主风向横吹，垂直方向只有很轻的起伏，越贴地的沙粒跑得越快。
+      const gust = 7.5 + (index % 11) * 0.85;
+      array[offset] += delta * gust;
+      array[offset + 1] += delta * Math.sin(this.time * 1.7 + index) * 0.35;
+      array[offset + 2] += delta * (gust * 0.34);
+      if (array[offset] > 35 || array[offset + 2] > 35) {
+        array[offset] = -35 - Math.random() * 6;
+        array[offset + 1] = Math.pow(Math.random(), 2.4) * 9;
+        array[offset + 2] = (Math.random() - 0.5) * 70;
       }
     }
     attribute.needsUpdate = true;
-    this.snow.position.set(this.cameraFocus.x, this.cameraFocus.y, this.cameraFocus.z);
-    const material = this.snow.material as THREE.PointsMaterial;
-    material.opacity = lerp(0.48, 0.78, 1 - this.simulation.getDaylight());
+    this.sand.position.set(this.cameraFocus.x, this.cameraFocus.y, this.cameraFocus.z);
+    const material = this.sand.material as THREE.PointsMaterial;
+    // 和飘雪相反：白天日晒起风，沙尘最浓；夜里风停，几乎看不见。
+    material.opacity = lerp(0.14, 0.5, this.simulation.getDaylight());
   }
 
   private worldHeight(x: number, z: number): number {

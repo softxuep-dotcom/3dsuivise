@@ -1,7 +1,7 @@
 import { distance, mulberry32, TAU } from "../simulation/geometry";
 import { campGatePosition, isTerrainWalkable, terrainSlopeAt } from "../terrain/TerrainModel";
 import type {
-  BerryPatch,
+  CactusPatch,
   CampKind,
   CampDefinition,
   CircleObstacle,
@@ -121,16 +121,16 @@ export function createWorld(seed = 71291): WorldDefinition {
     addItem(kind, point.x, point.z);
   }
 
-  const initialBerries: BerryPatch[] = [
-    { id: 0, x: -31, z: -15, berries: 2, regrowAt: 0 },
-    { id: 1, x: -19, z: -22, berries: 2, regrowAt: 0 },
+  const initialCacti: CactusPatch[] = [
+    { id: 0, x: -31, z: -15, juice: 2, regrowAt: 0 },
+    { id: 1, x: -19, z: -22, juice: 2, regrowAt: 0 },
   ];
-  while (initialBerries.length < 32) {
+  while (initialCacti.length < 32) {
     const point = { x: (random() - 0.5) * 196, z: (random() - 0.5) * 196 };
     if (!awayFromCamps(point, camps, -2)) continue;
     if (!isTerrainWalkable(terrainWorld, point)) continue;
-    if (initialBerries.some((berry) => distance(point, berry) < 6)) continue;
-    initialBerries.push({ id: initialBerries.length, ...point, berries: 2, regrowAt: 0 });
+    if (initialCacti.some((cactus) => distance(point, cactus) < 6)) continue;
+    initialCacti.push({ id: initialCacti.length, ...point, juice: 2, regrowAt: 0 });
   }
 
   const ironNodes: IronNode[] = [];
@@ -180,7 +180,7 @@ export function createWorld(seed = 71291): WorldDefinition {
     trees,
     hills,
     initialItems,
-    initialBerries,
+    initialCacti,
     ironNodes,
     landmarks,
     startCampId: BLUEPRINT.startCampId,

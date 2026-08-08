@@ -114,11 +114,50 @@ button { font: inherit; }
 }
 
 .health i b { background: linear-gradient(90deg, #c8443d, #ef7269); }
-.warmth i b { background: linear-gradient(90deg, #e7782e, #ffc05e); }
+.warmth i b { background: linear-gradient(90deg, #3f77c9, #e7782e 45%, #ffc05e); }
 .hunger i b { background: linear-gradient(90deg, #62a84f, #a6d966); }
+.water i b { background: linear-gradient(90deg, #2f7fa8, #6cc6e8); }
+.stamina i b { background: linear-gradient(90deg, #8a6bc4, #c3a2f0); }
 .meter em { color: #bcd0d7; font-size: 10px; font-style: normal; text-align: right; }
 .meter.critical { color: #ff9b85; }
 .meter.critical i { box-shadow: 0 0 0 1px rgba(255, 99, 74, .45), 0 0 10px rgba(226, 67, 47, .24); }
+
+/* 体温条同时标出白天地板与夜晚天花板：越界的那一段视觉上就是"危险区"。 */
+.meter.warmth i {
+  position: relative;
+  background:
+    linear-gradient(90deg,
+      rgba(80, 150, 235, .34) 0 15%,
+      rgba(255,255,255,.12) 15% 80%,
+      rgba(255, 140, 60, .34) 80% 100%);
+}
+
+.condition-badge {
+  margin: 0 0 8px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-align: center;
+}
+.condition-badge.heatstroke { background: rgba(226, 108, 40, .22); border: 1px solid rgba(255, 160, 80, .5); color: #ffc48a; }
+.condition-badge.hypothermia { background: rgba(60, 128, 214, .22); border: 1px solid rgba(120, 180, 255, .5); color: #a8ccff; }
+.condition-badge.exhausted { background: rgba(140, 110, 200, .2); border: 1px solid rgba(180, 150, 240, .48); color: #cdb6f5; }
+
+/* 体力恒定流失是本作最容易被误读成"被隐形攻击"的机制，所以常驻一行说明。 */
+.drain-note {
+  margin: -3px 0 7px;
+  padding-left: 45px;
+  color: #8d9aa0;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .02em;
+}
+.drain-note.healing { color: #8fd6a8; }
+
+.hunt-line { color: #d6c3a2; }
+.hunt-line.alpha { background: rgba(200, 60, 48, .2); color: #ff9d8c; }
 
 .combat-line {
   display: flex;
@@ -281,6 +320,13 @@ button { font: inherit; }
   backdrop-filter: blur(7px);
 }
 
+.gather-indicator {
+  top: 26%;
+  border-color: rgba(140, 200, 235, .38);
+  background: rgba(20, 44, 62, .84);
+  color: #bfe2f5;
+}
+
 .overlay {
   position: fixed;
   z-index: 20;
@@ -363,6 +409,22 @@ button { font: inherit; }
 .controls-copy { margin: 19px 0 0; color: #849ba5; font-size: 11px; line-height: 1.7; }
 .touch-copy { display: none; }
 .game-over-card p:not(.eyebrow) { margin: 18px 0 24px; color: #c3d3d8; line-height: 1.7; }
+
+.axis-copy {
+  margin: 0 0 4px;
+  padding: 10px 14px;
+  border: 1px solid rgba(222, 240, 246, .14);
+  border-radius: 12px;
+  background: rgba(255,255,255,.035);
+  color: #9fb6bf;
+  font-size: 11px;
+  line-height: 1.8;
+  text-align: left;
+}
+
+.victory-card .eyebrow { color: #ffd479; }
+.victory-card h2 { color: #fff4d8; }
+.victory-card p:not(.eyebrow) { margin: 18px 0 24px; color: #d9d0bb; line-height: 1.7; }
 
 .inventory-overlay {
   z-index: 35;
