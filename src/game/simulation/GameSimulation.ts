@@ -13,6 +13,8 @@ import { campGatePosition, isTerrainWalkable, terrainHeightAt } from "../terrain
 import { NavigationGrid } from "./NavigationGrid";
 import type {
   CactusPatch,
+  CritterKind,
+  CritterState,
   CampKind,
   CampDefinition,
   CampState,
@@ -32,7 +34,7 @@ import type {
   WorldDefinition,
   WorldDrop,
 } from "./types";
-import { INVENTORY_CAPACITY, INVENTORY_STACK_LIMITS } from "./types";
+import { CRITTER_SPECS, INVENTORY_CAPACITY, INVENTORY_STACK_LIMITS } from "./types";
 
 const PLAYER_RADIUS = 0.72;
 const WOLF_RADIUS = 0.68;
@@ -142,6 +144,7 @@ export class GameSimulation {
   readonly ironNodes: IronNode[];
   readonly player: PlayerState;
   readonly wolves: WolfState[] = [];
+  readonly critters: CritterState[] = [];
   readonly drops: WorldDrop[] = [];
 
   phase: Phase = "day";
@@ -156,6 +159,8 @@ export class GameSimulation {
   private readonly navigation: NavigationGrid;
   private readonly retreatNavigations: NavigationGrid[];
   private wolfId = 0;
+  private critterId = 0;
+  private critterRespawnCountdown = 4;
   private dropId = 0;
   private spawnCountdown = 3;
   private spawnedThisNight = 0;
@@ -220,6 +225,7 @@ export class GameSimulation {
       kills: 0,
     };
     this.navigation.rebuild(this.player);
+    this.seedCritters();
   }
 
   start(): void {
@@ -252,6 +258,7 @@ export class GameSimulation {
     this.updateFires(delta);
     this.updateCacti();
     this.updateDrops();
+    this.updateCritters(delta);
     this.updateWolves(delta);
     this.updateRest(delta);
     this.updateObjectives();
@@ -414,9 +421,12 @@ export class GameSimulation {
     let hit = false;
 
     const attackRange = this.player.weapon === "iron-spear" ? 3.8 : 3.1;
-    const assistedTarget = this.wolves
-      .filter((wolf) => wolf.mode !== "dead" && distanceSquared(this.player, wolf) <= attackRange * attackRange)
+    // 转向辅助优先锁狼：猎物不还手，被狼咬着还去追兔子才是真的要命。
+    const inRange = <T extends Vec2>(list: T[], alive: (item: T) => boolean): T | undefined => list
+      .filter((item) => alive(item) && distanceSquared(this.player, item) <= attackRange * attackRange)
       .sort((a, b) => distanceSquared(this.player, a) - distanceSquared(this.player, b))[0];
+    const assistedTarget = inRange(this.wolves, (wolf) => wolf.mode !== "dead")
+      ?? inRange(this.critters, (critter) => critter.mode !== "dead");
     if (assistedTarget) this.player.facing = direction(this.player, assistedTarget);
     for (const wolf of this.wolves) {
       if (wolf.mode === "dead" || distanceSquared(this.player, wolf) > attackRange * attackRange) continue;
@@ -435,6 +445,22 @@ export class GameSimulation {
       hit = true;
       this.events.push({ type: "wolf-hit", wolfId: wolf.id });
       if (wolf.health <= 0) this.killWolf(wolf);
+    }
+
+    // 猎物：同一次挥砍也会打到，伤害算法和打狼一致（它们没有护甲）。
+    for (const critter of this.critters) {
+      if (critter.mode === "dead" || distanceSquared(this.player, critter) > attackRange * attackRange) continue;
+      if (dot(this.player.facing, direction(this.player, critter)) < -0.15) continue;
+      const needsMultiplier = this.player.hunger < 15 || this.player.water < 15 ? 0.8 : 1;
+      const staminaMultiplier = exhausted ? EXHAUSTED_DAMAGE_SCALE : 1;
+      critter.health -= Math.max(1, Math.round(this.player.attack * needsMultiplier * staminaMultiplier));
+      critter.hurtFlash = 0.18;
+      // 挨了一下必然受惊，冲刺条也回满 —— 第一刀没打死就得追。
+      critter.mode = "flee";
+      critter.sprint = CRITTER_SPECS[critter.kind].sprintSeconds;
+      hit = true;
+      this.events.push({ type: "critter-hit", critterId: critter.id });
+      if (critter.health <= 0) this.killCritter(critter);
     }
 
     if (this.phase === "night") {
@@ -514,10 +540,10 @@ export class GameSimulation {
       return;
     }
     if (stack.kind === "iron-ore") {
-      this.events.push({ type: "message", text: this.player.weapon === "iron-spear" ? "已经装备粗铁矛" : "3块铁矿和1张狼皮可制作粗铁矛" });
+      this.events.push({ type: "message", text: this.player.weapon === "iron-spear" ? "已经装备粗铁矛" : "3块铁矿和1张兽皮可制作粗铁矛" });
       return;
     }
-    this.events.push({ type: "message", text: this.player.hasLeatherCoat ? "已经穿着基础皮衣" : "收集4张狼皮可制作基础皮衣" });
+    this.events.push({ type: "message", text: this.player.hasLeatherCoat ? "已经穿着基础皮衣" : "收集4张兽皮可制作基础皮衣" });
   }
 
   /** 三条轴都已经满到吃了也不回血的程度时，别浪费这份food。 */
@@ -530,12 +556,12 @@ export class GameSimulation {
 
   craftLeatherCoat(): boolean {
     if (!this.running || this.player.hasLeatherCoat) return false;
-    if (this.getInventoryCount("wolf-hide") < 4) {
-      this.events.push({ type: "message", text: "制作皮衣需要4张狼皮" });
+    if (this.getInventoryCount("hide") < 4) {
+      this.events.push({ type: "message", text: "制作皮衣需要4张兽皮" });
       return false;
     }
     this.noteActivity();
-    this.removeInventory("wolf-hide", 4);
+    this.removeInventory("hide", 4);
     this.player.hasLeatherCoat = true;
     this.player.defense += 4;
     this.events.push({ type: "craft-coat" });
@@ -549,13 +575,13 @@ export class GameSimulation {
       this.events.push({ type: "message", text: "粗铁矛必须在燃烧的篝火旁制作" });
       return false;
     }
-    if (this.getInventoryCount("iron-ore") < 3 || this.getInventoryCount("wolf-hide") < 1) {
-      this.events.push({ type: "message", text: "粗铁矛需要3块铁矿和1张狼皮" });
+    if (this.getInventoryCount("iron-ore") < 3 || this.getInventoryCount("hide") < 1) {
+      this.events.push({ type: "message", text: "粗铁矛需要3块铁矿和1张兽皮" });
       return false;
     }
     this.noteActivity();
     this.removeInventory("iron-ore", 3);
-    this.removeInventory("wolf-hide", 1);
+    this.removeInventory("hide", 1);
     this.player.weapon = "iron-spear";
     this.player.attack += 18;
     this.events.push({ type: "craft-weapon" });
@@ -683,9 +709,14 @@ export class GameSimulation {
     if (this.objectiveStage === 1) return "把枯木送到篝火旁添柴";
     if (this.objectiveStage === 2) return "找到入口旁的大石并搬到缺口中央";
     if (this.getInventoryCount("water") === 0 && this.getInventoryCount("cactus-juice") === 0) return "先囤水 · 割仙人掌，或空地上挖沙";
-    if (!this.player.hasLeatherCoat && this.getInventoryCount("wolf-hide") > 0) return "收集4张狼皮制作基础皮衣";
+    if (!this.player.hasLeatherCoat && this.getInventoryCount("hide") > 0) return "收集4张兽皮制作基础皮衣";
     const wildWolves = this.wolves.filter((wolf) => wolf.role === "wild" && wolf.mode !== "dead").length;
-    if (!this.player.hasLeatherCoat && wildWolves > 0) return `沙海上有 ${wildWolves} 只野狼 · 只有它们掉狼皮`;
+    if (!this.player.hasLeatherCoat && wildWolves > 0) return `沙海上有 ${wildWolves} 只野狼 · 只有它们掉兽皮`;
+    if (this.getInventoryCount("raw-meat") === 0 && this.getInventoryCount("cooked-meat") === 0) {
+      const camel = this.critters.find((critter) => critter.kind === "camel" && critter.mode !== "dead");
+      if (camel) return "缺肉了 · 骆驼一头顶四块肉外加两份水，但它跑得比你快";
+      return "缺肉了 · 打点甲壳虫、蜥蜴或野兔";
+    }
     return "白天备水备食，夜里守火";
   }
 
@@ -1008,18 +1039,19 @@ export class GameSimulation {
 
     if (wolf.kind === "alpha") {
       this.createDrop(wolf, "raw-meat", -0.65, 3);
-      this.createDrop(wolf, "wolf-hide", 0.65, 4);
+      this.createDrop(wolf, "hide", 0.65, 4);
       this.events.push({ type: "wolf-killed", wolfId: wolf.id });
       this.endGameWithVictory();
       return;
     }
 
     // 夜袭狼只掉肉不掉皮：把"守夜"和"打猎"拆成两件事。
+    // 小猎物也不掉皮 —— 兽皮只能来自野狼和骆驼这类大型动物。
     // 皮革（也就是防具线）只能靠白天出门猎杀游荡野狼取得 —— 移植自原图
     // "夜里 Player(11) 的狼不触发掉落"的判定。
     const bulk = wolf.kind === "large" ? 2 : 1;
     this.createDrop(wolf, "raw-meat", -0.65, bulk);
-    if (wolf.role === "wild") this.createDrop(wolf, "wolf-hide", 0.65, bulk);
+    if (wolf.role === "wild") this.createDrop(wolf, "hide", 0.65, bulk);
     this.events.push({ type: "wolf-killed", wolfId: wolf.id });
     this.maybeSpawnAlpha();
   }
@@ -1157,6 +1189,148 @@ export class GameSimulation {
     }
   }
 
+  // ==========================================================================
+  // 荒漠猎物
+  // 全部不攻击玩家。难度只由「警觉半径 + 逃跑速度 + 冲刺时长」三项决定：
+  // 冲刺耗尽后它们会停下喘气，所以再快的猎物只要肯追都追得到 ——
+  // 代价是你自己的劳力和体温（奔跑产热 +0.9/s，白天很容易把自己追到中暑）。
+  // ==========================================================================
+
+  private updateCritters(delta: number): void {
+    this.critterRespawnCountdown -= delta;
+    if (this.critterRespawnCountdown <= 0) {
+      this.critterRespawnCountdown = 6;
+      this.replenishCritters();
+    }
+    for (const critter of this.critters) this.updateCritter(critter, delta);
+    for (let index = this.critters.length - 1; index >= 0; index -= 1) {
+      const critter = this.critters[index];
+      if (critter.mode === "dead" && critter.deathTimer <= 0) this.critters.splice(index, 1);
+    }
+  }
+
+  /** 每种猎物各自维持自己的目标数量，在远离玩家的地方补回来。 */
+  /**
+   * 开局把整个种群一次撒满。
+   * 之前只靠每 6 秒补 1 只，玩家开局面对的是一片空荡荡的沙漠，
+   * 要一分钟后才慢慢有东西可打 —— 第一天的觅食完全没法进行。
+   */
+  private seedCritters(): void {
+    for (const kind of Object.keys(CRITTER_SPECS) as CritterKind[]) {
+      const spec = CRITTER_SPECS[kind];
+      for (let index = 0; index < spec.population; index += 1) {
+        // 开局允许离玩家近一些，否则第一天要跑很远才见得到活物。
+        const point = this.findCritterSpawnPoint(14);
+        if (point) this.spawnCritter(kind, point);
+      }
+    }
+  }
+
+  private replenishCritters(): void {
+    for (const kind of Object.keys(CRITTER_SPECS) as CritterKind[]) {
+      const spec = CRITTER_SPECS[kind];
+      const alive = this.critters.filter((c) => c.kind === kind && c.mode !== "dead").length;
+      if (alive >= spec.population) continue;
+      const point = this.findCritterSpawnPoint();
+      if (point) this.spawnCritter(kind, point);
+    }
+  }
+
+  private findCritterSpawnPoint(minPlayerDistance = 30): Vec2 | null {
+    for (let guard = 0; guard < 24; guard += 1) {
+      const point = {
+        x: (this.random() - 0.5) * (this.world.size - 20),
+        z: (this.random() - 0.5) * (this.world.size - 20),
+      };
+      // 别在玩家眼皮底下凭空出现。
+      if (distanceSquared(point, this.player) < minPlayerDistance * minPlayerDistance) continue;
+      if (!isTerrainWalkable(this.world, point)) continue;
+      return point;
+    }
+    return null;
+  }
+
+  private spawnCritter(kind: CritterKind, origin: Vec2): void {
+    const spec = CRITTER_SPECS[kind];
+    const spawn = this.findNearestWalkablePoint(origin);
+    this.critters.push({
+      id: this.critterId++,
+      kind,
+      ...spawn,
+      facing: { x: Math.cos(this.random() * TAU), z: Math.sin(this.random() * TAU) },
+      health: spec.maxHealth,
+      maxHealth: spec.maxHealth,
+      mode: "graze",
+      anchor: { ...spawn },
+      wanderAngle: this.random() * TAU,
+      sprint: spec.sprintSeconds,
+      hurtFlash: 0,
+      deathTimer: 0,
+      dropsCreated: false,
+    });
+  }
+
+  private updateCritter(critter: CritterState, delta: number): void {
+    critter.hurtFlash = Math.max(0, critter.hurtFlash - delta);
+    if (critter.mode === "dead") {
+      critter.deathTimer -= delta;
+      return;
+    }
+
+    const spec = CRITTER_SPECS[critter.kind];
+    const playerDistance = distance(critter, this.player);
+    const startled = playerDistance < spec.alertRadius && critter.sprint > 0;
+
+    if (startled) {
+      critter.mode = "flee";
+      critter.sprint = Math.max(0, critter.sprint - delta);
+    } else {
+      critter.mode = "graze";
+      // 只有玩家离得够远才回气，否则站在旁边等它回满就太廉价了。
+      if (playerDistance > spec.alertRadius * 1.35) {
+        critter.sprint = Math.min(spec.sprintSeconds, critter.sprint + delta * (spec.sprintSeconds / spec.sprintRecovery));
+      }
+    }
+
+    let desired: Vec2;
+    let pace: number;
+    if (critter.mode === "flee") {
+      desired = direction(this.player, critter);
+      pace = spec.fleeSpeed;
+    } else {
+      // 游荡：绕着锚点慢慢晃，离得太远就往回收。
+      critter.wanderAngle += delta * (0.3 + (critter.id % 5) * 0.04);
+      const anchorPull = distance(critter, critter.anchor) > 14 ? direction(critter, critter.anchor) : { x: 0, z: 0 };
+      desired = normalize({
+        x: Math.cos(critter.wanderAngle) + anchorPull.x * 2.2,
+        z: Math.sin(critter.wanderAngle * 0.82) + anchorPull.z * 2.2,
+      });
+      pace = spec.grazeSpeed;
+    }
+
+    const steered = this.getSteeredDirection(critter, desired);
+    critter.facing = steered;
+    this.moveEntity(critter, steered.x * pace * delta, steered.z * pace * delta, 0.4, false);
+  }
+
+  private killCritter(critter: CritterState): void {
+    if (critter.dropsCreated) return;
+    const spec = CRITTER_SPECS[critter.kind];
+    critter.dropsCreated = true;
+    critter.mode = "dead";
+    critter.health = 0;
+    critter.deathTimer = 0.7;
+    if (spec.meat > 0) this.createDrop(critter, "raw-meat", -0.6, spec.meat);
+    if (spec.hide > 0) this.createDrop(critter, "hide", 0.6, spec.hide);
+    // 骆驼是唯一会掉水的猎物 —— 对应原图杀骆驼掉「骆驼水」。
+    if (spec.water > 0) this.createDrop(critter, "water", 1.8, spec.water);
+    this.events.push({ type: "critter-killed", critterId: critter.id, kind: critter.kind });
+  }
+
+  getCritterLabel(kind: CritterKind): string {
+    return CRITTER_SPECS[kind].label;
+  }
+
   /**
    * 白天在远离玩家的地方补充游荡野狼。
    * 它们不主动攻击，被打才反击 —— 是狼皮（进而是防具线）的唯一来源。
@@ -1287,7 +1461,7 @@ export class GameSimulation {
     }
     this.wildRespawnCountdown = 2;
     this.events.push({ type: "phase", phase: "day", day: this.day });
-    this.events.push({ type: "message", text: "天亮了 · 狼群撤离；白天的野狼可以猎取狼皮" });
+    this.events.push({ type: "message", text: "天亮了 · 狼群撤离；白天的野狼可以猎取兽皮" });
   }
 
   private updateObjectives(): void {

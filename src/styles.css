@@ -651,6 +651,35 @@ button { font: inherit; }
   .inventory-slot { min-height: 68px; }
 }
 
+/*
+ * 矮横屏的紧凑档。
+ * 五轴改造后状态栏固有高度到了 228px，而右下动作按钮的顶边是 H-94，
+ * 所以 H < 344 时两者会重叠。这一档把行距、说明行和按钮都收紧，
+ * 让状态栏降到 ~175px，一直到 300px 高的横屏都还留有净空。
+ */
+@media (orientation: landscape) and (max-height: 400px) {
+  .status-strip { top: max(6px, env(safe-area-inset-top)); padding: 6px 7px; }
+  .meter { margin-bottom: 3px; }
+  .meter i { height: 5px; }
+  .condition-badge { margin-bottom: 4px; padding: 3px 6px; font-size: 9px; }
+  .drain-note { margin: -2px 0 4px; padding-left: 32px; font-size: 8px; }
+  .combat-line { margin-bottom: 3px; padding: 2px 5px; font-size: 8px; }
+  .inventory-button { padding: 3px 6px; font-size: 9px; }
+  .hud-actions { gap: 3px; }
+  .clock { top: 68px; padding: 4px 8px; }
+  .enemy-chip { top: 96px; }
+}
+
+/* 再矮一档：说明行是教学用的，最先让位。 */
+@media (orientation: landscape) and (max-height: 340px) {
+  .drain-note { display: none; }
+  .meter { margin-bottom: 2px; font-size: 8px; }
+  .round-button { width: 58px; height: 58px; }
+  .round-button.attack { width: 64px; height: 64px; }
+  .joystick { width: 82px; height: 82px; }
+  .joystick i { top: 24px; left: 24px; width: 34px; height: 34px; }
+}
+
 @media (max-height: 520px) {
   .intro-card { padding-top: 18px; padding-bottom: 16px; }
   .intro-card h1 { font-size: 38px; }
@@ -675,6 +704,64 @@ button { font: inherit; }
   .inventory-help { margin-top: 6px; line-height: 1.35; }
 }
 
+/* ==========================================================================
+   强制横屏
+   本作是横屏游戏：竖屏时 HUD（左上目标 + 右上五条状态轴 + 左下摇杆 + 右下双按钮）
+   会互相挤压到不可用。所以竖屏直接盖一层遮罩并暂停模拟，转回横屏立刻继续。
+   ========================================================================== */
+.rotate-gate {
+  position: fixed;
+  z-index: 60;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    linear-gradient(180deg, rgba(28, 20, 10, .92), rgba(12, 9, 5, .97)),
+    radial-gradient(circle at 50% 35%, rgba(190, 150, 90, .35), rgba(12, 9, 5, .9));
+  text-align: center;
+}
+
+.rotate-gate.hidden { display: none; }
+
+.rotate-card { max-width: 340px; }
+
+.rotate-card h2 {
+  margin: 22px 0 10px;
+  color: #ffe6b8;
+  font-size: 26px;
+  font-weight: 900;
+  letter-spacing: .1em;
+}
+
+.rotate-copy { margin: 0; color: #d8c7a6; font-size: 14px; line-height: 1.7; }
+.rotate-hint { margin: 14px 0 0; color: #9c8a6b; font-size: 11px; }
+
+/* 一个会转 90° 的手机剪影，比任何文字都直观。 */
+.rotate-phone {
+  width: 62px;
+  height: 104px;
+  margin: 0 auto;
+  border: 3px solid #e6cd9a;
+  border-radius: 11px;
+  animation: rotate-hint-turn 2.4s ease-in-out infinite;
+}
+
+.rotate-phone i {
+  display: block;
+  width: 22px;
+  height: 3px;
+  margin: 6px auto 0;
+  border-radius: 2px;
+  background: #e6cd9a;
+}
+
+@keyframes rotate-hint-turn {
+  0%, 28% { transform: rotate(0deg); }
+  55%, 100% { transform: rotate(-90deg); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
+  .rotate-phone { animation: none; transform: rotate(-90deg); }
 }

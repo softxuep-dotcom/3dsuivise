@@ -64,7 +64,7 @@ export class SynthAudio {
         window.setTimeout(() => this.tone(720, 0.6, "sine", 0.5, 1.2), 380);
         break;
       case "loot-drop":
-        this.tone(event.kind === "wolf-hide" ? 280 : 190, 0.1, "triangle", 0.35, 1.4);
+        this.tone(event.kind === "hide" ? 280 : 190, 0.1, "triangle", 0.35, 1.4);
         break;
       case "cook":
         this.noise(0.18, 0.34);
@@ -89,6 +89,14 @@ export class SynthAudio {
         break;
       case "wolf-killed":
         this.tone(170, 0.28, "triangle", 0.8, 0.45);
+        break;
+      case "critter-hit":
+        this.tone(240, 0.08, "square", 0.4, 0.6);
+        break;
+      case "critter-killed":
+        // 骆驼是大猎物，给一个更沉更长的音，和小猎物区分开。
+        if (event.kind === "camel") this.tone(150, 0.4, "triangle", 0.75, 0.42);
+        else this.tone(330, 0.18, "triangle", 0.5, 0.5);
         break;
       case "player-hit":
         this.tone(75, 0.22, "sawtooth", 0.9, 0.45);

@@ -10,7 +10,7 @@ export type InventoryItemKind =
   | "cactus-juice"
   | "raw-meat"
   | "cooked-meat"
-  | "wolf-hide"
+  | "hide"
   | "iron-ore"
   | "water";
 export type WeaponKind = "wood-club" | "iron-spear";
@@ -18,6 +18,59 @@ export type WolfKind = "small" | "large" | "alpha";
 export type WolfMode = "entering" | "patrol" | "chase" | "raid" | "retreating" | "dead";
 /** 野狼白天在地图上游荡且只在被激怒后反击；夜袭狼由边缘涌入且不掉狼皮。 */
 export type WolfRole = "wild" | "raider";
+
+/**
+ * 荒漠猎物。取自原图的非毒生物 —— 蜘蛛、蝎子、眼镜蛇（都带 60 秒毒）没有移植。
+ * 全部不攻击玩家，靠"警觉半径 + 冲刺时长"区分难度：
+ * 骆驼最快最肥但冲得最久，甲壳虫几乎站着让你打。
+ */
+export type CritterKind =
+  | "camel"
+  | "lizard"
+  | "hare"
+  | "vulture"
+  | "gerbil"
+  | "rat"
+  | "beetle"
+  | "sandworm";
+
+export type CritterMode = "graze" | "flee" | "dead";
+
+export interface CritterState extends Vec2 {
+  id: number;
+  kind: CritterKind;
+  facing: Vec2;
+  health: number;
+  maxHealth: number;
+  mode: CritterMode;
+  /** 游荡的锚点，逃跑结束后会慢慢晃回来。 */
+  anchor: Vec2;
+  wanderAngle: number;
+  /** 剩余冲刺时长；耗尽后即使玩家还在追也会停下喘气，这让追猎可行。 */
+  sprint: number;
+  hurtFlash: number;
+  deathTimer: number;
+  dropsCreated: boolean;
+}
+
+export interface CritterSpec {
+  label: string;
+  maxHealth: number;
+  fleeSpeed: number;
+  grazeSpeed: number;
+  /** 玩家进入这个半径就开始逃。 */
+  alertRadius: number;
+  /** 一次逃跑最多能冲多少秒。 */
+  sprintSeconds: number;
+  /** 冲刺回满需要多少秒的平静。 */
+  sprintRecovery: number;
+  meat: number;
+  hide: number;
+  water: number;
+  /** 世界上同时存在的目标数量。 */
+  population: number;
+  scale: number;
+}
 /** 体温越界后的瘫痪状态，带迟滞：进入与解除阈值不同。 */
 export type SurvivalCondition = "normal" | "heatstroke" | "hypothermia";
 export type DeathCause = "dehydrated" | "starved" | "killed";
@@ -197,6 +250,8 @@ export type GameEvent =
   | { type: "condition"; condition: SurvivalCondition }
   | { type: "wolf-hit"; wolfId: number }
   | { type: "wolf-killed"; wolfId: number }
+  | { type: "critter-hit"; critterId: number }
+  | { type: "critter-killed"; critterId: number; kind: CritterKind }
   | { type: "alpha-spawned" }
   | { type: "player-hit"; amount: number }
   | { type: "barrier-hit"; itemId: number }
@@ -210,13 +265,57 @@ export interface InteractionHint {
   text: string;
 }
 
+/**
+ * 猎物图鉴。数值按原图等比缩放（原图主角 600 血 / 240 移速，我们是 100 / 8.2）。
+ *
+ * 设计意图是拉开一条「好抓但不值钱 ←→ 难抓但一顿管饱」的谱：
+ *   甲壳虫  几乎不跑，一刀一块肉
+ *   野兔    比玩家快，但冲 2 秒就没劲，绕两下能追到
+ *   骆驼    比玩家快得多、冲 4.5 秒、90 血，但一头顶得上四块肉外加两份水
+ */
+export const CRITTER_SPECS: Record<CritterKind, CritterSpec> = {
+  beetle: {
+    label: "甲壳虫", maxHealth: 8, fleeSpeed: 2.6, grazeSpeed: 0.7, alertRadius: 3.5,
+    sprintSeconds: 99, sprintRecovery: 1, meat: 1, hide: 0, water: 0, population: 9, scale: 0.5,
+  },
+  sandworm: {
+    // 原图沙虫会「钻沙」瞬间脱离，这里用极短的冲刺 + 极快的速度近似。
+    label: "沙虫", maxHealth: 6, fleeSpeed: 7.4, grazeSpeed: 0.5, alertRadius: 5,
+    sprintSeconds: 1.4, sprintRecovery: 3, meat: 1, hide: 0, water: 0, population: 8, scale: 0.55,
+  },
+  gerbil: {
+    label: "沙鼠", maxHealth: 12, fleeSpeed: 7.6, grazeSpeed: 1.1, alertRadius: 7,
+    sprintSeconds: 2.4, sprintRecovery: 3.5, meat: 1, hide: 0, water: 0, population: 7, scale: 0.6,
+  },
+  rat: {
+    label: "白颈鼠", maxHealth: 14, fleeSpeed: 7, grazeSpeed: 1.1, alertRadius: 6.5,
+    sprintSeconds: 2.6, sprintRecovery: 3.5, meat: 1, hide: 0, water: 0, population: 6, scale: 0.65,
+  },
+  lizard: {
+    label: "蜥蜴", maxHealth: 16, fleeSpeed: 6.2, grazeSpeed: 0.9, alertRadius: 6,
+    sprintSeconds: 3, sprintRecovery: 3, meat: 1, hide: 0, water: 0, population: 7, scale: 0.7,
+  },
+  hare: {
+    label: "野兔", maxHealth: 10, fleeSpeed: 9.6, grazeSpeed: 1.3, alertRadius: 9,
+    sprintSeconds: 2, sprintRecovery: 4, meat: 2, hide: 0, water: 0, population: 6, scale: 0.7,
+  },
+  vulture: {
+    label: "秃鹰", maxHealth: 10, fleeSpeed: 5.2, grazeSpeed: 0.8, alertRadius: 8,
+    sprintSeconds: 2.6, sprintRecovery: 3, meat: 2, hide: 0, water: 0, population: 5, scale: 0.85,
+  },
+  camel: {
+    label: "骆驼", maxHealth: 90, fleeSpeed: 10.5, grazeSpeed: 1.4, alertRadius: 11,
+    sprintSeconds: 4.5, sprintRecovery: 6, meat: 4, hide: 2, water: 2, population: 4, scale: 1.5,
+  },
+};
+
 export const INVENTORY_CAPACITY = 8;
 
 export const INVENTORY_STACK_LIMITS: Record<InventoryItemKind, number> = {
   "cactus-juice": 4,
   "raw-meat": 3,
   "cooked-meat": 3,
-  "wolf-hide": 4,
+  hide: 4,
   "iron-ore": 6,
   water: 4,
 };

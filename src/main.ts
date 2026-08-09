@@ -5,6 +5,7 @@ import { InputController } from "./game/input/InputController";
 import { GameSimulation } from "./game/simulation/GameSimulation";
 import { GameRenderer } from "./render/GameRenderer";
 import { HudController } from "./ui/HudController";
+import { OrientationGate } from "./ui/OrientationGate";
 
 const renderRoot = document.getElementById("render-root");
 if (!renderRoot) throw new Error("Missing render root");
@@ -27,6 +28,7 @@ if (import.meta.env.DEV && new URLSearchParams(window.location.search).get("nigh
 }
 const audio = new SynthAudio();
 const hud = new HudController(simulation);
+const orientation = new OrientationGate();
 
 if (import.meta.env.DEV) {
   // 开发期调试句柄：用来在浏览器控制台里快进模拟、检查五轴状态。
@@ -34,7 +36,8 @@ if (import.meta.env.DEV) {
 }
 
 const runGameplayAction = (action: () => void): void => {
-  if (!hud.isGameplayBlocked()) action();
+  if (hud.isGameplayBlocked() || orientation.isBlocked()) return;
+  action();
 };
 
 try {
@@ -60,6 +63,8 @@ let hiddenAt = 0;
 
 document.getElementById("start-button")?.addEventListener("click", async () => {
   await audio.unlock();
+  // 锁方向必须在用户手势里发起，所以挂在开始按钮上；失败了也不影响，有遮罩兜底。
+  void orientation.requestLandscapeLock();
   started = true;
   simulation.start();
   hud.showGame();
@@ -87,7 +92,11 @@ const frame = (now: number): void => {
   const delta = Math.min((now - previousTime) / 1000, 0.05);
   previousTime = now;
   if (!document.hidden) {
-    if (started && !hud.isGameplayBlocked()) simulation.update(delta, input.getMovement(simulation.player));
+    // 竖屏期间世界完全静止：狼不动、体温不掉、计时不走。转回横屏原样继续。
+    const paused = hud.isGameplayBlocked() || orientation.isBlocked();
+    // 转屏时清掉点击移动目标，否则转回来会自己走一段。
+    if (orientation.isBlocked()) input.cancelMoveTarget();
+    if (started && !paused) simulation.update(delta, input.getMovement(simulation.player));
     const events = simulation.drainEvents();
     for (const event of events) {
       audio.handle(event);

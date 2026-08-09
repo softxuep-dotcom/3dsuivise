@@ -16,9 +16,9 @@ const required = <T extends HTMLElement>(id: string): T => {
 
 const ITEM_PRESENTATION: Record<InventoryItemKind, { glyph: string; name: string }> = {
   "cactus-juice": { glyph: "汁", name: "仙人掌汁" },
-  "raw-meat": { glyph: "肉", name: "生狼肉" },
-  "cooked-meat": { glyph: "熟", name: "熟狼肉" },
-  "wolf-hide": { glyph: "皮", name: "狼皮" },
+  "raw-meat": { glyph: "肉", name: "生肉" },
+  "cooked-meat": { glyph: "熟", name: "烤肉" },
+  hide: { glyph: "皮", name: "兽皮" },
   "iron-ore": { glyph: "铁", name: "铁矿" },
   water: { glyph: "水", name: "水" },
 };
@@ -280,9 +280,13 @@ export class HudController {
     if (event.type === "phase") {
       this.showToast(event.phase === "night" ? `第 ${event.day} 夜 · 狼群正在涌入` : `第 ${event.day} 天 · 狼群正在撤离`, 3.4);
     }
-    if (event.type === "pickup" && (event.kind === "raw-meat" || event.kind === "wolf-hide" || event.kind === "water")) {
-      const label = event.kind === "raw-meat" ? "获得生狼肉" : event.kind === "wolf-hide" ? "获得狼皮" : "取到水";
+    if (event.type === "pickup" && (event.kind === "raw-meat" || event.kind === "hide" || event.kind === "water")) {
+      const label = event.kind === "raw-meat" ? "获得生肉" : event.kind === "hide" ? "获得兽皮" : "取到水";
       this.showToast(label, 1.4);
+    }
+    if (event.type === "critter-killed") {
+      const label = this.simulation.getCritterLabel(event.kind);
+      this.showToast(event.kind === "camel" ? `猎到${label} · 大量肉与水` : `猎到${label}`, 1.8);
     }
     if (event.type === "alpha-spawned") this.showToast("头狼登场 · 击杀它即可获救", 4);
     if (event.type === "victory") {
@@ -325,11 +329,11 @@ export class HudController {
     this.statStamina.textContent = `${Math.round(player.stamina)}/${player.maxStamina}`;
     this.statAttack.textContent = String(player.attack);
     this.statDefense.textContent = String(player.defense);
-    const hides = this.simulation.getInventoryCount("wolf-hide");
+    const hides = this.simulation.getInventoryCount("hide");
     const ore = this.simulation.getInventoryCount("iron-ore");
-    this.craftButton.textContent = player.hasLeatherCoat ? "基础皮衣已装备" : `基础皮衣 · 狼皮 ${hides}/4 · 防御+4`;
+    this.craftButton.textContent = player.hasLeatherCoat ? "基础皮衣已装备" : `基础皮衣 · 兽皮 ${hides}/4 · 防御+4`;
     this.craftButton.disabled = player.hasLeatherCoat || hides < 4;
-    this.craftSpearButton.textContent = player.weapon === "iron-spear" ? "粗铁矛已装备" : `粗铁矛 · 铁矿 ${ore}/3 + 狼皮 ${hides}/1 · 需燃烧篝火`;
+    this.craftSpearButton.textContent = player.weapon === "iron-spear" ? "粗铁矛已装备" : `粗铁矛 · 铁矿 ${ore}/3 + 兽皮 ${hides}/1 · 需燃烧篝火`;
     this.craftSpearButton.disabled = player.weapon === "iron-spear" || ore < 3 || hides < 1;
   }
 
@@ -391,6 +395,17 @@ export class HudController {
       const y = (item.z - player.z) * worldScale;
       context.fillStyle = item.kind === "stone" ? "#a7b2b5" : "#9c724c";
       context.fillRect(x - 1, y - 1, 2, 2);
+    }
+
+    // 猎物用暗黄小点，和狼的红色系明确区分：地图上一眼能分出"能吃的"和"要命的"。
+    for (const critter of this.simulation.critters) {
+      if (critter.mode === "dead") continue;
+      const x = (critter.x - player.x) * worldScale;
+      const y = (critter.z - player.z) * worldScale;
+      if (Math.hypot(x, y) > center - 7) continue;
+      context.fillStyle = critter.kind === "camel" ? "rgba(232, 200, 130, .9)" : "rgba(196, 176, 128, .6)";
+      const size = critter.kind === "camel" ? 4 : 2.5;
+      context.fillRect(x - size / 2, y - size / 2, size, size);
     }
 
     for (const wolf of this.simulation.wolves) {

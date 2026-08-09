@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import type { GameSimulation } from "../game/simulation/GameSimulation";
 import { clamp, lerp, mulberry32 } from "../game/simulation/geometry";
-import type { CampDefinition, GroundItem, Vec2, WolfState, WorldDefinition, WorldDrop } from "../game/simulation/types";
+import type { CampDefinition, CritterKind, CritterState, GroundItem, Vec2, WolfState, WorldDefinition, WorldDrop } from "../game/simulation/types";
+import { CRITTER_SPECS } from "../game/simulation/types";
 import { distanceToCampApproach, terrainHeightAt, terrainMoistureAt, terrainSaltAt, terrainSlopeAt } from "../game/terrain/TerrainModel";
 
 interface CampView {
@@ -10,6 +11,11 @@ interface CampView {
 }
 
 interface WolfView {
+  group: THREE.Group;
+  bodyMaterial: THREE.MeshStandardMaterial;
+}
+
+interface CritterView {
   group: THREE.Group;
   bodyMaterial: THREE.MeshStandardMaterial;
 }
@@ -34,6 +40,182 @@ const wolfBodyColor = (wolf: WolfState): number => {
   if (wolf.kind === "large") return 0x4a3a29;
   return wolf.raider ? 0x604a34 : 0x7d6449;
 };
+
+/** 猎物配色：整体压在沙色系里，靠明度和一点点色相区分，不抢狼的戏。 */
+const CRITTER_COLORS: Record<CritterKind, { body: number; accent: number }> = {
+  camel: { body: 0xc19a63, accent: 0x8f6f45 },
+  lizard: { body: 0x8f9a5c, accent: 0x5f6a3c },
+  hare: { body: 0xd8c49a, accent: 0xf0e4cc },
+  vulture: { body: 0x4a423a, accent: 0xd0b98c },
+  gerbil: { body: 0xc9a878, accent: 0xe8d6b4 },
+  rat: { body: 0xa89478, accent: 0xf2ece0 },
+  beetle: { body: 0x3d3630, accent: 0x6b5c48 },
+  sandworm: { body: 0xd9c091, accent: 0xb99d70 },
+};
+
+// --- 低多边形猎物模型。都朝 +X 方向，和狼保持一致。 ---
+
+const addLegs = (
+  group: THREE.Group,
+  material: THREE.Material,
+  count: number,
+  radius: number,
+  height: number,
+  spreadX: number,
+  spreadZ: number,
+): void => {
+  for (let index = 0; index < count; index += 1) {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius * 0.8, height, 4), material);
+    leg.position.set(index < count / 2 ? spreadX : -spreadX, height / 2, index % 2 === 0 ? spreadZ : -spreadZ);
+    group.add(leg);
+  }
+};
+
+function buildCamel(group: THREE.Group, body: THREE.Material, accent: THREE.Material): void {
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.42, 1.15, 3, 6), body);
+  torso.rotation.z = Math.PI / 2;
+  torso.position.y = 1.32;
+  torso.castShadow = true;
+  group.add(torso);
+  // 两个驼峰是骆驼最好认的剪影特征。
+  for (let index = 0; index < 2; index += 1) {
+    const hump = new THREE.Mesh(new THREE.SphereGeometry(0.3, 6, 5), body);
+    hump.position.set(index === 0 ? 0.22 : -0.24, 1.72, 0);
+    hump.scale.set(1, 0.85, 0.9);
+    group.add(hump);
+  }
+  const neck = new THREE.Mesh(new THREE.CapsuleGeometry(0.16, 0.72, 3, 5), body);
+  neck.position.set(0.78, 1.78, 0);
+  neck.rotation.z = -0.5;
+  group.add(neck);
+  const head = new THREE.Mesh(new THREE.CapsuleGeometry(0.15, 0.28, 3, 5), accent);
+  head.rotation.z = Math.PI / 2.4;
+  head.position.set(1.12, 2.06, 0);
+  group.add(head);
+  addLegs(group, accent, 4, 0.09, 1.32, 0.42, 0.26);
+  const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.02, 0.5, 4), accent);
+  tail.position.set(-0.82, 1.28, 0);
+  tail.rotation.z = 0.7;
+  group.add(tail);
+}
+
+function buildLizard(group: THREE.Group, body: THREE.Material, accent: THREE.Material): void {
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.2, 0.62, 3, 6), body);
+  torso.rotation.z = Math.PI / 2;
+  torso.position.y = 0.24;
+  torso.scale.set(1, 1, 0.72);
+  torso.castShadow = true;
+  group.add(torso);
+  const head = new THREE.Mesh(new THREE.ConeGeometry(0.17, 0.42, 5), accent);
+  head.rotation.z = -Math.PI / 2;
+  head.position.set(0.6, 0.26, 0);
+  group.add(head);
+  // 长尾巴：三节递减，贴着地面拖出去。
+  for (let index = 0; index < 3; index += 1) {
+    const seg = new THREE.Mesh(new THREE.ConeGeometry(0.13 - index * 0.035, 0.34, 4), body);
+    seg.rotation.z = Math.PI / 2;
+    seg.position.set(-0.5 - index * 0.3, 0.22 - index * 0.02, 0);
+    group.add(seg);
+  }
+  addLegs(group, accent, 4, 0.05, 0.24, 0.28, 0.22);
+}
+
+function buildHare(group: THREE.Group, body: THREE.Material, accent: THREE.Material): void {
+  const torso = new THREE.Mesh(new THREE.SphereGeometry(0.32, 6, 5), body);
+  torso.position.y = 0.4;
+  torso.scale.set(1.25, 0.95, 0.9);
+  torso.castShadow = true;
+  group.add(torso);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.19, 6, 5), body);
+  head.position.set(0.36, 0.56, 0);
+  group.add(head);
+  // 长耳朵 —— 野兔唯一需要的识别符号。
+  for (let index = 0; index < 2; index += 1) {
+    const ear = new THREE.Mesh(new THREE.CapsuleGeometry(0.05, 0.3, 3, 4), accent);
+    ear.position.set(0.32, 0.86, index === 0 ? 0.09 : -0.09);
+    ear.rotation.z = -0.22;
+    group.add(ear);
+  }
+  const tail = new THREE.Mesh(new THREE.SphereGeometry(0.1, 5, 4), accent);
+  tail.position.set(-0.42, 0.44, 0);
+  group.add(tail);
+  addLegs(group, body, 4, 0.06, 0.24, 0.2, 0.2);
+}
+
+function buildVulture(group: THREE.Group, body: THREE.Material, accent: THREE.Material): void {
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.26, 0.44, 3, 6), body);
+  torso.rotation.z = Math.PI / 2;
+  torso.position.y = 0.6;
+  torso.castShadow = true;
+  group.add(torso);
+  // 光秃秃的脖子和喙，是秃鹰的招牌。
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.3, 5), accent);
+  neck.position.set(0.34, 0.82, 0);
+  neck.rotation.z = -0.35;
+  group.add(neck);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.13, 5, 4), accent);
+  head.position.set(0.46, 0.96, 0);
+  group.add(head);
+  const beak = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.18, 4), accent);
+  beak.rotation.z = -Math.PI / 2;
+  beak.position.set(0.62, 0.94, 0);
+  group.add(beak);
+  for (let index = 0; index < 2; index += 1) {
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.06, 0.3), body);
+    wing.position.set(-0.05, 0.66, index === 0 ? 0.28 : -0.28);
+    wing.rotation.x = index === 0 ? 0.2 : -0.2;
+    group.add(wing);
+  }
+  addLegs(group, accent, 2, 0.045, 0.6, 0.06, 0.13);
+}
+
+function buildRodent(group: THREE.Group, body: THREE.Material, accent: THREE.Material): void {
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.2, 0.3, 3, 6), body);
+  torso.rotation.z = Math.PI / 2;
+  torso.position.y = 0.24;
+  torso.castShadow = true;
+  group.add(torso);
+  const head = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.3, 5), accent);
+  head.rotation.z = -Math.PI / 2;
+  head.position.set(0.42, 0.26, 0);
+  group.add(head);
+  // 细长尾巴，比身体还长。
+  const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.012, 0.62, 4), accent);
+  tail.rotation.z = Math.PI / 2.6;
+  tail.position.set(-0.5, 0.3, 0);
+  group.add(tail);
+  addLegs(group, accent, 4, 0.04, 0.2, 0.16, 0.16);
+}
+
+function buildBeetle(group: THREE.Group, body: THREE.Material, accent: THREE.Material): void {
+  const shell = new THREE.Mesh(new THREE.SphereGeometry(0.28, 6, 5), body);
+  shell.position.y = 0.2;
+  shell.scale.set(1.15, 0.62, 0.95);
+  shell.castShadow = true;
+  group.add(shell);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.12, 5, 4), accent);
+  head.position.set(0.3, 0.17, 0);
+  group.add(head);
+  // 六条细腿，贴地叉开。
+  for (let index = 0; index < 6; index += 1) {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.2, 4), accent);
+    const along = 0.18 - Math.floor(index / 2) * 0.18;
+    leg.position.set(along, 0.09, index % 2 === 0 ? 0.22 : -0.22);
+    leg.rotation.x = index % 2 === 0 ? 0.7 : -0.7;
+    group.add(leg);
+  }
+}
+
+function buildSandworm(group: THREE.Group, body: THREE.Material): void {
+  // 一串递减的球体，只露出半截身子 —— 剩下的当作埋在沙里。
+  for (let index = 0; index < 5; index += 1) {
+    const seg = new THREE.Mesh(new THREE.SphereGeometry(0.2 - index * 0.028, 6, 4), body);
+    seg.position.set(0.3 - index * 0.22, 0.14 - index * 0.02, 0);
+    seg.scale.set(1, 0.72, 1);
+    if (index === 0) seg.castShadow = true;
+    group.add(seg);
+  }
+}
 
 const wolfEyeColor = (wolf: WolfState): number => {
   if (wolf.kind === "alpha") return 0xff2b1f;
@@ -67,6 +249,7 @@ export class GameRenderer {
   private readonly cactusViews = new Map<number, THREE.Object3D>();
   private readonly ironViews = new Map<number, THREE.Object3D>();
   private readonly wolfViews = new Map<number, WolfView>();
+  private readonly critterViews = new Map<number, CritterView>();
   private readonly dropViews = new Map<number, THREE.Object3D>();
   private readonly hemisphere: THREE.HemisphereLight;
   private readonly sun: THREE.DirectionalLight;
@@ -144,6 +327,7 @@ export class GameRenderer {
     this.syncItems();
     this.syncCacti();
     this.syncIronNodes();
+    this.syncCritters(delta);
     this.syncWolves(delta);
     this.syncDrops();
     this.syncFires();
@@ -850,6 +1034,59 @@ export class GameRenderer {
     }
   }
 
+  private syncCritters(delta: number): void {
+    const liveIds = new Set<number>();
+    for (const critter of this.simulation.critters) {
+      liveIds.add(critter.id);
+      let view = this.critterViews.get(critter.id);
+      if (!view) {
+        view = this.createCritterView(critter);
+        this.critterViews.set(critter.id, view);
+        this.scene.add(view.group);
+      }
+      const spec = CRITTER_SPECS[critter.kind];
+      view.group.position.set(critter.x, this.worldHeight(critter.x, critter.z), critter.z);
+      view.group.rotation.y = -Math.atan2(critter.facing.z, critter.facing.x);
+      if (critter.mode === "dead") {
+        // 侧翻缩小，和狼的死亡表现一致。
+        view.group.rotation.z = lerp(view.group.rotation.z, Math.PI / 2, delta * 8);
+        view.group.scale.setScalar(clamp(critter.deathTimer / 0.7, 0, 1) * spec.scale);
+      } else {
+        view.group.rotation.z = 0;
+        view.group.scale.setScalar(spec.scale);
+        // 逃跑时颠得厉害，吃草时几乎不动 —— 远处也能一眼看出它有没有受惊。
+        const bounce = critter.mode === "flee" ? 0.09 : 0.02;
+        const rate = critter.mode === "flee" ? 13 : 3;
+        view.group.position.y += Math.abs(Math.sin(this.time * rate + critter.id)) * bounce;
+      }
+      view.bodyMaterial.color.setHex(critter.hurtFlash > 0 ? 0xe04a46 : CRITTER_COLORS[critter.kind].body);
+    }
+    for (const [id, view] of this.critterViews) {
+      if (liveIds.has(id)) continue;
+      this.scene.remove(view.group);
+      view.bodyMaterial.dispose();
+      this.critterViews.delete(id);
+    }
+  }
+
+  private createCritterView(critter: CritterState): CritterView {
+    const palette = CRITTER_COLORS[critter.kind];
+    const bodyMaterial = makeMaterial(palette.body, 0.95);
+    const accentMaterial = makeMaterial(palette.accent, 0.9);
+    const group = new THREE.Group();
+    switch (critter.kind) {
+      case "camel": buildCamel(group, bodyMaterial, accentMaterial); break;
+      case "lizard": buildLizard(group, bodyMaterial, accentMaterial); break;
+      case "hare": buildHare(group, bodyMaterial, accentMaterial); break;
+      case "vulture": buildVulture(group, bodyMaterial, accentMaterial); break;
+      case "gerbil":
+      case "rat": buildRodent(group, bodyMaterial, accentMaterial); break;
+      case "beetle": buildBeetle(group, bodyMaterial, accentMaterial); break;
+      case "sandworm": buildSandworm(group, bodyMaterial); break;
+    }
+    return { group, bodyMaterial };
+  }
+
   private syncWolves(delta: number): void {
     const liveIds = new Set<number>();
     for (const wolf of this.simulation.wolves) {
@@ -911,7 +1148,7 @@ export class GameRenderer {
   }
 
   private createDropView(drop: WorldDrop): THREE.Object3D {
-    if (drop.kind === "wolf-hide") {
+    if (drop.kind === "hide") {
       const hide = new THREE.Mesh(new THREE.CircleGeometry(0.62, 5), makeMaterial(0x7a4931, 1));
       hide.rotation.x = -Math.PI / 2;
       hide.scale.set(1.25, 0.82, 1);

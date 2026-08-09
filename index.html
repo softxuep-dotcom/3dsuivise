@@ -105,10 +105,10 @@
             <button class="inventory-slot" data-slot="7" type="button"></button>
           </div>
           <div class="craft-list" aria-label="制作配方">
-            <button id="craft-coat-button" class="craft-button" type="button">基础皮衣 · 狼皮4 · 防御+4</button>
-            <button id="craft-spear-button" class="craft-button" type="button">粗铁矛 · 铁矿3 + 狼皮1 · 需燃烧篝火</button>
+            <button id="craft-coat-button" class="craft-button" type="button">基础皮衣 · 兽皮4 · 防御+4</button>
+            <button id="craft-spear-button" class="craft-button" type="button">粗铁矛 · 铁矿3 + 兽皮1 · 需燃烧篝火</button>
           </div>
-          <p class="inventory-help">配方材料满足后点击制作；生肉可在火边烤熟。狼皮只有白天的野狼会掉，夜袭狼只掉肉。仙人掌一刀出汁，空地上挖沙约五成出水。</p>
+          <p class="inventory-help">配方材料满足后点击制作；生肉可在火边烤熟。兽皮只有白天的野狼和骆驼会掉，夜袭狼只掉肉。仙人掌一刀出汁，空地上挖沙约五成出水。</p>
         </div>
       </div>
 
@@ -127,6 +127,16 @@
           <h2>走出沙海</h2>
           <p id="victory-copy"></p>
           <button id="victory-restart-button" class="primary-button" type="button">再来一局</button>
+        </div>
+      </div>
+
+      <div id="rotate-gate" class="rotate-gate hidden" role="alertdialog" aria-live="assertive">
+        <div class="rotate-card">
+          <div class="rotate-phone" aria-hidden="true"><i></i></div>
+          <h2>请横屏游玩</h2>
+          <p class="rotate-copy touch-copy">把设备转成横向 —— 沙海需要更宽的视野。</p>
+          <p class="rotate-copy desktop-copy">把窗口拉得比高度更宽。</p>
+          <p class="rotate-hint">游戏已暂停，转过来就继续。</p>
         </div>
       </div>
 
