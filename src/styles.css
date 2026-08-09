@@ -638,6 +638,23 @@ button { font: inherit; }
   .controls-copy { margin-top: 13px; font-size: 10px; }
 }
 
+/*
+ * 竖屏。
+ * 本作按横屏设计，但不阻断竖屏游玩，所以要把居中的时钟和敌人条挪开 ——
+ * 375px 宽的屏幕上，居中元素的右边缘会压到右上角状态栏的左边缘。
+ * 时钟改为左上纵向排列，敌人条挪到底部提示条上方。
+ */
+@media (pointer: coarse) and (orientation: portrait) {
+  .clock {
+    top: 76px;
+    left: max(10px, env(safe-area-inset-left));
+    transform: none;
+  }
+  #radar { top: 114px; }
+  /* 留够余量：底部提示条会因文案换行长到三行，敌人条不能贴着它。 */
+  .enemy-chip { top: auto; bottom: 224px; }
+}
+
 @media (pointer: coarse) and (orientation: landscape) {
   .objective-chip { max-width: 38vw; }
   .status-strip { width: 190px; }
@@ -704,64 +721,6 @@ button { font: inherit; }
   .inventory-help { margin-top: 6px; line-height: 1.35; }
 }
 
-/* ==========================================================================
-   强制横屏
-   本作是横屏游戏：竖屏时 HUD（左上目标 + 右上五条状态轴 + 左下摇杆 + 右下双按钮）
-   会互相挤压到不可用。所以竖屏直接盖一层遮罩并暂停模拟，转回横屏立刻继续。
-   ========================================================================== */
-.rotate-gate {
-  position: fixed;
-  z-index: 60;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background:
-    linear-gradient(180deg, rgba(28, 20, 10, .92), rgba(12, 9, 5, .97)),
-    radial-gradient(circle at 50% 35%, rgba(190, 150, 90, .35), rgba(12, 9, 5, .9));
-  text-align: center;
-}
-
-.rotate-gate.hidden { display: none; }
-
-.rotate-card { max-width: 340px; }
-
-.rotate-card h2 {
-  margin: 22px 0 10px;
-  color: #ffe6b8;
-  font-size: 26px;
-  font-weight: 900;
-  letter-spacing: .1em;
-}
-
-.rotate-copy { margin: 0; color: #d8c7a6; font-size: 14px; line-height: 1.7; }
-.rotate-hint { margin: 14px 0 0; color: #9c8a6b; font-size: 11px; }
-
-/* 一个会转 90° 的手机剪影，比任何文字都直观。 */
-.rotate-phone {
-  width: 62px;
-  height: 104px;
-  margin: 0 auto;
-  border: 3px solid #e6cd9a;
-  border-radius: 11px;
-  animation: rotate-hint-turn 2.4s ease-in-out infinite;
-}
-
-.rotate-phone i {
-  display: block;
-  width: 22px;
-  height: 3px;
-  margin: 6px auto 0;
-  border-radius: 2px;
-  background: #e6cd9a;
-}
-
-@keyframes rotate-hint-turn {
-  0%, 28% { transform: rotate(0deg); }
-  55%, 100% { transform: rotate(-90deg); }
-}
-
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
-  .rotate-phone { animation: none; transform: rotate(-90deg); }
 }
