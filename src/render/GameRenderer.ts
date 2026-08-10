@@ -1045,7 +1045,8 @@ export class GameRenderer {
         this.scene.add(view.group);
       }
       const spec = CRITTER_SPECS[critter.kind];
-      view.group.position.set(critter.x, this.worldHeight(critter.x, critter.z), critter.z);
+      const terrainY = this.worldHeight(critter.x, critter.z);
+      view.group.position.set(critter.x, terrainY, critter.z);
       view.group.rotation.y = -Math.atan2(critter.facing.z, critter.facing.x);
       if (critter.mode === "dead") {
         // 侧翻缩小，和狼的死亡表现一致。
@@ -1054,10 +1055,17 @@ export class GameRenderer {
       } else {
         view.group.rotation.z = 0;
         view.group.scale.setScalar(spec.scale);
-        // 逃跑时颠得厉害，吃草时几乎不动 —— 远处也能一眼看出它有没有受惊。
-        const bounce = critter.mode === "flee" ? 0.09 : 0.02;
-        const rate = critter.mode === "flee" ? 13 : 3;
-        view.group.position.y += Math.abs(Math.sin(this.time * rate + critter.id)) * bounce;
+        // 使用连续的落脚曲线，避免 abs(sin) 在触地瞬间形成尖角，看起来像模型发抖。
+        // 骆驼体型大、腿长，步态应比小动物更沉稳；吃草时基本保持贴地。
+        const isCamel = critter.kind === "camel";
+        const bounce = isCamel
+          ? (critter.mode === "flee" ? 0.045 : 0.004)
+          : (critter.mode === "flee" ? 0.07 : 0.012);
+        const rate = isCamel
+          ? (critter.mode === "flee" ? 7 : 1.6)
+          : (critter.mode === "flee" ? 10 : 2.5);
+        const stride = (1 - Math.cos(this.time * rate + critter.id * 0.83)) * 0.5;
+        view.group.position.y = terrainY + stride * bounce;
       }
       view.bodyMaterial.color.setHex(critter.hurtFlash > 0 ? 0xe04a46 : CRITTER_COLORS[critter.kind].body);
     }
@@ -1106,7 +1114,9 @@ export class GameRenderer {
       } else {
         view.group.rotation.z = 0;
         view.group.scale.setScalar(kindScale);
-        view.group.position.y = Math.abs(Math.sin(this.time * 8 + wolf.id)) * 0.04;
+        // 只在地形高度之上叠加步态。直接赋成 0~0.04 会把狼埋到地形内部。
+        const stride = (1 - Math.cos(this.time * 8 + wolf.id * 0.83)) * 0.5;
+        view.group.position.y += stride * 0.04;
       }
       view.bodyMaterial.color.setHex(
         wolf.hurtFlash > 0 ? 0xe04a46 : wolf.mode === "retreating" ? 0x7d9094 : wolfBodyColor(wolf),
