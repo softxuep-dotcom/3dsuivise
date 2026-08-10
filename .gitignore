@@ -49,3 +49,7 @@ temp/
 *.blend1
 *.blend2
 /extracted.zip
+
+# Terrain authoring build artifacts (regenerate with build_map.py / generate_heightfield.py)
+authoring/terrain/preview_*.png
+authoring/terrain/__pycache__/

@@ -29,7 +29,7 @@ const ACTION_LABELS: Record<InteractionHint["action"], string> = {
   feed: "添柴",
   cactus: "取汁",
   mine: "采矿",
-  dig: "挖沙",
+  well: "提水",
   none: "行动",
 };
 

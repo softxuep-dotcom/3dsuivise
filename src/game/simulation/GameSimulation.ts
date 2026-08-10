@@ -23,6 +23,7 @@ import type {
   GroundItem,
   InteractionHint,
   IronNode,
+  WellState,
   InventoryItemKind,
   Phase,
   PlayerState,
@@ -38,11 +39,11 @@ import { CRITTER_SPECS, INVENTORY_CAPACITY, INVENTORY_STACK_LIMITS } from "./typ
 
 const PLAYER_RADIUS = 0.72;
 const WOLF_RADIUS = 0.68;
-const FIRST_DAY_DURATION = 55;
-const FIRST_NIGHT_DURATION = 105;
-const LATER_DAY_DURATION = 120;
-const SECOND_NIGHT_DURATION = 120;
-const LATER_NIGHT_DURATION = 135;
+const FIRST_DAY_DURATION = 90;
+const FIRST_NIGHT_DURATION = 150;
+const LATER_DAY_DURATION = 180;
+const SECOND_NIGHT_DURATION = 180;
+const LATER_NIGHT_DURATION = 180;
 const MAX_WOLVES = 120;
 /** 地形拒绝整步移动时依次尝试的缩短比例，见 stepAxis()。 */
 const MOVE_STEP_FALLBACKS = [1, 0.5, 0.25];
@@ -93,27 +94,26 @@ const WARMTH_HEAT_EXIT = 92;
 /** 失温触发/解除阈值。（原图 5 / 5，我们放宽解除以免瞬间反复） */
 const WARMTH_COLD_ENTER = 5;
 const WARMTH_COLD_EXIT = 14;
-/**
- * 白天基础 +0.35/s：静止时 85 点体温要爬 243 秒，超过一个白天，所以站着不动不会中暑。
- * 原图用"沙漠日晒"作为白天升温源，但直射日晒无法解释"静止也中暑"，这里改为劳作产热，见下。
- */
-const WARMTH_DAY_BASE = 0.35;
-/** 夜间流失 -1.25/s：天花板 80 → 0 需 64 秒，约夜晚的一半。 */
-const WARMTH_NIGHT_LOSS = 1.25;
-// 劳作产热已移除。原图（荒漠幸存者）根本没有这一项，而我们把它设成 +0.9/s
-// —— 是整个白天基线(+0.35/s)的 2.7 倍，直接导致"正常采集必然中暑且无法自救"。
-// 详见 docs/复盘-与原图对照.md 的收支对照。
-/** 篝火 +3.4/s：夜晚静止净 +2.15/s，约 37 秒回满到天花板。 */
-const WARMTH_FIRE_GAIN = 3.4;
+// 昼夜各 180 秒，与原图的 375/375 同为对称结构，所以时间压缩系数是全局统一的
+// ×2.083（= 750/360）。下面三条体温速率都是原图值 ×2.083 得来，
+// 结果是各阶段占相位的比例与原图完全一致，见 docs/复盘-与原图对照.md。
+/** 白天 +0.69/s：从白天地板 15 爬到中暑线 100 需 123 秒，占白天的 68% —— 白天必定中暑。 */
+const WARMTH_DAY_BASE = 0.69;
+/** 夜间 -1.39/s：从夜间天花板 80 掉到失温线 5 需 54 秒，占夜晚的 30% —— 必须守火。 */
+const WARMTH_NIGHT_LOSS = 1.39;
+// 劳作产热已移除。原图（荒漠幸存者）根本没有这一项，而我们曾把它设成 +0.9/s
+// —— 是白天基线的 2.7 倍，直接导致"正常采集必然中暑且无法自救"。
+/** 篝火 +3.16/s：夜晚静止净 +1.77/s，约 45 秒从 0 回满到天花板 80。 */
+const WARMTH_FIRE_GAIN = 3.16;
 /** 篝火有效半径：必须真正贴着火，不是"在营地里"就算。 */
 const FIRE_WARMTH_RADIUS = 5.5;
 
 // --- 体力：恒定流失（原图 600HP / -0.7/s ≈ 857 秒） ---
-const HEALTH_DECAY = 0.14; // 100 / 0.14 ≈ 714 秒 ≈ 3 个昼夜
+const HEALTH_DECAY = 0.24; // 100 / 0.24 ≈ 417 秒 ≈ 1.16 个昼夜（原图 857/750 = 1.14）
 
 // --- 水分与饥饿（原图两者都是 -0.2/s，满值 500 秒） ---
-const WATER_DECAY = 0.42;  // 238 秒 ≈ 1 个昼夜
-const HUNGER_DECAY = 0.34; // 294 秒 ≈ 1.2 个昼夜
+const WATER_DECAY = 0.42;  // 238 秒 ≈ 0.66 个昼夜（原图 500/750 = 0.67）
+const HUNGER_DECAY = 0.42; // 238 秒 ≈ 0.66 个昼夜（原图同水分，两轴等速）
 /** 水分低于此值时，取水会抢占所有其它交互，避免玩家被拾取挡着渴死。 */
 const WATER_URGENT = 32;
 
@@ -124,19 +124,23 @@ const STAMINA_IDLE_REGEN = 1.6;   // 站着不动但没进入休息
 const STAMINA_ACTIVE_REGEN = 0.5; // 移动中
 const STAMINA_COST_CACTUS = 10;
 const STAMINA_COST_MINE = 20;
-const STAMINA_COST_DIG = 8;
+const STAMINA_COST_DRAW = 8;
 const STAMINA_COST_ATTACK = 4;
 /** 劳力低于此值时攻击仍可挥出，但伤害衰减到 EXHAUSTED_DAMAGE_SCALE。 */
 const STAMINA_EXHAUSTED = STAMINA_COST_ATTACK;
 const EXHAUSTED_DAMAGE_SCALE = 0.6;
 
-// --- 水源：两级结构，对应原图的「仙人掌取汁」和「干枯的井提水」---
-//   仙人掌：位置固定、产量有限，但**一刀即得**  —— 你得记住它们长在哪
-//   挖沙  ：随处可挖，但要 2.6 秒且常常空手      —— 走投无路时的保底
-// 两者都补水分并降体温（白天救命、夜里危险），差别只在效率和确定性。
-const DIG_SECONDS = 2.6;
-/** 挖沙的出水率：原图挖矿也有 45% 空手，这里同样让保底手段带挫败感。 */
-const DIG_SUCCESS_CHANCE = 0.55;
+// --- 水源：两级结构 ---
+//   仙人掌：位置随机、产量有限，一刀即得 —— 沿途顺手补给
+//   干枯的井：地图上预置的固定水源，必得但要走一趟 —— 规划路线的锚点
+// 原图是「建造干枯的井」+「提水」两级技能，我们省掉建造直接预置几口井。
+// 因此井是**地标**：它不产生"挖不挖"的赌博，而产生"今晚在哪过夜"的空间决策。
+const WELL_DRAW_SECONDS = 2.6;
+/** 井口有效交互半径。 */
+const WELL_REACH = 3.2;
+/** 每口井的蓄水上限，以及回蓄一次所需秒数。 */
+const WELL_CHARGES_MAX = 4;
+const WELL_REFILL_SECONDS = 50;
 const WATER_RESTORE = 26;
 /** 一份水降 14 点体温：正好能把刚中暑的 100 拉到解除线 92 以下。 */
 const WATER_WARMTH_COST = 14;
@@ -157,6 +161,7 @@ export class GameSimulation {
   readonly items: GroundItem[];
   readonly cacti: CactusPatch[];
   readonly ironNodes: IronNode[];
+  readonly wells: WellState[];
   readonly player: PlayerState;
   readonly wolves: WolfState[] = [];
   readonly critters: CritterState[] = [];
@@ -184,6 +189,8 @@ export class GameSimulation {
   /** 本帧玩家是否在移动 —— 劳作产热的输入。 */
   /** 挨打后的休息封锁倒计时，见 REST_COMBAT_LOCK。 */
   private combatTimer = 0;
+  /** 当前正在提水的井 id，-1 表示没有。 */
+  private drawingWellId = -1;
   /** 体温调节动作的冷却（公开给 HUD 显示）。 */
   coolCooldown = 0;
   warmCooldown = 0;
@@ -217,6 +224,7 @@ export class GameSimulation {
     this.items = world.initialItems.map((item) => ({ ...item }));
     this.cacti = world.initialCacti.map((patch) => ({ ...patch }));
     this.ironNodes = world.ironNodes.map((node) => ({ ...node }));
+    this.wells = world.wells.map((well) => ({ id: well.id, charges: WELL_CHARGES_MAX, refillAt: 0 }));
     this.player = {
       x: startCamp.x,
       z: startCamp.z + 1.5,
@@ -278,6 +286,7 @@ export class GameSimulation {
     this.updateWaterGather(delta);
     this.updateFires(delta);
     this.updateCacti();
+    this.updateWells();
     this.updateDrops();
     this.updateCritters(delta);
     this.updateWolves(delta);
@@ -323,12 +332,20 @@ export class GameSimulation {
     if (!this.running) return;
     this.noteActivity();
 
-    // 水分是"归零即死"的轴，而挖沙在正常情况下是交互优先级最低的兜底动作。
-    // 一旦玩家站在枯木堆里，E 会一直被拾取抢走，人就会活活渴死。
-    // 所以水分告急时把取水提到最高优先级 —— 致命需求永远要有出口。
+    // 水分是"归零即死"的轴。一旦玩家站在枯木堆里，E 会一直被拾取抢走，
+    // 人就会活活渴死 —— 所以水分告急时，够得着的水源要抢在拾取前面。
+    // 与旧的挖沙不同，水源现在有位置，够不着就正常往下走别的交互。
     if (this.player.water < WATER_URGENT && !this.player.carrying) {
-      this.beginWaterGather();
-      return;
+      const urgentCactus = this.findNearestCactus(2.7);
+      if (urgentCactus) {
+        this.harvestCactus(urgentCactus);
+        return;
+      }
+      const urgentWell = this.findNearestWell(WELL_REACH);
+      if (urgentWell) {
+        this.beginWaterDraw(urgentWell);
+        return;
+      }
     }
 
     if (this.player.carrying) {
@@ -354,14 +371,7 @@ export class GameSimulation {
 
     const cactusPatch = this.findNearestCactus(2.7);
     if (cactusPatch) {
-      if (!this.spendStamina(STAMINA_COST_CACTUS, "割仙人掌")) return;
-      if (!this.addInventory("cactus-juice", 1)) {
-        this.events.push({ type: "message", text: "背包已满" });
-        return;
-      }
-      cactusPatch.juice -= 1;
-      if (cactusPatch.juice === 0) cactusPatch.regrowAt = this.elapsed + 180;
-      this.events.push({ type: "pickup", kind: "cactus-juice" });
+      this.harvestCactus(cactusPatch);
       return;
     }
 
@@ -378,8 +388,25 @@ export class GameSimulation {
       return;
     }
 
-    // 没有别的可交互目标时，就地挖沙找水 —— 荒漠里最后的保底手段。
-    this.beginWaterGather();
+    const well = this.findNearestWell(WELL_REACH);
+    if (well) {
+      this.beginWaterDraw(well);
+      return;
+    }
+  }
+
+  /** 返回射程内蓄着水的井；没有则 null。 */
+  private findNearestWell(maxDistance: number): WellState | null {
+    let best: WellState | null = null;
+    let bestDistance = maxDistance * maxDistance;
+    for (const well of this.wells) {
+      if (well.charges <= 0) continue;
+      const value = distanceSquared(this.player, this.world.wells[well.id]);
+      if (value >= bestDistance) continue;
+      best = well;
+      bestDistance = value;
+    }
+    return best;
   }
 
   /**
@@ -396,36 +423,62 @@ export class GameSimulation {
     return true;
   }
 
-  /** 挖沙找水：随处可用的保底水源，对应原图的"干枯的井"。 */
-  private beginWaterGather(): void {
+  /** 割仙人掌取汁：一刀即得，代价是劳力和"你得先找到它"。 */
+  private harvestCactus(patch: CactusPatch): void {
+    if (!this.spendStamina(STAMINA_COST_CACTUS, "割仙人掌")) return;
+    if (!this.addInventory("cactus-juice", 1)) {
+      this.events.push({ type: "message", text: "背包已满" });
+      return;
+    }
+    patch.juice -= 1;
+    if (patch.juice === 0) patch.regrowAt = this.elapsed + 180;
+    this.events.push({ type: "pickup", kind: "cactus-juice" });
+  }
+
+  /** 从井里提水：必得，但要站定 2.6 秒，且这口井的存量会被扣掉。 */
+  private beginWaterDraw(well: WellState): void {
     if (this.player.gatherTimer > 0) return;
     if (this.getInventoryCount("water") >= INVENTORY_STACK_LIMITS.water * 2) {
       this.events.push({ type: "message", text: "水已经带够了" });
       return;
     }
-    if (!this.spendStamina(STAMINA_COST_DIG, "挖沙")) return;
-    this.player.gatherTimer = DIG_SECONDS;
-    this.events.push({ type: "dig-water" });
+    if (!this.spendStamina(STAMINA_COST_DRAW, "提水")) return;
+    this.player.gatherTimer = WELL_DRAW_SECONDS;
+    this.drawingWellId = well.id;
+    this.events.push({ type: "draw-water" });
   }
 
   /**
-   * 挖沙结算：只有 55% 的概率见水，其余空手 —— 劳力已经花掉了。
-   * 这个挫败感是刻意的：它让"记住仙人掌长在哪"变成真正有价值的知识。
+   * 提水结算。与旧的挖沙不同，这里**没有失败概率** —— 井就是井，
+   * 代价是它有存量、要走过去、而且回蓄很慢。用空间和时间换掉了随机挫败感。
    */
   private updateWaterGather(delta: number): void {
     if (this.player.gatherTimer <= 0) return;
     this.player.gatherTimer -= delta;
     if (this.player.gatherTimer > 0) return;
     this.player.gatherTimer = 0;
-    if (this.random() > DIG_SUCCESS_CHANCE) {
-      this.events.push({ type: "message", text: "这片沙子底下是干的 · 试试找仙人掌" });
+    const well = this.wells.find((entry) => entry.id === this.drawingWellId);
+    this.drawingWellId = -1;
+    if (!well || well.charges <= 0) {
+      this.events.push({ type: "message", text: "这口井已经见底了" });
       return;
     }
     if (!this.addInventory("water", 1)) {
-      this.events.push({ type: "message", text: "背包已满 · 水渗回沙里了" });
+      this.events.push({ type: "message", text: "背包已满 · 水又倒回井里了" });
       return;
     }
+    well.charges -= 1;
+    if (well.refillAt <= 0) well.refillAt = this.elapsed + WELL_REFILL_SECONDS;
     this.events.push({ type: "pickup", kind: "water" });
+  }
+
+  /** 井的回蓄：每 WELL_REFILL_SECONDS 补一格，补满后停表。 */
+  private updateWells(): void {
+    for (const well of this.wells) {
+      if (well.refillAt <= 0 || this.elapsed < well.refillAt) continue;
+      well.charges = Math.min(WELL_CHARGES_MAX, well.charges + 1);
+      well.refillAt = well.charges >= WELL_CHARGES_MAX ? 0 : this.elapsed + WELL_REFILL_SECONDS;
+    }
   }
 
   requestAttack(): void {
@@ -621,11 +674,12 @@ export class GameSimulation {
   }
 
   getInteractionHint(): InteractionHint {
-    if (this.player.gatherTimer > 0) return { action: "dig", text: "正在挖沙找水…" };
-    // 与 requestInteraction 保持一致：水分告急时，仙人掌优先、其次就地挖沙。
+    if (this.player.gatherTimer > 0) return { action: "well", text: "正在提水…" };
+    // 与 requestInteraction 保持一致：水分告急时，仙人掌优先、其次找井。
     if (this.player.water < WATER_URGENT && !this.player.carrying) {
       if (this.findNearestCactus(2.7)) return { action: "cactus", text: `水分告急 · 割仙人掌 · 劳力 ${STAMINA_COST_CACTUS}` };
-      return { action: "dig", text: `水分告急 · 挖沙找水 · 劳力 ${STAMINA_COST_DIG}` };
+      const urgentWell = this.findNearestWell(WELL_REACH);
+      if (urgentWell) return { action: "well", text: `水分告急 · 提水 · 劳力 ${STAMINA_COST_DRAW}` };
     }
     if (this.player.carrying) {
       const camp = this.findNearestCamp(4.3);
@@ -636,7 +690,9 @@ export class GameSimulation {
     if (item) return { action: "pickup", text: `双手搬起${item.kind === "wood" ? "枯木" : "大石"}` };
     if (this.findNearestCactus(2.7)) return { action: "cactus", text: `割仙人掌取汁 · 劳力 ${STAMINA_COST_CACTUS}` };
     if (this.findNearestIron(2.8)) return { action: "mine", text: `敲取铁矿 · 劳力 ${STAMINA_COST_MINE}` };
-    return { action: "dig", text: `挖沙找水 · 劳力 ${STAMINA_COST_DIG} · 约五成出水` };
+    const well = this.findNearestWell(WELL_REACH);
+    if (well) return { action: "well", text: `从井里提水 · 劳力 ${STAMINA_COST_DRAW} · 井中余 ${well.charges}` };
+    return { action: "none", text: "" };
   }
 
   drainEvents(): GameEvent[] {
@@ -735,7 +791,7 @@ export class GameSimulation {
     if (this.objectiveStage === 0) return "拿起身边的枯木";
     if (this.objectiveStage === 1) return "把枯木送到篝火旁添柴";
     if (this.objectiveStage === 2) return "找到入口旁的大石并搬到缺口中央";
-    if (this.getInventoryCount("water") === 0 && this.getInventoryCount("cactus-juice") === 0) return "先囤水 · 割仙人掌，或空地上挖沙";
+    if (this.getInventoryCount("water") === 0 && this.getInventoryCount("cactus-juice") === 0) return "先囤水 · 割仙人掌，或走一趟水井";
     if (!this.player.hasLeatherCoat && this.getInventoryCount("hide") > 0) return "收集4张兽皮制作基础皮衣";
     const wildWolves = this.wolves.filter((wolf) => wolf.role === "wild" && wolf.mode !== "dead").length;
     if (!this.player.hasLeatherCoat && wildWolves > 0) return `沙海上有 ${wildWolves} 只野狼 · 只有它们掉兽皮`;

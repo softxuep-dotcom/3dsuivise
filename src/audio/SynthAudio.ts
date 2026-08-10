@@ -42,7 +42,7 @@ export class SynthAudio {
       case "drink":
         this.tone(680, 0.14, "sine", 0.32, 0.55);
         break;
-      case "dig-water":
+      case "draw-water":
         this.noise(0.22, 0.22);
         break;
       case "exhausted":

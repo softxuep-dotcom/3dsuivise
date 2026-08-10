@@ -8,6 +8,7 @@ import type {
   GroundItem,
   HillDefinition,
   IronNode,
+  WellDefinition,
   LandmarkDefinition,
   TerrainStyle,
   TreeDefinition,
@@ -149,6 +150,25 @@ export function createWorld(seed = 71291): WorldDefinition {
     });
   }
 
+  // 干枯的井：每座营地配一口，落在营地外 22~34 米的可走地面上。
+  // 距离是刻意的 —— 井必须在"营地视野之外但一趟能来回"的圈上，
+  // 取水才会变成一次需要规划的外出，而不是站在火边顺手就办了。
+  const wells: WellDefinition[] = [];
+  for (const camp of camps) {
+    for (let attempt = 0; attempt < 240; attempt += 1) {
+      const angle = random() * TAU;
+      const radius = 22 + random() * 12;
+      const point = { x: camp.x + Math.cos(angle) * radius, z: camp.z + Math.sin(angle) * radius };
+      if (Math.abs(point.x) > 96 || Math.abs(point.z) > 96) continue;
+      if (!awayFromCamps(point, camps, 6)) continue;
+      if (!isTerrainWalkable(terrainWorld, point) || terrainSlopeAt(terrainWorld, point) > 0.34) continue;
+      if (walls.some((wall) => distance(point, wall) < wall.radius + 2.4)) continue;
+      if (wells.some((well) => distance(point, well) < 26)) continue;
+      wells.push({ id: wells.length, ...point, rotation: random() * TAU });
+      break;
+    }
+  }
+
   const landmarks: LandmarkDefinition[] = [];
   attempts = 0;
   while (landmarks.length < 16 && attempts < 600) {
@@ -182,6 +202,7 @@ export function createWorld(seed = 71291): WorldDefinition {
     initialItems,
     initialCacti,
     ironNodes,
+    wells,
     landmarks,
     startCampId: BLUEPRINT.startCampId,
   };

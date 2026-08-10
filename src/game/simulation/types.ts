@@ -154,6 +154,24 @@ export interface IronNode extends Vec2 {
   rotation: number;
 }
 
+/**
+ * 干枯的井：地图上预置的固定水源。
+ * 原图要玩家先造井再提水，我们省掉建造那一步直接送几口 —— 井因此变成**地标**，
+ * 玩家规划路线和过夜地点时必须把它算进去，而不是像挖沙那样随处摸奖。
+ */
+export interface WellDefinition extends Vec2 {
+  id: number;
+  rotation: number;
+}
+
+export interface WellState {
+  id: number;
+  /** 剩余可提水次数。 */
+  charges: number;
+  /** 下一次回蓄的绝对时刻（elapsed 秒）；charges 已满时为 0。 */
+  refillAt: number;
+}
+
 export interface LandmarkDefinition extends Vec2 {
   id: number;
   kind: LandmarkKind;
@@ -191,7 +209,7 @@ export interface PlayerState extends Vec2 {
   attackCooldown: number;
   attackFlash: number;
   hurtFlash: number;
-  /** 取水动作的剩余秒数，>0 时玩家正在挖沙或割仙人掌。 */
+  /** 取水动作的剩余秒数，>0 时玩家正在提水或割仙人掌。 */
   gatherTimer: number;
   kills: number;
 }
@@ -229,6 +247,7 @@ export interface WorldDefinition {
   initialItems: GroundItem[];
   initialCacti: CactusPatch[];
   ironNodes: IronNode[];
+  wells: WellDefinition[];
   landmarks: LandmarkDefinition[];
   startCampId: number;
 }
@@ -240,7 +259,7 @@ export type GameEvent =
   | { type: "feed-fire"; campId: number }
   | { type: "eat"; kind: "cactus-juice" | "cooked-meat" }
   | { type: "drink" }
-  | { type: "dig-water" }
+  | { type: "draw-water" }
   | { type: "cook" }
   | { type: "thermal"; direction: "cool" | "warm" }
   | { type: "craft-coat" }
@@ -262,7 +281,7 @@ export type GameEvent =
   | { type: "game-over" };
 
 export interface InteractionHint {
-  action: "pickup" | "drop" | "feed" | "cactus" | "mine" | "dig" | "none";
+  action: "pickup" | "drop" | "feed" | "cactus" | "mine" | "well" | "none";
   text: string;
 }
 

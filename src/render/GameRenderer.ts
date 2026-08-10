@@ -259,6 +259,7 @@ export class GameRenderer {
   private readonly itemViews = new Map<number, THREE.Object3D>();
   private readonly cactusViews = new Map<number, THREE.Object3D>();
   private readonly ironViews = new Map<number, THREE.Object3D>();
+  private readonly wellViews = new Map<number, THREE.Object3D>();
   private readonly wolfViews = new Map<number, WolfView>();
   private readonly critterViews = new Map<number, CritterView>();
   private readonly dropViews = new Map<number, THREE.Object3D>();
@@ -307,6 +308,7 @@ export class GameRenderer {
     this.buildCamps();
     this.buildCacti();
     this.buildIronNodes();
+    this.buildWells();
     this.playerBodyMaterial = makeMaterial(0x2f7b8d, 0.75);
     const player = this.buildPlayer();
     this.playerGroup = player.group;
@@ -341,6 +343,7 @@ export class GameRenderer {
     this.syncItems();
     this.syncCacti();
     this.syncIronNodes();
+    this.syncWells();
     this.syncCritters(delta);
     this.syncWolves(delta);
     this.syncDrops();
@@ -698,6 +701,44 @@ export class GameRenderer {
       }
       this.scene.add(group);
       this.ironViews.set(node.id, group);
+    }
+  }
+
+  /**
+   * 干枯的井：一圈石砌井沿 + 一根横木。做得比铁矿显眼 ——
+   * 它是玩家规划路线的地标，必须能在远处一眼认出来。
+   */
+  private buildWells(): void {
+    const stoneMaterial = makeMaterial(0x8a7c63, 1);
+    const beamMaterial = makeMaterial(0x6b5334, 1);
+    for (const well of this.simulation.world.wells) {
+      const group = new THREE.Group();
+      group.position.set(well.x, this.worldHeight(well.x, well.z), well.z);
+      group.rotation.y = well.rotation;
+
+      const rim = new THREE.Mesh(new THREE.CylinderGeometry(1.35, 1.5, 0.82, 12, 1, true), stoneMaterial);
+      rim.position.y = 0.41;
+      rim.castShadow = true;
+      group.add(rim);
+
+      const mouth = new THREE.Mesh(new THREE.CircleGeometry(1.3, 12), makeMaterial(0x1d1710, 1));
+      mouth.rotation.x = -Math.PI / 2;
+      mouth.position.y = 0.8;
+      group.add(mouth);
+
+      for (const side of [-1, 1]) {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 2.1, 6), beamMaterial);
+        post.position.set(side * 1.2, 1.05, 0);
+        post.castShadow = true;
+        group.add(post);
+      }
+      const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 2.6, 6), beamMaterial);
+      beam.rotation.z = Math.PI / 2;
+      beam.position.y = 2.05;
+      group.add(beam);
+
+      this.scene.add(group);
+      this.wellViews.set(well.id, group);
     }
   }
 
@@ -1174,6 +1215,15 @@ export class GameRenderer {
       if (!view) continue;
       view.visible = node.ore > 0;
       if (node.ore > 0) view.scale.setScalar(0.78 + node.ore * 0.09);
+    }
+  }
+
+  /** 井枯了就微微矮一截，玩家远远就能看出这趟是不是白跑。 */
+  private syncWells(): void {
+    for (const well of this.simulation.wells) {
+      const view = this.wellViews.get(well.id);
+      if (!view) continue;
+      view.scale.setScalar(well.charges > 0 ? 1 : 0.9);
     }
   }
 
