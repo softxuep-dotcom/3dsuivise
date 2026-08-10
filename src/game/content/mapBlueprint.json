@@ -7,35 +7,35 @@
   "camps": [
     {
       "x": -13.8, "z": -58.4, "entranceAngle": -0.5236, "kind": "windy-ridge", "terrainStyle": "broken-spur",
-      "elevation": 10.4, "radius": 13, "approachWidth": 2.85, "gate": { "x": 0, "z": 12 }, "gateGap": 2.7,
+      "elevation": 10.4, "radius": 13, "approachWidth": 7.2, "gate": { "x": 0, "z": 12 }, "gateGap": 2.7,
       "platform": [{"x":-8,"z":-13},{"x":-10,"z":-6},{"x":-8,"z":3},{"x":-2,"z":11},{"x":0,"z":14},{"x":2,"z":11},{"x":5,"z":2},{"x":7,"z":-8},{"x":5,"z":-14},{"x":-1,"z":-15}],
       "approach": [{"x":-1,"z":5},{"x":0,"z":12},{"x":4,"z":17},{"x":7,"z":21},{"x":5,"z":25},{"x":0,"z":29}],
       "hostShoulders": []
     },
     {
       "x": -10.3, "z": -15.5, "entranceAngle": -1.5708, "kind": "abandoned-camp", "terrainStyle": "saddle-shoulder",
-      "elevation": 11.8, "radius": 13, "approachWidth": 3.25, "gate": { "x": 10, "z": 4 }, "gateGap": 3.1,
+      "elevation": 11.8, "radius": 13, "approachWidth": 7.6, "gate": { "x": 10, "z": 4 }, "gateGap": 3.1,
       "platform": [{"x":-12,"z":-5},{"x":-10,"z":-9},{"x":-3,"z":-10},{"x":4,"z":-8},{"x":8,"z":-4},{"x":10,"z":4},{"x":6,"z":7},{"x":0,"z":8},{"x":-7,"z":6},{"x":-12,"z":2}],
       "approach": [{"x":4,"z":1},{"x":10,"z":4},{"x":14,"z":7},{"x":16,"z":11},{"x":14,"z":15},{"x":10,"z":19}],
       "hostShoulders": []
     },
     {
       "x": 46.4, "z": -18.9, "entranceAngle": 0.7854, "kind": "deep-cave", "terrainStyle": "cliff-alcove",
-      "elevation": 10.4, "radius": 11, "approachWidth": 2.7, "gate": { "x": 5, "z": 7 }, "gateGap": 2.55,
+      "elevation": 10.4, "radius": 11, "approachWidth": 7.0, "gate": { "x": 5, "z": 7 }, "gateGap": 2.55,
       "platform": [{"x":-7,"z":-9},{"x":4,"z":-9},{"x":7,"z":-5},{"x":7,"z":2},{"x":5,"z":7},{"x":0,"z":9},{"x":-6,"z":7},{"x":-8,"z":2},{"x":-8,"z":-5}],
       "approach": [{"x":1,"z":2},{"x":5,"z":7},{"x":9,"z":10},{"x":10,"z":15},{"x":7,"z":19},{"x":3,"z":21},{"x":1,"z":26},{"x":4,"z":31}],
       "hostShoulders": []
     },
     {
       "x": -41.2, "z": 72.0, "entranceAngle": -2.3562, "kind": "abandoned-camp", "terrainStyle": "wide-ledge",
-      "elevation": 11.8, "radius": 15, "approachWidth": 3.3, "gate": { "x": 14, "z": 3 }, "gateGap": 3.05,
+      "elevation": 11.8, "radius": 15, "approachWidth": 7.8, "gate": { "x": 14, "z": 3 }, "gateGap": 3.05,
       "platform": [{"x":-15,"z":-5},{"x":-16,"z":0},{"x":-13,"z":5},{"x":-2,"z":5},{"x":8,"z":4},{"x":14,"z":3},{"x":15,"z":-2},{"x":10,"z":-5},{"x":0,"z":-5}],
       "approach": [{"x":6,"z":2},{"x":14,"z":3},{"x":20,"z":1},{"x":25,"z":-4},{"x":27,"z":-10},{"x":26,"z":-17},{"x":21,"z":-23}],
       "hostShoulders": []
     },
     {
       "x": 51.6, "z": 61.9, "entranceAngle": 3.1416, "kind": "windy-ridge", "terrainStyle": "wind-crown",
-      "elevation": 11.2, "radius": 15, "approachWidth": 2.8, "gate": { "x": -10, "z": 10 }, "gateGap": 2.7,
+      "elevation": 11.2, "radius": 15, "approachWidth": 7.2, "gate": { "x": -10, "z": 10 }, "gateGap": 2.7,
       "platform": [{"x":-12,"z":-10},{"x":-16,"z":-4},{"x":-15,"z":5},{"x":-12,"z":9},{"x":-10,"z":11},{"x":-8,"z":11},{"x":-3,"z":12},{"x":7,"z":10},{"x":11,"z":4},{"x":10,"z":-5},{"x":5,"z":-11},{"x":-3,"z":-13}],
       "upperPlatform": [{"x":-2,"z":-9},{"x":7,"z":-7},{"x":9,"z":0},{"x":6,"z":5},{"x":-2,"z":5},{"x":-5,"z":0}],
       "approach": [{"x":-4,"z":5},{"x":-10,"z":10},{"x":-16,"z":14},{"x":-19,"z":19},{"x":-16,"z":23},{"x":-9,"z":24},{"x":-3,"z":22},{"x":2,"z":25},{"x":4,"z":31}],

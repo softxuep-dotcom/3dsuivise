@@ -242,6 +242,7 @@ export type GameEvent =
   | { type: "drink" }
   | { type: "dig-water" }
   | { type: "cook" }
+  | { type: "thermal"; direction: "cool" | "warm" }
   | { type: "craft-coat" }
   | { type: "craft-weapon" }
   | { type: "rest"; active: boolean }

@@ -71,6 +71,30 @@ export class HudController {
   private readonly bagUsage = required<HTMLElement>("bag-usage");
   private readonly eatButton = required<HTMLButtonElement>("eat-button");
   private readonly drinkButton = required<HTMLButtonElement>("drink-button");
+  private readonly thermalButton = required<HTMLButtonElement>("thermal-button");
+  private readonly thermalState = required<HTMLElement>("thermal-state");
+
+  /**
+   * 体温调节按钮：一个键管两个方向，所以它必须自己说清楚现在按下去会发生什么，
+   * 以及还要等多久 —— 否则玩家分不清"按了没反应"和"在冷却中"。
+   */
+  private syncThermalButton(warmth: number): void {
+    const hot = warmth > 62;
+    const cold = warmth < 35;
+    const cooldown = hot ? this.simulation.coolCooldown : this.simulation.warmCooldown;
+    if (!hot && !cold) {
+      this.thermalState.textContent = "适宜";
+      this.thermalButton.disabled = true;
+      return;
+    }
+    if (cooldown > 0) {
+      this.thermalState.textContent = `${Math.ceil(cooldown)}s`;
+      this.thermalButton.disabled = true;
+      return;
+    }
+    this.thermalState.textContent = hot ? "降温" : "取暖";
+    this.thermalButton.disabled = false;
+  }
   private readonly objective = required<HTMLElement>("objective");
   private readonly dayLabel = required<HTMLElement>("day-label");
   private readonly phaseLabel = required<HTMLElement>("phase-label");
@@ -184,6 +208,7 @@ export class HudController {
     const waters = this.simulation.getInventoryCount("water");
     this.waterCount.textContent = String(waters);
     this.drinkButton.disabled = waters <= 0 || player.water >= 99;
+    this.syncThermalButton(player.warmth);
     this.bagUsage.textContent = `${player.inventory.filter(Boolean).length}/8`;
     this.objective.textContent = this.simulation.getObjective();
     this.dayLabel.textContent = `第 ${this.simulation.day} 天 · ${this.simulation.getCurrentLocationLabel()} · 狼 ${this.simulation.wolves.filter((wolf) => wolf.mode !== "dead").length}`;

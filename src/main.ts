@@ -51,6 +51,7 @@ const input = new InputController({
   onAttack: () => runGameplayAction(() => simulation.requestAttack()),
   onEat: () => runGameplayAction(() => simulation.consumeJuice()),
   onDrink: () => runGameplayAction(() => simulation.consumeWater()),
+  onThermal: () => runGameplayAction(() => simulation.requestThermalAction()),
   onInventory: () => hud.toggleInventory(),
 });
 input.bindCanvas(renderer.canvas, (x, y) => renderer.screenToWorld(x, y));

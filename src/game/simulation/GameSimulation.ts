@@ -44,6 +44,26 @@ const LATER_DAY_DURATION = 120;
 const SECOND_NIGHT_DURATION = 120;
 const LATER_NIGHT_DURATION = 135;
 const MAX_WOLVES = 120;
+/** 地形拒绝整步移动时依次尝试的缩短比例，见 stepAxis()。 */
+const MOVE_STEP_FALLBACKS = [1, 0.5, 0.25];
+/** 挨打后多少秒内不能休息（原本是"附近有狼"，夜里几乎恒为真）。 */
+const REST_COMBAT_LOCK = 6;
+
+// --- 体温调节动作（移植自原图 A02B 尿 / A06M 活埋）---
+// 原图的降温主力从来不是喝水（饮品只给 -5~12），而是这类**零资源消耗**的动作。
+// 它们的存在保证了玩家再穷也有自救手段，不会被锁死在中暑/失温里。
+const COOL_ACTION_WARMTH = 15;    // 原图 A02B 尿：固定 -15
+const COOL_ACTION_COOLDOWN = 40;
+const WARM_ACTION_WARMTH = 25;    // 原图 A06M 活埋：固定 +25
+const WARM_ACTION_COOLDOWN = 40;
+/** 落在这个区间内两个方向都不给按，避免玩家在舒适区里空转 CD。 */
+const THERMAL_COMFORT_LOW = 35;
+const THERMAL_COMFORT_HIGH = 62;
+
+// --- 仙人掌汁：对齐原图 I00B（触发器 006________11）的随机区间 ---
+const JUICE_WATER: readonly [number, number] = [8, 16];
+const JUICE_HUNGER: readonly [number, number] = [1, 5];
+const JUICE_WARMTH: readonly [number, number] = [5, 10];
 const DROP_LIFETIME = 180;
 
 // ============================================================================
@@ -80,14 +100,9 @@ const WARMTH_COLD_EXIT = 14;
 const WARMTH_DAY_BASE = 0.35;
 /** 夜间流失 -1.25/s：天花板 80 → 0 需 64 秒，约夜晚的一半。 */
 const WARMTH_NIGHT_LOSS = 1.25;
-/**
- * 劳作产热 +0.9/s（搬东西时 ×1.4）。这是全作最关键的一条对称设计：
- *   白天奔波 = 0.35 + 0.9 = +1.25/s → 68 秒就会中暑，必须靠喝水压温；
- *   夜晚奔跑 = -1.25 + 0.9 = -0.35/s → 火灭了也能靠不停跑动多撑 3 分钟。
- * 同一个动作，白天是危险、夜晚是活路。
- */
-const WARMTH_EXERTION = 0.9;
-const WARMTH_EXERTION_CARRY = 1.4;
+// 劳作产热已移除。原图（荒漠幸存者）根本没有这一项，而我们把它设成 +0.9/s
+// —— 是整个白天基线(+0.35/s)的 2.7 倍，直接导致"正常采集必然中暑且无法自救"。
+// 详见 docs/survival-systems.md 的收支对照。
 /** 篝火 +3.4/s：夜晚静止净 +2.15/s，约 37 秒回满到天花板。 */
 const WARMTH_FIRE_GAIN = 3.4;
 /** 篝火有效半径：必须真正贴着火，不是"在营地里"就算。 */
@@ -167,7 +182,11 @@ export class GameSimulation {
   private navigationCountdown = 0;
   private wildRespawnCountdown = 0;
   /** 本帧玩家是否在移动 —— 劳作产热的输入。 */
-  private exerting = false;
+  /** 挨打后的休息封锁倒计时，见 REST_COMBAT_LOCK。 */
+  private combatTimer = 0;
+  /** 体温调节动作的冷却（公开给 HUD 显示）。 */
+  coolCooldown = 0;
+  warmCooldown = 0;
   private objectiveStage = 0;
   private gameOverSent = false;
   private duskWarningSent = false;
@@ -240,12 +259,14 @@ export class GameSimulation {
     this.player.attackFlash = Math.max(0, this.player.attackFlash - delta);
     this.player.hurtFlash = Math.max(0, this.player.hurtFlash - delta);
     const isMoving = Math.hypot(movement.x, movement.z) >= 0.08;
-    this.exerting = isMoving;
     this.updatePlayerMovement(delta, movement, isMoving);
     if (!this.clockStarted) return;
 
     this.elapsed += delta;
     this.phaseTime -= delta;
+    this.combatTimer = Math.max(0, this.combatTimer - delta);
+    this.coolCooldown = Math.max(0, this.coolCooldown - delta);
+    this.warmCooldown = Math.max(0, this.warmCooldown - delta);
     if (!isMoving) this.player.idleTime += delta;
     this.navigationCountdown -= delta;
     if (this.navigationCountdown <= 0) {
@@ -494,12 +515,14 @@ export class GameSimulation {
     // 肉主要补体力和饥饿，仙人掌汁偏水分，水是纯水分且都要付体温代价。
     // 仙人掌汁：补水为主、少量顶饿，并且和水一样降体温（原图 I00B 就是这么设计的）。
     if (stack.kind === "cactus-juice") {
-      if (this.isNourishmentFull(9, 20, 3)) return;
+      // 对齐原图 I00B（触发器 006________11）：水分 +8~16、饥饿 +1~5、体温 -5~-10。
+      // 原图所有消耗品都是随机区间而非固定值，所以每次采集的收益是有波动的。
+      if (this.isNourishmentFull(JUICE_HUNGER[1], JUICE_WATER[1], 3)) return;
       this.removeFromSlot(index, 1);
-      this.player.hunger = clamp(this.player.hunger + 9, 0, 100);
-      this.player.water = clamp(this.player.water + 20, 0, 100);
+      this.player.hunger = clamp(this.player.hunger + this.randomInt(...JUICE_HUNGER), 0, 100);
+      this.player.water = clamp(this.player.water + this.randomInt(...JUICE_WATER), 0, 100);
       this.player.health = clamp(this.player.health + 3, 0, this.player.maxHealth);
-      this.player.warmth = clamp(this.player.warmth - 9, WARMTH_MIN, WARMTH_MAX);
+      this.player.warmth = clamp(this.player.warmth - this.randomInt(...JUICE_WARMTH), WARMTH_MIN, WARMTH_MAX);
       this.updateCondition();
       this.events.push({ type: "eat", kind: "cactus-juice" });
       return;
@@ -529,10 +552,9 @@ export class GameSimulation {
       return;
     }
     if (stack.kind === "raw-meat") {
-      if (!this.findNearestLitCamp(4.6)) {
-        this.events.push({ type: "message", text: "靠近燃烧的篝火才能烤肉" });
-        return;
-      }
+      // 原图（荒漠幸存者）的生肉直接就能吃，烤肉只是另一个更好的独立物品，
+      // 从来不是吃肉的前置。原先这里要求距篝火 4.6 以内，等于把玩家摁在
+      // +3.4/s 的热源里，白天必然中暑 —— 距火判定已移除。
       this.removeFromSlot(index, 1);
       this.addInventory("cooked-meat", 1);
       this.events.push({ type: "cook" });
@@ -544,6 +566,11 @@ export class GameSimulation {
       return;
     }
     this.events.push({ type: "message", text: this.player.hasLeatherCoat ? "已经穿着基础皮衣" : "收集4张兽皮可制作基础皮衣" });
+  }
+
+  /** 闭区间随机整数，对应原图的 GetRandomInt。 */
+  private randomInt(min: number, max: number): number {
+    return min + Math.floor(this.random() * (max - min + 1));
   }
 
   /** 三条轴都已经满到吃了也不回血的程度时，别浪费这份food。 */
@@ -765,9 +792,6 @@ export class GameSimulation {
     if (nearFire) warmthDelta += WARMTH_FIRE_GAIN;
     if (this.phase === "day") warmthDelta += WARMTH_DAY_BASE;
     else warmthDelta -= WARMTH_NIGHT_LOSS;
-    if (this.exerting) {
-      warmthDelta += WARMTH_EXERTION * (this.player.carrying ? WARMTH_EXERTION_CARRY : 1);
-    }
     let warmth = this.player.warmth + delta * warmthDelta;
 
     // 昼夜反向夹逼：白天有地板、夜晚有天花板。
@@ -778,6 +802,43 @@ export class GameSimulation {
     this.player.warmth = clamp(warmth, WARMTH_MIN, WARMTH_MAX);
 
     this.updateCondition();
+  }
+
+  /**
+   * 体温调节：一个按键，方向由当前体温决定 —— 偏热就降温、偏冷就升温。
+   * 两个方向各自独立冷却，都不消耗任何资源（对应原图 A02B 尿 / A06M 活埋）。
+   * 舒适区内不给按，免得白白空转冷却。
+   */
+  requestThermalAction(): void {
+    if (!this.running) return;
+    const warmth = this.player.warmth;
+    if (warmth > THERMAL_COMFORT_HIGH) {
+      if (this.coolCooldown > 0) {
+        this.events.push({ type: "message", text: `降温还需 ${Math.ceil(this.coolCooldown)} 秒` });
+        return;
+      }
+      this.noteActivity();
+      this.coolCooldown = COOL_ACTION_COOLDOWN;
+      this.player.warmth = clamp(warmth - COOL_ACTION_WARMTH, WARMTH_MIN, WARMTH_MAX);
+      this.updateCondition();
+      this.events.push({ type: "thermal", direction: "cool" });
+      this.events.push({ type: "message", text: `就地降温 · 体温 -${COOL_ACTION_WARMTH}` });
+      return;
+    }
+    if (warmth < THERMAL_COMFORT_LOW) {
+      if (this.warmCooldown > 0) {
+        this.events.push({ type: "message", text: `取暖还需 ${Math.ceil(this.warmCooldown)} 秒` });
+        return;
+      }
+      this.noteActivity();
+      this.warmCooldown = WARM_ACTION_COOLDOWN;
+      this.player.warmth = clamp(warmth + WARM_ACTION_WARMTH, WARMTH_MIN, WARMTH_MAX);
+      this.updateCondition();
+      this.events.push({ type: "thermal", direction: "warm" });
+      this.events.push({ type: "message", text: `钻进沙里保温 · 体温 +${WARM_ACTION_WARMTH}` });
+      return;
+    }
+    this.events.push({ type: "message", text: "体温还在舒适区 · 不用调节" });
   }
 
   /** 体温越界的进入/解除带迟滞，避免在阈值上反复横跳。 */
@@ -828,17 +889,12 @@ export class GameSimulation {
     if (player.hunger < 20) return "太饿睡不着 · 先吃东西";
     if (player.water < 20) return "太渴睡不着 · 先喝水";
     if (this.phase === "night" && player.warmth <= 30) return "冻得睡不着 · 靠近篝火再休息";
-    if (this.isThreatNearby()) return "附近有狼 · 无法休息";
-    if (player.idleTime < 5) return null;
+    // 只有"刚挨过打"才禁止休息，而不是"附近有狼"。
+    // 按距离判定会让夜里任何时候都休息不了 —— 夜间地图上本来就有几十只狼，
+    // 20 米的追击半径几乎覆盖全图，玩家只会看到一句解释不了的"附近有狼"。
+    if (this.combatTimer > 0) return `刚受到攻击 · ${Math.ceil(this.combatTimer)} 秒后可休息`;
+    if (player.idleTime < 5) return `站定 ${Math.ceil(5 - player.idleTime)} 秒后开始休息`;
     return null;
-  }
-
-  private isThreatNearby(): boolean {
-    return this.wolves.some((wolf) => {
-      if (wolf.mode === "dead") return false;
-      const dangerRadius = wolf.mode === "chase" ? 20 : wolf.mode === "raid" ? 11 : 0;
-      return dangerRadius > 0 && distanceSquared(wolf, this.player) < dangerRadius * dangerRadius;
-    });
   }
 
   private updateRest(delta: number): void {
@@ -972,6 +1028,7 @@ export class GameSimulation {
         const damage = Math.max(1, wolf.attack - this.player.defense);
         this.player.health -= damage;
         this.player.hurtFlash = 0.3;
+        this.combatTimer = REST_COMBAT_LOCK;
         this.noteActivity();
         this.events.push({ type: "player-hit", amount: damage });
       }
@@ -1630,14 +1687,26 @@ export class GameSimulation {
     this.events.push({ type: "drop", kind });
   }
 
+  /**
+   * 推进单个轴，整步被地形拒绝时退而求其次走半步、四分之一步。
+   * 没有这个回退的话，贴着坡沿走会在"整步 0.14m"和"原地不动"之间反复横跳
+   * —— 那正是走路发卡的手感。有了回退，玩家会平滑地贴到坡沿再停住。
+   */
+  private stepAxis(entity: Vec2, axis: "x" | "z", amount: number): void {
+    const origin = entity[axis];
+    for (const scale of MOVE_STEP_FALLBACKS) {
+      entity[axis] = origin + amount * scale;
+      const from = axis === "x" ? { x: origin, z: entity.z } : { x: entity.x, z: origin };
+      if (this.canTraverseTerrain(from, entity)) return;
+    }
+    entity[axis] = origin;
+  }
+
   private moveEntity(entity: Vec2, dx: number, dz: number, radius: number, collideWithItems: boolean): void {
-    const originalX = entity.x;
-    entity.x += dx;
-    if (!this.canTraverseTerrain({ x: originalX, z: entity.z }, entity)) entity.x = originalX;
+    // 分轴推进本身就提供了沿墙滑行：一轴被挡时另一轴仍然生效。
+    this.stepAxis(entity, "x", dx);
     this.resolveCollisions(entity, radius, collideWithItems);
-    const originalZ = entity.z;
-    entity.z += dz;
-    if (!this.canTraverseTerrain({ x: entity.x, z: originalZ }, entity)) entity.z = originalZ;
+    this.stepAxis(entity, "z", dz);
     this.resolveCollisions(entity, radius, collideWithItems);
     const half = this.world.size / 2 - radius;
     entity.x = clamp(entity.x, -half, half);

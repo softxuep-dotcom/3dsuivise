@@ -1,4 +1,6 @@
 import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import type { GameSimulation } from "../game/simulation/GameSimulation";
 import { clamp, lerp, mulberry32 } from "../game/simulation/geometry";
 import type { CampDefinition, CritterKind, CritterState, GroundItem, Vec2, WolfState, WorldDefinition, WorldDrop } from "../game/simulation/types";
@@ -238,12 +240,21 @@ export class GameRenderer {
   private readonly worldPoint = new THREE.Vector3();
   private readonly cameraFocus = new THREE.Vector3();
   private readonly playerGroup: THREE.Group;
+  private readonly playerFallback: THREE.Group;
   private readonly playerBodyMaterial: THREE.MeshStandardMaterial;
   private readonly carriedWood: THREE.Object3D;
   private readonly carriedStone: THREE.Object3D;
   private readonly club: THREE.Mesh;
   private readonly spear: THREE.Group;
   private readonly playerCoat: THREE.Group;
+  private readonly previousPlayerPosition = new THREE.Vector2();
+  private readonly playerActions = new Map<string, THREE.AnimationAction>();
+  private readonly playerModelMaterials = new Set<THREE.MeshStandardMaterial>();
+  private playerModel: THREE.Group | null = null;
+  private playerCape: THREE.Object3D | null = null;
+  private playerMixer: THREE.AnimationMixer | null = null;
+  private currentPlayerAction: THREE.AnimationAction | null = null;
+  private currentPlayerAnimation = "";
   private readonly campViews = new Map<number, CampView>();
   private readonly itemViews = new Map<number, THREE.Object3D>();
   private readonly cactusViews = new Map<number, THREE.Object3D>();
@@ -299,12 +310,15 @@ export class GameRenderer {
     this.playerBodyMaterial = makeMaterial(0x2f7b8d, 0.75);
     const player = this.buildPlayer();
     this.playerGroup = player.group;
+    this.playerFallback = player.fallback;
     this.carriedWood = player.carriedWood;
     this.carriedStone = player.carriedStone;
     this.club = player.club;
     this.spear = player.spear;
     this.playerCoat = player.coat;
     this.scene.add(this.playerGroup);
+    this.previousPlayerPosition.set(simulation.player.x, simulation.player.z);
+    void this.loadPlayerAsset();
     this.sand = this.buildSand();
     this.scene.add(this.sand);
 
@@ -857,6 +871,7 @@ export class GameRenderer {
 
   private buildPlayer(): {
     group: THREE.Group;
+    fallback: THREE.Group;
     carriedWood: THREE.Object3D;
     carriedStone: THREE.Object3D;
     club: THREE.Mesh;
@@ -864,26 +879,28 @@ export class GameRenderer {
     coat: THREE.Group;
   } {
     const group = new THREE.Group();
+    const fallback = new THREE.Group();
+    group.add(fallback);
     const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.56, 1.05, 4, 7), this.playerBodyMaterial);
     body.position.y = 1.27;
     body.castShadow = true;
-    group.add(body);
+    fallback.add(body);
 
     const hoodMaterial = makeMaterial(0x173942, 0.85);
     const faceMaterial = makeMaterial(0xd9a17e, 0.8);
     const hood = new THREE.Mesh(new THREE.SphereGeometry(0.48, 8, 6), hoodMaterial);
     hood.position.set(0, 2.12, 0);
     hood.castShadow = true;
-    group.add(hood);
+    fallback.add(hood);
     const face = new THREE.Mesh(new THREE.SphereGeometry(0.28, 7, 5), faceMaterial);
     face.position.set(0.35, 2.12, 0);
     face.scale.set(0.65, 0.85, 0.85);
-    group.add(face);
+    fallback.add(face);
 
     const pack = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.75, 0.72), makeMaterial(0x5c4933, 1));
     pack.position.set(-0.43, 1.42, 0);
     pack.castShadow = true;
-    group.add(pack);
+    fallback.add(pack);
 
     const coat = new THREE.Group();
     const coatMaterial = makeMaterial(0x6b3f2d, 1);
@@ -896,7 +913,7 @@ export class GameRenderer {
     collar.rotation.x = Math.PI / 2;
     coat.add(coatBody, collar);
     coat.visible = false;
-    group.add(coat);
+    fallback.add(coat);
 
     const club = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.14, 1.55, 6), makeMaterial(0x59402e, 1));
     club.position.set(0.55, 1.12, -0.46);
@@ -927,7 +944,119 @@ export class GameRenderer {
     carriedStone.scale.setScalar(0.85);
     carriedStone.visible = false;
     group.add(carriedStone);
-    return { group, carriedWood, carriedStone, club, spear, coat };
+    return { group, fallback, carriedWood, carriedStone, club, spear, coat };
+  }
+
+  /**
+   * KayKit 的人物和动画分开发布，但都使用 Rig_Medium。
+   * 动画轨道会按骨骼名绑定到人物，武器则挂到官方预留的 handslot.r。
+   */
+  private async loadPlayerAsset(): Promise<void> {
+    const loader = new GLTFLoader();
+    loader.setMeshoptDecoder(MeshoptDecoder);
+    const assetRoot = "/assets/characters/kaykit";
+    try {
+      const [character, movement, general, combat] = await Promise.all([
+        loader.loadAsync(`${assetRoot}/Rogue_Hooded.glb`),
+        loader.loadAsync(`${assetRoot}/Rig_Medium_MovementBasic.glb`),
+        loader.loadAsync(`${assetRoot}/Rig_Medium_General.glb`),
+        loader.loadAsync(`${assetRoot}/Rig_Medium_CombatMelee.glb`),
+      ]);
+
+      const model = character.scene;
+      model.name = "KayKit_Rogue_Hooded";
+      const bounds = new THREE.Box3().setFromObject(model);
+      const sourceHeight = Math.max(0.001, bounds.max.y - bounds.min.y);
+      const modelScale = 2.6 / sourceHeight;
+      model.scale.setScalar(modelScale);
+      model.position.y = -bounds.min.y * modelScale;
+      // KayKit 人物原始朝向为 +Z；游戏内逻辑的正面是 +X。
+      model.rotation.y = Math.PI / 2;
+
+      model.traverse((object) => {
+        if (!(object instanceof THREE.Mesh)) return;
+        object.castShadow = true;
+        object.frustumCulled = false;
+        const sourceMaterials = Array.isArray(object.material) ? object.material : [object.material];
+        const clonedMaterials = sourceMaterials.map((material) => material.clone());
+        object.material = Array.isArray(object.material) ? clonedMaterials : clonedMaterials[0];
+        for (const material of clonedMaterials) {
+          if (material instanceof THREE.MeshStandardMaterial) this.playerModelMaterials.add(material);
+        }
+      });
+
+      this.playerModel = model;
+      this.playerCape = model.getObjectByName("RogueHooded_Cape") ?? null;
+      if (this.playerCape) this.playerCape.visible = this.simulation.player.hasLeatherCoat;
+      this.playerFallback.visible = false;
+      this.playerGroup.add(model);
+      this.attachPlayerWeapons(model);
+
+      this.playerMixer = new THREE.AnimationMixer(model);
+      const clips = [...movement.animations, ...general.animations, ...combat.animations];
+      for (const clip of clips) {
+        if (!clip.name || clip.name === "T-Pose") continue;
+        this.playerActions.set(clip.name, this.playerMixer.clipAction(clip));
+      }
+      this.playPlayerAnimation("Idle_A");
+    } catch (error) {
+      console.warn("KayKit player failed to load; keeping the procedural fallback.", error);
+    }
+  }
+
+  private attachPlayerWeapons(model: THREE.Object3D): void {
+    const rightHandSlot = model.getObjectByName("handslot.r") ?? model.getObjectByName("hand.r");
+    if (!rightHandSlot) return;
+
+    rightHandSlot.add(this.club);
+    this.club.position.set(0, 0.48, 0);
+    this.club.rotation.set(0, 0, 0);
+    this.club.scale.setScalar(0.86);
+
+    rightHandSlot.add(this.spear);
+    this.spear.position.set(0, 0.04, 0);
+    this.spear.rotation.set(0, 0, 0);
+    this.spear.scale.setScalar(0.86);
+  }
+
+  private playPlayerAnimation(name: string, oneShot = false, speed = 1): void {
+    const action = this.playerActions.get(name);
+    if (!action || this.currentPlayerAnimation === name) return;
+
+    const fadeDuration = oneShot ? 0.04 : 0.12;
+    this.currentPlayerAction?.fadeOut(fadeDuration);
+    action.reset();
+    action.enabled = true;
+    action.clampWhenFinished = oneShot;
+    action.setLoop(oneShot ? THREE.LoopOnce : THREE.LoopRepeat, oneShot ? 1 : Infinity);
+    action.setEffectiveTimeScale(speed);
+    action.setEffectiveWeight(1);
+    action.fadeIn(fadeDuration).play();
+    this.currentPlayerAction = action;
+    this.currentPlayerAnimation = name;
+  }
+
+  private syncPlayerAnimation(delta: number, moving: boolean): void {
+    if (!this.playerMixer) return;
+    const player = this.simulation.player;
+
+    if (player.attackFlash > 0) {
+      const attackName = player.weapon === "iron-spear" ? "Melee_2H_Attack_Stab" : "Melee_1H_Attack_Chop";
+      const attack = this.playerActions.get(attackName);
+      const speed = attack ? attack.getClip().duration / 0.22 : 1;
+      this.playPlayerAnimation(attackName, true, speed);
+    } else if (player.hurtFlash > 0) {
+      const hit = this.playerActions.get("Hit_A");
+      const speed = hit ? hit.getClip().duration / 0.3 : 1;
+      this.playPlayerAnimation("Hit_A", true, speed);
+    } else if (moving) {
+      this.playPlayerAnimation("Running_A", false, 1.15);
+    } else if (player.resting) {
+      this.playPlayerAnimation("Idle_B", false, 0.55);
+    } else {
+      this.playPlayerAnimation("Idle_A");
+    }
+    this.playerMixer.update(delta);
   }
 
   /** 风沙：贴地横向吹，而不是从天上落下来。 */
@@ -950,24 +1079,38 @@ export class GameRenderer {
 
   private syncPlayer(delta: number): void {
     const player = this.simulation.player;
-    const restingHeight = player.resting ? -0.5 : 0;
-    const idleBob = player.resting ? Math.sin(this.time * 2) * 0.012 : Math.sin(this.time * 9) * 0.025;
+    const movedDistance = Math.hypot(
+      player.x - this.previousPlayerPosition.x,
+      player.z - this.previousPlayerPosition.y,
+    );
+    const moving = movedDistance > Math.max(0.004, delta * 0.05);
+    this.previousPlayerPosition.set(player.x, player.z);
+    const restingHeight = player.resting ? (this.playerModel ? -0.12 : -0.5) : 0;
+    const idleBob = this.playerModel ? 0 : player.resting ? Math.sin(this.time * 2) * 0.012 : Math.sin(this.time * 9) * 0.025;
     this.playerGroup.position.set(player.x, this.worldHeight(player.x, player.z) + restingHeight + idleBob, player.z);
     const angle = -Math.atan2(player.facing.z, player.facing.x);
     this.playerGroup.rotation.y = angle;
     const attackProgress = player.attackFlash > 0 ? 1 - player.attackFlash / 0.22 : 0;
     this.club.visible = player.weapon === "wood-club";
     this.spear.visible = player.weapon === "iron-spear";
-    this.club.rotation.z = -0.35 - Math.sin(attackProgress * Math.PI) * 1.7;
-    this.spear.rotation.z = -0.24 - Math.sin(attackProgress * Math.PI) * 1.25;
+    if (!this.playerModel) {
+      this.club.rotation.z = -0.35 - Math.sin(attackProgress * Math.PI) * 1.7;
+      this.spear.rotation.z = -0.24 - Math.sin(attackProgress * Math.PI) * 1.25;
+    }
     this.carriedWood.visible = player.carrying === "wood";
     this.carriedStone.visible = player.carrying === "stone";
-    this.playerCoat.visible = player.hasLeatherCoat;
+    this.playerCoat.visible = player.hasLeatherCoat && !this.playerModel;
+    if (this.playerCape) this.playerCape.visible = player.hasLeatherCoat;
     const hurt = player.hurtFlash > 0;
     this.playerBodyMaterial.color.setHex(hurt ? 0xe4544d : 0x2f7b8d);
+    for (const material of this.playerModelMaterials) {
+      material.emissive.setHex(hurt ? 0x5b100c : 0x000000);
+      material.emissiveIntensity = hurt ? 0.8 : 0;
+    }
     if (hurt) this.cameraShake = Math.max(this.cameraShake, 0.13);
-    const targetScaleY = player.resting ? 0.74 : player.attackFlash > 0 ? 0.93 : 1;
+    const targetScaleY = this.playerModel ? 1 : player.resting ? 0.74 : player.attackFlash > 0 ? 0.93 : 1;
     this.playerGroup.scale.y = lerp(this.playerGroup.scale.y, targetScaleY, delta * 15);
+    this.syncPlayerAnimation(delta, moving);
   }
 
   private syncItems(): void {
