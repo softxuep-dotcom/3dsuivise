@@ -377,7 +377,11 @@ export class GameRenderer {
     this.camera.aspect = width / height;
     this.camera.fov = width < 760 ? (width < height ? 58 : 50) : 47;
     this.camera.updateProjectionMatrix();
-    this.renderer.setSize(width, height, false);
+    // Keep the CSS size in viewport pixels while WebGL uses the DPR-scaled
+    // drawing buffer internally. With `updateStyle = false`, the canvas's
+    // intrinsic DPR-scaled dimensions become its layout size on mobile,
+    // cropping the view and pushing the real screen centre down-right.
+    this.renderer.setSize(width, height);
   };
 
   private buildGround(): THREE.Mesh {
@@ -995,7 +999,10 @@ export class GameRenderer {
   private async loadPlayerAsset(): Promise<void> {
     const loader = new GLTFLoader();
     loader.setMeshoptDecoder(MeshoptDecoder);
-    const assetRoot = "/assets/characters/kaykit";
+    // GitHub Pages serves the game from a project subdirectory. Resolve assets
+    // from Vite's configured base instead of the site root so the model does
+    // not 404 and fall back to the procedural player in production.
+    const assetRoot = `${import.meta.env.BASE_URL}assets/characters/kaykit`;
     try {
       const [character, movement, general, combat] = await Promise.all([
         loader.loadAsync(`${assetRoot}/Rogue_Hooded.glb`),
