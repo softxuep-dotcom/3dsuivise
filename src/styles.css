@@ -175,6 +175,9 @@ button { font: inherit; }
 }
 .meter.warmth.toward-cold i b { background: linear-gradient(90deg, #3f77c9, #8fc0f5); }
 .meter.warmth.toward-hot i b { background: linear-gradient(90deg, #e7782e, #ffc05e); }
+/* 剩余不足 25 秒时读数开始闪，把"该回火边了"从算数变成条件反射。 */
+.meter.warmth.counting-down em { color: #ffb27a; animation: warmth-pulse 1s ease-in-out infinite; }
+@keyframes warmth-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
 
 .condition-badge {
   margin: 0 0 8px;

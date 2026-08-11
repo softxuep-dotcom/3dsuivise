@@ -435,7 +435,16 @@ export class HudController {
     this.warmthBar.style.width = `${Math.abs(offset)}%`;
     this.warmthMeter.classList.toggle("toward-hot", value > 62);
     this.warmthMeter.classList.toggle("toward-cold", value < 35);
-    this.warmthValue.textContent = String(Math.round(value));
+
+    // 数值旁挂一个倒计时：按当前速率还有多少秒撞上中暑/失温。
+    // 夜里"我还能在外面待多久"是玩家最需要却最猜不出的数，猜不出就干脆不出门。
+    const trend = this.simulation.getWarmthTrend();
+    const seconds = trend.secondsToDanger;
+    const urgent = seconds !== null && seconds <= 90;
+    this.warmthValue.textContent = urgent
+      ? `${Math.round(value)} · ${Math.ceil(seconds)}s`
+      : String(Math.round(value));
+    this.warmthMeter.classList.toggle("counting-down", urgent && seconds <= 25);
   }
 
   private setMeter(bar: HTMLElement, valueLabel: HTMLElement, rawValue: number, max = 100): void {

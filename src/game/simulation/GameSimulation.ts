@@ -163,8 +163,16 @@ const WARMTH_COLD_EXIT = 14;
 // 结果是各阶段占相位的比例与原图完全一致，见 docs/复盘-与原图对照.md。
 /** 白天 +0.69/s：从白天地板 15 爬到中暑线 100 需 123 秒，占白天的 68% —— 白天必定中暑。 */
 const WARMTH_DAY_BASE = 0.69;
-/** 夜间 -1.39/s：从夜间天花板 80 掉到失温线 5 需 54 秒，占夜晚的 30% —— 必须守火。 */
-const WARMTH_NIGHT_LOSS = 1.39;
+/**
+ * 夜间 -1.05/s：从天花板 80 掉到失温线 5 需 71 秒，占夜晚的 40%。
+ *
+ * 这一条**故意偏离** ×2.083 的等比换算（严格换算是 1.39）。原因是时间压缩保住了
+ * 比例却保不住手感：原图夜损 0.667 给玩家 118 秒的外出窗口，等比压缩后只剩 54 秒 ——
+ * 比例同样是三成，但人做决策、导航、应对突发所需要的是**绝对秒数**，它不随游戏时钟缩放。
+ * 54 秒的窗口玩家根本不敢出门，夜晚就退化成"蹲在火边发呆"。
+ * 所以换算规则在这里有例外：凡是玩家必须在其内做出反应的时长，都要额外放宽。
+ */
+const WARMTH_NIGHT_LOSS = 1.05;
 // 劳作产热已移除。原图（荒漠幸存者）根本没有这一项，而我们曾把它设成 +0.9/s
 // —— 是白天基线的 2.7 倍，直接导致"正常采集必然中暑且无法自救"。
 /** 篝火 +3.16/s：夜晚静止净 +1.77/s，约 45 秒从 0 回满到天花板 80。 */
@@ -1077,6 +1085,26 @@ export class GameSimulation {
     if (next === "heatstroke") this.events.push({ type: "message", text: "中暑 · 行动迟缓，立刻离开火边并喝水降温" });
     else if (next === "hypothermia") this.events.push({ type: "message", text: "失温 · 几乎迈不开腿，爬向最近的篝火" });
     else this.events.push({ type: "message", text: "体温回到安全区间" });
+  }
+
+  /**
+   * 当前体温趋势：每秒变化量，以及按这个速率撞上最近那一端还有多少秒。
+   * 夜里"我还能在外面待多久"是玩家最需要、却最猜不出来的一个数 ——
+   * 猜不出来的结果就是干脆不出门。
+   */
+  getWarmthTrend(): { rate: number; secondsToDanger: number | null } {
+    const nearFire = this.camps.some((camp) => {
+      if (camp.fuel <= 0) return false;
+      return distanceSquared(this.player, this.world.camps[camp.id]) < FIRE_WARMTH_RADIUS * FIRE_WARMTH_RADIUS;
+    });
+    let rate = 0;
+    if (nearFire) rate += WARMTH_FIRE_GAIN;
+    rate += this.phase === "day" ? WARMTH_DAY_BASE : -WARMTH_NIGHT_LOSS;
+    if (Math.abs(rate) < 0.01) return { rate, secondsToDanger: null };
+    const target = rate > 0 ? WARMTH_HEAT_ENTER : WARMTH_COLD_ENTER;
+    // 白天有地板、夜晚有天花板，朝着夹逼方向走是撞不到危险端的。
+    if (rate < 0 && this.phase === "day") return { rate, secondsToDanger: null };
+    return { rate, secondsToDanger: Math.max(0, (target - this.player.warmth) / rate) };
   }
 
   /** 中暑 -60% 移速，失温 -75% 移速。（原图是 -85% / -99%，浏览器手感下放宽） */
