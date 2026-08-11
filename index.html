@@ -73,6 +73,10 @@
           </p>
           <p id="records-line" class="records-line hidden"></p>
           <button id="start-button" class="primary-button" type="button">踏入沙海</button>
+          <div id="boot-progress" class="boot-progress hidden" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <i><b id="boot-bar"></b></i>
+            <span id="boot-status">载入引擎…</span>
+          </div>
           <p class="controls-copy">
             <span class="desktop-copy">键盘：WASD 移动 · E 捡柴/添柴/搬石/取汁/提水 · 空格攻击 · R 喝水 · C 洗脸水 · F 仙人掌汁 · Q 调体温 · B/Tab 背包<br />鼠标：点击地面移动</span>
             <span class="touch-copy">左侧摇杆移动 · 右下攻击/行动 · 右上打开背包</span>
@@ -140,6 +144,86 @@
         <div class="intro-card"><h2>无法启动 3D 画面</h2><p>请启用 WebGL，或尝试更新后的浏览器。</p></div>
       </div>
     </div>
+    <script>
+      /*
+       * 开场引导桥。这段**必须**是内联的普通脚本，不能进主包。
+       *
+       * 手机首次访问要先下载并解析 868 KiB 的 JS，实测十几秒；而"踏入沙海"的点击监听
+       * 原本挂在主包里，那十几秒内点它完全没反应，主包到了也不会自动进游戏，
+       * 玩家得再点一次。这里先把点击接住并亮起进度条，主包到达后接手真实进度、跑完自动进。
+       *
+       * AudioContext 与横屏锁也放在这里：它们只能在用户手势里发起，而主包到达时
+       * 那次手势早就过期了。
+       */
+      (function () {
+        var button = document.getElementById("start-button");
+        var panel = document.getElementById("boot-progress");
+        var bar = document.getElementById("boot-bar");
+        var status = document.getElementById("boot-status");
+
+        var boot = {
+          requested: false,
+          audioContext: null,
+          moduleAttached: false,
+          ratio: 0,
+          onRequest: null,
+          /**
+           * 进度只增不减，避免真实进度和渐近假进度互相拉扯时来回跳。
+           * 文案同样只跟着"跑在最前面"的那一步走 —— 网速快时人物资源可能先于
+           * "点亮光照"完成，那时不该把文案倒退回去。
+           */
+          set: function (ratio, label) {
+            var next = Math.min(1, ratio);
+            if (label && next >= boot.ratio) status.textContent = label;
+            boot.ratio = Math.max(boot.ratio, next);
+            bar.style.width = (boot.ratio * 100).toFixed(1) + "%";
+            panel.setAttribute("aria-valuenow", String(Math.round(boot.ratio * 100)));
+          },
+        };
+        window.__boot = boot;
+
+        button.addEventListener("click", function () {
+          if (boot.requested) return;
+          boot.requested = true;
+          // 已经加载完就别闪一下进度条，直接把场面交给主包。
+          if (boot.ratio < 1) {
+            button.classList.add("hidden");
+            panel.classList.remove("hidden");
+          }
+          try {
+            var Ctor = window.AudioContext || window.webkitAudioContext;
+            if (Ctor) boot.audioContext = new Ctor();
+          } catch (error) { /* 没有音频也照样能玩 */ }
+          try {
+            if (screen.orientation && screen.orientation.lock) {
+              screen.orientation.lock("landscape").catch(function () {});
+            }
+          } catch (error) { /* 锁不上也照样能玩 */ }
+          if (boot.onRequest) boot.onRequest();
+          creep();
+        });
+
+        /*
+         * 主包还没到时没有任何真实进度可报（<script type="module"> 不给下载进度），
+         * 用一条渐近曲线顶着，上限压在 46%，好让主包接手时进度是往前走而不是往回缩。
+         *
+         * 驱动用 setInterval 而不是 requestAnimationFrame：页面被判定为隐藏时
+         * （切到别的应用、或嵌在不合成帧的容器里）rAF 一次都不触发，条子会僵在 0%，
+         * 看起来就是卡死 —— 而这恰恰是加载最慢的那种场景。
+         */
+        function creep() {
+          var start = performance.now();
+          var timer = setInterval(function () {
+            if (boot.moduleAttached || boot.ratio >= 0.46) {
+              clearInterval(timer);
+              return;
+            }
+            var seconds = (performance.now() - start) / 1000;
+            boot.set((1 - Math.exp(-seconds / 5)) * 0.46, null);
+          }, 100);
+        }
+      })();
+    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

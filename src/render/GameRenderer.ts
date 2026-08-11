@@ -278,10 +278,18 @@ export class GameRenderer {
   private readonly sand: THREE.Points;
   private cameraShake = 0;
   private time = 0;
+  private readonly onAssetProgress?: (loaded: number, total: number) => void;
+  private readonly playerAssetReady: Promise<void>;
 
-  constructor(root: HTMLElement, world: WorldDefinition, simulation: GameSimulation) {
+  constructor(
+    root: HTMLElement,
+    world: WorldDefinition,
+    simulation: GameSimulation,
+    onAssetProgress?: (loaded: number, total: number) => void,
+  ) {
     this.world = world;
     this.simulation = simulation;
+    this.onAssetProgress = onAssetProgress;
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.6));
     this.renderer.shadowMap.enabled = true;
@@ -331,7 +339,7 @@ export class GameRenderer {
     this.playerCoat = player.coat;
     this.scene.add(this.playerGroup);
     this.previousPlayerPosition.set(simulation.player.x, simulation.player.z);
-    void this.loadPlayerAsset();
+    this.playerAssetReady = this.loadPlayerAsset();
     this.sand = this.buildSand();
     this.scene.add(this.sand);
 
@@ -1115,6 +1123,15 @@ export class GameRenderer {
    * KayKit 的人物和动画分开发布，但都使用 Rig_Medium。
    * 动画轨道会按骨骼名绑定到人物，武器则挂到官方预留的 handslot.r。
    */
+  /**
+   * 人物模型与动画加载完毕的承诺。
+   * 加载失败或还没完成都不影响开玩（有程序化替身），但开场进度条要等它 ——
+   * 否则玩家刚进场就看见一个方块人，几秒后突然变成另一个人。
+   */
+  whenPlayerAssetReady(): Promise<void> {
+    return this.playerAssetReady;
+  }
+
   private async loadPlayerAsset(): Promise<void> {
     const loader = new GLTFLoader();
     loader.setMeshoptDecoder(MeshoptDecoder);
@@ -1122,13 +1139,25 @@ export class GameRenderer {
     // from Vite's configured base instead of the site root so the model does
     // not 404 and fall back to the procedural player in production.
     const assetRoot = `${import.meta.env.BASE_URL}assets/characters/kaykit`;
+    // 按"完成几个文件"报进度而不是按字节：GitHub Pages 带 Content-Encoding 时
+    // ProgressEvent.total 常常是 0，字节进度会一直显示 0%。
+    const files = [
+      "Rogue_Hooded.glb",
+      "Rig_Medium_MovementBasic.glb",
+      "Rig_Medium_General.glb",
+      "Rig_Medium_CombatMelee.glb",
+    ];
+    let loaded = 0;
+    this.onAssetProgress?.(0, files.length);
     try {
-      const [character, movement, general, combat] = await Promise.all([
-        loader.loadAsync(`${assetRoot}/Rogue_Hooded.glb`),
-        loader.loadAsync(`${assetRoot}/Rig_Medium_MovementBasic.glb`),
-        loader.loadAsync(`${assetRoot}/Rig_Medium_General.glb`),
-        loader.loadAsync(`${assetRoot}/Rig_Medium_CombatMelee.glb`),
-      ]);
+      const [character, movement, general, combat] = await Promise.all(
+        files.map(async (name) => {
+          const gltf = await loader.loadAsync(`${assetRoot}/${name}`);
+          loaded += 1;
+          this.onAssetProgress?.(loaded, files.length);
+          return gltf;
+        }),
+      );
 
       const model = character.scene;
       model.name = "KayKit_Rogue_Hooded";
@@ -1168,6 +1197,8 @@ export class GameRenderer {
       this.playPlayerAnimation("Idle_A");
     } catch (error) {
       console.warn("KayKit player failed to load; keeping the procedural fallback.", error);
+      // 进度条不能因为资源 404 就永远停在那儿 —— 直接报满，让开场流程继续走完。
+      this.onAssetProgress?.(files.length, files.length);
     }
   }
 

@@ -421,6 +421,44 @@ button { font: inherit; }
 
 .primary-button:hover { filter: brightness(1.08); transform: translateY(-1px); }
 .primary-button:active { transform: translateY(1px); }
+
+/*
+ * 开场加载条。它顶替"踏入沙海"按钮的位置，所以高度要接近，免得整张卡片跳一下。
+ * 前半段由 index.html 的内联脚本驱动（那时主包还没到），后半段是真实进度。
+ */
+.boot-progress {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  width: min(320px, 82%);
+  margin: 6px auto 0;
+  padding: 6px 0;
+}
+
+.boot-progress i {
+  display: block;
+  overflow: hidden;
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(233, 240, 243, .12);
+}
+
+.boot-progress b {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #f18a39, #ffb957);
+  box-shadow: 0 0 14px rgba(241, 138, 57, .45);
+  transition: width .3s ease-out;
+}
+
+.boot-progress span {
+  color: #9fb4bd;
+  font-size: 12px;
+  letter-spacing: .04em;
+}
 .controls-copy { margin: 19px 0 0; color: #849ba5; font-size: 11px; line-height: 1.7; }
 .touch-copy { display: none; }
 .game-over-card p:not(.eyebrow) { margin: 18px 0 24px; color: #c3d3d8; line-height: 1.7; }

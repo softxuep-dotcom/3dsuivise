@@ -2,12 +2,21 @@ import type { GameEvent } from "../game/simulation/types";
 
 export class SynthAudio {
   enabled = true;
-  private context: AudioContext | null = null;
+  private context: AudioContext | null;
   private master: GainNode | null = null;
 
+  /**
+   * "踏入沙海"的点击可能发生在主包到达之前，而 AudioContext 必须在那次用户手势里创建
+   * （iOS 上手势外创建出来的一律是 suspended，事后 resume 也救不回来）。
+   * 所以它由 index.html 的内联脚本先建好，这里接管；没有就退回自己建。
+   */
+  constructor(context: AudioContext | null = null) {
+    this.context = context;
+  }
+
   async unlock(): Promise<void> {
-    if (!this.context) {
-      this.context = new AudioContext();
+    if (!this.context) this.context = new AudioContext();
+    if (!this.master) {
       this.master = this.context.createGain();
       this.master.gain.value = 0.18;
       this.master.connect(this.context.destination);
