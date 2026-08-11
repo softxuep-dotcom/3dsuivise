@@ -85,6 +85,17 @@ const ARMOR_TIERS: EquipTier[] = [
   { id: "reinforced", label: "镶铁重甲", cost: [["hide", 6], ["iron-ore", 4]], needsFire: true, blurb: "防御+7，移速-5%", defense: 7 },
 ];
 
+/**
+ * 武器手感表。原先用 `weapon === "iron-spear" ? a : b` 判断，第 3 阶加进来之后
+ * 会掉进 else 分支拿到匕首的攻程（3.1，比 T2 的 3.8 还短）—— 换表消除这个隐患。
+ * 攻程随阶数变长，冷却也变长：重矛打得狠、够得远，但挥得慢。
+ */
+const WEAPON_STATS: Record<WeaponKind, { cooldown: number; range: number }> = {
+  "survival-knife": { cooldown: 0.50, range: 3.1 },
+  "iron-spear": { cooldown: 0.58, range: 3.8 },
+  "fang-spear": { cooldown: 0.62, range: 4.2 },
+};
+
 /** 镶铁重甲的负重：换来 11 点防御，代价是 5% 移速。 */
 const REINFORCED_ARMOR_SPEED = 0.95;
 
@@ -167,9 +178,10 @@ const WATER_URGENT = 32;
 const STAMINA_MAX = 100;
 const STAMINA_REST_REGEN = 7.5;   // 休息中
 const STAMINA_IDLE_REGEN = 1.6;   // 站着不动但没进入休息
-const STAMINA_ACTIVE_REGEN = 0.5; // 移动中
+const STAMINA_ACTIVE_REGEN = 1.1; // 移动中：仍只有休息的 1/7，但走路不再是完全的死区
+                                  // （0.5 时走满全图 200 秒才回满，而游戏大部分时间在走）
 const STAMINA_COST_CACTUS = 10;
-const STAMINA_COST_MINE = 20;
+const STAMINA_COST_MINE = 15;   // 20 → 15：两级武器共需 8 块铁 = 原先两整管劳力的站桩
 const STAMINA_COST_DRAW = 8;
 const STAMINA_COST_ATTACK = 4;
 /** 劳力低于此值时攻击仍可挥出，但伤害衰减到 EXHAUSTED_DAMAGE_SCALE。 */
@@ -537,13 +549,13 @@ export class GameSimulation {
     const exhausted = this.player.stamina < STAMINA_EXHAUSTED;
     if (exhausted) this.events.push({ type: "exhausted" });
     else this.player.stamina = Math.max(0, this.player.stamina - STAMINA_COST_ATTACK);
-    const baseCooldown = this.player.weapon === "iron-spear" ? 0.58 : 0.5;
+    const baseCooldown = WEAPON_STATS[this.player.weapon].cooldown;
     this.player.attackCooldown = baseCooldown * this.getConditionCooldownScale();
     this.player.attackFlash = 0.22;
     this.events.push({ type: "attack" });
     let hit = false;
 
-    const attackRange = this.player.weapon === "iron-spear" ? 3.8 : 3.1;
+    const attackRange = WEAPON_STATS[this.player.weapon].range;
     // 转向辅助优先锁狼：猎物不还手，被狼咬着还去追兔子才是真的要命。
     const inRange = <T extends Vec2>(list: T[], alive: (item: T) => boolean): T | undefined => list
       .filter((item) => alive(item) && distanceSquared(this.player, item) <= attackRange * attackRange)
