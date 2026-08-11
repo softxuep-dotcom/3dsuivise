@@ -1203,8 +1203,17 @@ export class GameRenderer {
   }
 
   private attachPlayerWeapons(model: THREE.Object3D): void {
-    const rightHandSlot = model.getObjectByName("handslot.r") ?? model.getObjectByName("hand.r");
-    if (!rightHandSlot) return;
+    // GLTFLoader sanitizes dots out of node names so animation tracks can bind:
+    // `handslot.r` becomes `handslotr` and `hand.r` becomes `handr` at runtime.
+    // Keep the authored names as fallbacks for loaders that preserve punctuation.
+    const rightHandSlot = model.getObjectByName("handslotr")
+      ?? model.getObjectByName("handslot.r")
+      ?? model.getObjectByName("handr")
+      ?? model.getObjectByName("hand.r");
+    if (!rightHandSlot) {
+      console.warn("KayKit right-hand weapon slot was not found; weapon will remain on the fallback mount.");
+      return;
+    }
 
     rightHandSlot.add(this.weaponMount);
     // KayKit's handslot.r sits just beyond the fingertips. Pull the shared
