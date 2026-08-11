@@ -73,7 +73,6 @@ export class HudController {
   private readonly staminaBar = required<HTMLElement>("stamina-bar");
   private readonly healthValue = required<HTMLElement>("health-value");
   private readonly warmthValue = required<HTMLElement>("warmth-value");
-  private readonly warmthMeter = required<HTMLElement>("warmth-meter");
   private readonly washButton = required<HTMLButtonElement>("wash-button");
   private readonly washCount = required<HTMLElement>("wash-count");
   private readonly craftWashButton = required<HTMLButtonElement>("craft-wash-button");
@@ -219,7 +218,7 @@ export class HudController {
     this.setMeter(this.healthBar, this.healthValue, player.health);
     this.setMeter(this.waterBar, this.waterValue, player.water);
     this.setMeter(this.hungerBar, this.hungerValue, player.hunger);
-    this.setBipolarWarmth(player.warmth);
+    this.setMeter(this.warmthBar, this.warmthValue, player.warmth);
     this.setMeter(this.staminaBar, this.staminaValue, player.stamina, player.maxStamina);
     this.healthBar.closest(".meter")?.classList.toggle("critical", player.health < 30);
     // 水分与饱食是"归零即死"的轴，所以告警阈值比体温更保守。
@@ -421,30 +420,6 @@ export class HudController {
     const fire = next.needsFire ? " · 需燃烧篝火" : "";
     button.textContent = `${next.label} · ${parts.join(" + ")}${fire} · ${next.blurb}`;
     button.disabled = next.cost.some(([kind, count]) => this.simulation.getInventoryCount(kind) < count);
-  }
-
-  /**
-   * 体温条是中心锚定的：填充从 50% 处向偏离方向生长。
-   * 越靠近两端条越长，方向色也从绿转蓝/橙 —— 玩家读到的是"偏了多少、往哪偏"，
-   * 而不是普通进度条那种"越长越好"。
-   */
-  private setBipolarWarmth(warmth: number): void {
-    const value = clamp(warmth, 0, 100);
-    const offset = value - 50;
-    this.warmthBar.style.left = offset >= 0 ? "50%" : `${value}%`;
-    this.warmthBar.style.width = `${Math.abs(offset)}%`;
-    this.warmthMeter.classList.toggle("toward-hot", value > 62);
-    this.warmthMeter.classList.toggle("toward-cold", value < 35);
-
-    // 数值旁挂一个倒计时：按当前速率还有多少秒撞上中暑/失温。
-    // 夜里"我还能在外面待多久"是玩家最需要却最猜不出的数，猜不出就干脆不出门。
-    const trend = this.simulation.getWarmthTrend();
-    const seconds = trend.secondsToDanger;
-    const urgent = seconds !== null && seconds <= 90;
-    this.warmthValue.textContent = urgent
-      ? `${Math.round(value)} · ${Math.ceil(seconds)}s`
-      : String(Math.round(value));
-    this.warmthMeter.classList.toggle("counting-down", urgent && seconds <= 25);
   }
 
   private setMeter(bar: HTMLElement, valueLabel: HTMLElement, rawValue: number, max = 100): void {

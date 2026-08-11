@@ -275,6 +275,8 @@ export class GameSimulation {
   private combatTimer = 0;
   /** 当前正在提水的井 id，-1 表示没有。 */
   private drawingWellId = -1;
+  /** 生肉不回体力这条只在第一次生吞时说一遍，之后靠目标行常驻。 */
+  private rawMeatHintSent = false;
   /** 体温调节动作的冷却（公开给 HUD 显示）。 */
   coolCooldown = 0;
   warmCooldown = 0;
@@ -656,7 +658,7 @@ export class GameSimulation {
     if (!this.running) return;
     const stack = this.player.inventory[index];
     if (!stack) return;
-    this.noteActivity();
+    this.noteInPlaceAction();
 
     // 洗脸水（原图 I01V）：降温主力。同样一份水，兑过之后降温效率是直接喝的四倍，
     // 代价是补水少一半 —— 于是"这份水拿来喝还是拿来降温"成了一个真实的取舍。
@@ -720,6 +722,13 @@ export class GameSimulation {
       this.player.hunger = clamp(this.player.hunger + this.randomInt(...RAW_HUNGER), 0, 100);
       this.player.water = clamp(this.player.water + this.randomInt(...RAW_WATER), 0, 100);
       this.events.push({ type: "eat", kind: "cooked-meat" });
+      // 火就在旁边却生吞 —— 这是提示烤肉最有说服力的一刻：机会正在被浪费。
+      if (this.findNearestLitCamp(6.5)) {
+        this.events.push({ type: "message", text: `旁边就有火 · 烤了再吃能多回 ${COOKED_HEALTH} 点体力` });
+      } else if (!this.rawMeatHintSent) {
+        this.rawMeatHintSent = true;
+        this.events.push({ type: "message", text: "生肉只顶饿不回体力 · 攒到篝火旁烤熟再吃" });
+      }
       return;
     }
     if (stack.kind === "iron-ore") {
@@ -789,7 +798,7 @@ export class GameSimulation {
       this.events.push({ type: "message", text: `${next.label}需要 ${need}` });
       return false;
     }
-    this.noteActivity();
+    this.noteInPlaceAction();
     for (const [kind, count] of next.cost) this.removeInventory(kind, count);
     apply(next);
     this.events.push({ type: "message", text: `${next.label}完成 · ${next.blurb}` });
@@ -807,7 +816,7 @@ export class GameSimulation {
       this.events.push({ type: "message", text: "要在燃烧的篝火旁才能烤肉" });
       return false;
     }
-    this.noteActivity();
+    this.noteInPlaceAction();
     this.removeInventory("raw-meat", 1);
     if (!this.addInventory("cooked-meat", 1)) {
       this.events.push({ type: "message", text: "背包已满 · 烤好的肉没处放" });
@@ -829,7 +838,7 @@ export class GameSimulation {
       this.events.push({ type: "message", text: "洗脸水带够了" });
       return false;
     }
-    this.noteActivity();
+    this.noteInPlaceAction();
     this.removeInventory("water", 1);
     this.addInventory("wash-water", 1);
     this.events.push({ type: "craft-wash-water" });
@@ -963,6 +972,15 @@ export class GameSimulation {
     if (this.player.armor === "none" && this.getInventoryCount("hide") > 0) return "收集4张兽皮制作兽皮衣";
     const wildWolves = this.wolves.filter((wolf) => wolf.role === "wild" && wolf.mode !== "dead").length;
     if (this.player.armor === "none" && wildWolves > 0) return `沙海上有 ${wildWolves} 只野狼 · 只有它们掉兽皮`;
+    // 体力是恒定流失的轴，而烤肉是唯一的大额补给。身上有生肉却在掉血时，
+    // 目标行直接把这条路指出来 —— 比等玩家自己翻背包发现要快得多。
+    if (this.player.health < 62 && this.getInventoryCount("cooked-meat") === 0
+      && this.getInventoryCount("raw-meat") > 0) {
+      const lit = this.getNearestLitCamp();
+      return lit
+        ? `体力在掉 · 去 ${Math.round(lit.distance)} 米外的篝火把生肉烤了，一份回 ${COOKED_HEALTH} 点`
+        : `体力在掉 · 生肉烤熟才回体力，先找个篝火添柴`;
+    }
     if (this.getInventoryCount("raw-meat") === 0 && this.getInventoryCount("cooked-meat") === 0) {
       const camel = this.critters.find((critter) => critter.kind === "camel" && critter.mode !== "dead");
       if (camel) return "缺肉了 · 骆驼一头顶四块肉外加两份水，但它跑得比你快";
@@ -1087,26 +1105,6 @@ export class GameSimulation {
     else this.events.push({ type: "message", text: "体温回到安全区间" });
   }
 
-  /**
-   * 当前体温趋势：每秒变化量，以及按这个速率撞上最近那一端还有多少秒。
-   * 夜里"我还能在外面待多久"是玩家最需要、却最猜不出来的一个数 ——
-   * 猜不出来的结果就是干脆不出门。
-   */
-  getWarmthTrend(): { rate: number; secondsToDanger: number | null } {
-    const nearFire = this.camps.some((camp) => {
-      if (camp.fuel <= 0) return false;
-      return distanceSquared(this.player, this.world.camps[camp.id]) < FIRE_WARMTH_RADIUS * FIRE_WARMTH_RADIUS;
-    });
-    let rate = 0;
-    if (nearFire) rate += WARMTH_FIRE_GAIN;
-    rate += this.phase === "day" ? WARMTH_DAY_BASE : -WARMTH_NIGHT_LOSS;
-    if (Math.abs(rate) < 0.01) return { rate, secondsToDanger: null };
-    const target = rate > 0 ? WARMTH_HEAT_ENTER : WARMTH_COLD_ENTER;
-    // 白天有地板、夜晚有天花板，朝着夹逼方向走是撞不到危险端的。
-    if (rate < 0 && this.phase === "day") return { rate, secondsToDanger: null };
-    return { rate, secondsToDanger: Math.max(0, (target - this.player.warmth) / rate) };
-  }
-
   /** 中暑 -60% 移速，失温 -75% 移速。（原图是 -85% / -99%，浏览器手感下放宽） */
   private getConditionSpeedScale(): number {
     if (this.player.condition === "heatstroke") return 0.4;
@@ -1162,6 +1160,15 @@ export class GameSimulation {
     this.clockStarted = true;
     this.player.idleTime = 0;
     this.setResting(false);
+  }
+
+  /**
+   * 原地动作：只启动时钟，**不打断休息、不清空静止计时**。
+   * 吃喝和合成都是站着不动就能做的事 —— 把它们算成"活动"会让玩家
+   * 每喝一口水就被踢出休息、还要再站满 5 秒，劳力等于回不上来。
+   */
+  private noteInPlaceAction(): void {
+    this.clockStarted = true;
   }
 
   private updateFires(delta: number): void {
