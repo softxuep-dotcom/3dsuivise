@@ -260,6 +260,8 @@ export class GameRenderer {
   private currentPlayerAnimation = "";
   private readonly campViews = new Map<number, CampView>();
   private readonly itemViews = new Map<number, THREE.Object3D>();
+  /** 路障挨打后的闪光余量（秒），按物品 id 记。 */
+  private readonly barrierFlash = new Map<number, number>();
   private readonly cactusViews = new Map<number, THREE.Object3D>();
   private readonly ironViews = new Map<number, THREE.Object3D>();
   private readonly wellViews = new Map<number, THREE.Object3D>();
@@ -352,7 +354,7 @@ export class GameRenderer {
     const delta = Math.min(deltaSeconds, 0.05);
     this.time += delta;
     this.syncPlayer(delta);
-    this.syncItems();
+    this.syncItems(delta);
     this.syncCacti();
     this.syncIronNodes();
     this.syncWells(delta);
@@ -1278,7 +1280,17 @@ export class GameRenderer {
     this.syncPlayerAnimation(delta, moving);
   }
 
-  private syncItems(): void {
+  /** 路障被啃了一口 —— 记一次闪光。id 为负表示是放置物（见模拟层的编码）。 */
+  barrierHit(itemId: number): void {
+    if (itemId >= 0) this.barrierFlash.set(itemId, 0.22);
+  }
+
+  private syncItems(delta: number): void {
+    for (const [id, remaining] of this.barrierFlash) {
+      const next = remaining - delta;
+      if (next <= 0) this.barrierFlash.delete(id);
+      else this.barrierFlash.set(id, next);
+    }
     for (const item of this.simulation.items) {
       let view = this.itemViews.get(item.id);
       if (view && view.userData.kind !== item.kind) {
@@ -1295,8 +1307,23 @@ export class GameRenderer {
       if (!item.active) continue;
       view.position.set(item.x, this.worldHeight(item.x, item.z) + (item.kind === "wood" ? 0.35 : 0.48), item.z);
       view.rotation.y = item.rotation;
-      const damageScale = clamp(item.hp / (item.kind === "stone" ? 220 : 70), 0.55, 1);
-      view.scale.setScalar(item.placed ? damageScale : 1);
+      const health = clamp(item.hp / (item.kind === "stone" ? 220 : 70), 0, 1);
+      view.scale.setScalar(item.placed ? 0.55 + health * 0.45 : 1);
+      // 缩放在小屏上读不出来（看着像透视），颜色才是能读的信号：
+      // 越残破越暗越发红，挨打的瞬间还会亮一下。
+      if (item.placed) {
+        const flash = this.barrierFlash.get(item.id) ?? 0;
+        view.traverse((child) => {
+          const material = (child as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
+          if (!material || !material.isMeshStandardMaterial) return;
+          material.color.setRGB(
+            0.28 + health * 0.72,
+            0.16 + health * 0.84,
+            0.14 + health * 0.86,
+          );
+          material.emissive.setRGB(flash * 3.2, flash * 1.1, flash * 0.6);
+        });
+      }
     }
   }
 

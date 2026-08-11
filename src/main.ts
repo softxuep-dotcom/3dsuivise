@@ -101,7 +101,10 @@ const frame = (now: number): void => {
       hud.handle(event);
       if (event.type === "player-hit") renderer.impact(0.22);
       if (event.type === "wolf-hit") renderer.impact(0.09);
-      if (event.type === "barrier-hit") renderer.impact(0.035);
+      if (event.type === "barrier-hit") {
+        renderer.impact(0.035);
+        renderer.barrierHit(event.itemId);
+      }
       if (event.type === "game-over") input.cancelMoveTarget();
     }
     hud.update(delta);
