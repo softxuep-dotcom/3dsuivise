@@ -77,6 +77,7 @@ export class HudController {
   private readonly washButton = required<HTMLButtonElement>("wash-button");
   private readonly washCount = required<HTMLElement>("wash-count");
   private readonly craftWashButton = required<HTMLButtonElement>("craft-wash-button");
+  private readonly craftCookButton = required<HTMLButtonElement>("craft-cook-button");
   private readonly hungerValue = required<HTMLElement>("hunger-value");
   private readonly waterValue = required<HTMLElement>("water-value");
   private readonly staminaValue = required<HTMLElement>("stamina-value");
@@ -168,6 +169,10 @@ export class HudController {
     });
     this.washButton.addEventListener("click", () => {
       this.simulation.consumeWashWater();
+      this.updateInventory();
+    });
+    this.craftCookButton.addEventListener("click", () => {
+      this.simulation.craftCookedMeat();
       this.updateInventory();
     });
     this.craftWashButton.addEventListener("click", () => {
@@ -386,6 +391,11 @@ export class HudController {
     this.statDefense.textContent = String(player.defense);
     this.syncUpgradeButton(this.craftButton, "armor");
     this.syncUpgradeButton(this.craftSpearButton, "weapon");
+    const raws = this.simulation.getInventoryCount("raw-meat");
+    this.craftCookButton.textContent = raws > 0
+      ? `烤肉 · 生肉 ${raws} → 熟肉（回体力 ${14}）· 需燃烧篝火`
+      : "烤肉 · 没有生肉";
+    this.craftCookButton.disabled = raws < 1;
     const waters = this.simulation.getInventoryCount("water");
     this.craftWashButton.textContent = waters > 0
       ? `兑洗脸水 · 水 ${waters} → 降温 25~50`

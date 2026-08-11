@@ -99,6 +99,13 @@ const WEAPON_STATS: Record<WeaponKind, { cooldown: number; range: number }> = {
 /** 镶铁重甲的负重：换来 11 点防御，代价是 5% 移速。 */
 const REINFORCED_ARMOR_SPEED = 0.95;
 
+// 肉的两级。生肉顶饿不回体力，烤肉才回 —— 烤肉的价值全在体力那一条上。
+const RAW_HUNGER: readonly [number, number] = [12, 18];
+const RAW_WATER: readonly [number, number] = [2, 6];
+const COOKED_HUNGER: readonly [number, number] = [26, 38];
+const COOKED_WATER: readonly [number, number] = [5, 10];
+const COOKED_HEALTH = 14;
+
 // 洗脸水，对齐原图 I01V（触发器 047）：体温 -25~-50、水分 +10~25。
 const WASH_WATER_COOLING: readonly [number, number] = [25, 50];
 const WASH_WATER_HYDRATION: readonly [number, number] = [10, 25];
@@ -671,11 +678,12 @@ export class GameSimulation {
       return;
     }
     if (stack.kind === "cooked-meat") {
-      if (this.isNourishmentFull(38, 6, 14)) return;
+      // 烤肉（原图 I03T）：唯一大量回体力的食物，所以它值得为之走一趟火边。
+      if (this.isNourishmentFull(COOKED_HUNGER[1], COOKED_WATER[1], COOKED_HEALTH)) return;
       this.removeFromSlot(index, 1);
-      this.player.hunger = clamp(this.player.hunger + 38, 0, 100);
-      this.player.water = clamp(this.player.water + 6, 0, 100);
-      this.player.health = clamp(this.player.health + 14, 0, this.player.maxHealth);
+      this.player.hunger = clamp(this.player.hunger + this.randomInt(...COOKED_HUNGER), 0, 100);
+      this.player.water = clamp(this.player.water + this.randomInt(...COOKED_WATER), 0, 100);
+      this.player.health = clamp(this.player.health + COOKED_HEALTH, 0, this.player.maxHealth);
       this.events.push({ type: "eat", kind: "cooked-meat" });
       return;
     }
@@ -695,13 +703,15 @@ export class GameSimulation {
       return;
     }
     if (stack.kind === "raw-meat") {
-      // 原图（荒漠幸存者）的生肉直接就能吃，烤肉只是另一个更好的独立物品，
-      // 从来不是吃肉的前置。原先这里要求距篝火 4.6 以内，等于把玩家摁在
-      // +3.4/s 的热源里，白天必然中暑 —— 距火判定已移除。
+      // 生肉直接就能吃 —— 原图所有的肉都是这样，烤肉是另一个更好的独立物品，
+      // 从来不是吃肉的前置。生肉顶饿但**完全不回体力**，这正是烤肉存在的理由：
+      // 体力每秒恒定流失，而烤肉是唯一能大量回体力的食物。
+      // "现在生吞垫一口，还是留到火边烤了再吃"因此成为一个真实取舍。
+      if (this.isNourishmentFull(RAW_HUNGER[1], RAW_WATER[1], 0)) return;
       this.removeFromSlot(index, 1);
-      this.addInventory("cooked-meat", 1);
-      this.events.push({ type: "cook" });
-      this.events.push({ type: "message", text: "生肉已经烤熟 · 熟肉回复远高于生肉" });
+      this.player.hunger = clamp(this.player.hunger + this.randomInt(...RAW_HUNGER), 0, 100);
+      this.player.water = clamp(this.player.water + this.randomInt(...RAW_WATER), 0, 100);
+      this.events.push({ type: "eat", kind: "cooked-meat" });
       return;
     }
     if (stack.kind === "iron-ore") {
@@ -775,6 +785,28 @@ export class GameSimulation {
     for (const [kind, count] of next.cost) this.removeInventory(kind, count);
     apply(next);
     this.events.push({ type: "message", text: `${next.label}完成 · ${next.blurb}` });
+    return true;
+  }
+
+  /** 烤肉：生肉 1 份在燃烧的篝火旁烤成熟肉。这是篝火除了取暖之外的第二个用途。 */
+  craftCookedMeat(): boolean {
+    if (!this.running) return false;
+    if (this.getInventoryCount("raw-meat") < 1) {
+      this.events.push({ type: "message", text: "没有生肉可烤" });
+      return false;
+    }
+    if (!this.findNearestLitCamp(5.2)) {
+      this.events.push({ type: "message", text: "要在燃烧的篝火旁才能烤肉" });
+      return false;
+    }
+    this.noteActivity();
+    this.removeInventory("raw-meat", 1);
+    if (!this.addInventory("cooked-meat", 1)) {
+      this.events.push({ type: "message", text: "背包已满 · 烤好的肉没处放" });
+      return false;
+    }
+    this.events.push({ type: "cook" });
+    this.events.push({ type: "message", text: "烤好了 · 熟肉是唯一能大量回体力的食物" });
     return true;
   }
 
