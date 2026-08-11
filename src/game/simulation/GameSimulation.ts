@@ -1812,7 +1812,13 @@ export class GameSimulation {
       this.spawnedThisNight = 0;
       this.objectiveStage = 3;
       this.events.push({ type: "phase", phase: "night", day: this.day });
-      this.events.push({ type: "message", text: "狼正从沙海边缘逐只进入" });
+      const litAtDusk = this.getNearestLitCamp();
+      this.events.push({
+        type: "message",
+        text: litAtDusk && litAtDusk.fuel >= this.phaseTime
+          ? "狼正从沙海边缘逐只进入 · 火能撑到天亮"
+          : "狼正从沙海边缘逐只进入 · 火撑不到天亮，备好枯木",
+      });
       // 白天打满击杀数的话，头狼会在入夜的这一刻登场。
       this.maybeSpawnAlpha();
       return;
@@ -1823,15 +1829,49 @@ export class GameSimulation {
     // 只有夜袭部队撤离；白天的野狼留在原地继续游荡，它们才是狼皮的来源。
     // 头狼绝不撤退 —— 它一旦登场就必须被杀死，否则玩家再也没有通关途径。
     this.scheduleRaiderRetreat();
+    this.duskWarningSent = false;
     this.wildRespawnCountdown = 2;
     this.events.push({ type: "phase", phase: "day", day: this.day });
     this.events.push({ type: "message", text: "天亮了 · 夜袭狼正在分批撤离；白天的野狼可以猎取兽皮" });
   }
 
+  /** 即将到来的那一夜有多长 —— 黄昏算燃料够不够用得上。 */
+  private getComingNightDuration(): number {
+    return this.day === 1 ? FIRST_NIGHT_DURATION : this.day === 2 ? SECOND_NIGHT_DURATION : LATER_NIGHT_DURATION;
+  }
+
+  /**
+   * 黄昏燃料预警。
+   * 原先只有"火灭了 · 体温正在下降"这种**事后**提示，喊出来时玩家已经在挨冻了；
+   * 而且天黑预警只在第 1 天出现，之后每一夜都是无预告的。
+   * 这里改成**事前**并且给出确切数字：今晚多长、现在的火能烧多久、还差几根枯木。
+   * 燃料每秒烧 1 点，一根枯木 +95 —— 所以缺口除以 95 就是要搬的根数。
+   */
+  private warnDuskFuel(): void {
+    const night = this.getComingNightDuration();
+    const lit = this.getNearestLitCamp();
+    const fuel = lit ? lit.fuel : 0;
+    if (fuel >= night) {
+      this.events.push({ type: "message", text: `天色转暗 · 火够烧 ${Math.round(fuel)} 秒，撑得过今晚` });
+      return;
+    }
+    const logs = Math.ceil((night - fuel) / 95);
+    this.events.push({
+      type: "message",
+      text: fuel <= 0
+        ? `天色转暗 · 营地没有火，今晚 ${night} 秒需要 ${logs} 根枯木`
+        : `天色转暗 · 火只够烧 ${Math.round(fuel)} 秒，今晚 ${night} 秒还差 ${logs} 根枯木`,
+    });
+  }
+
   private updateObjectives(): void {
-    if (!this.duskWarningSent && this.phase === "day" && this.day === 1 && this.phaseTime <= 14) {
+    // 每一天都预警，不再只有第 1 天。
+    if (!this.duskWarningSent && this.phase === "day" && this.phaseTime <= 30) {
       this.duskWarningSent = true;
-      this.events.push({ type: "message", text: "天色正在变暗 · 入口的大石一块就能封住窄口" });
+      this.warnDuskFuel();
+      if (this.day === 1) {
+        this.events.push({ type: "message", text: "入口的大石一块就能封住窄口" });
+      }
     }
     if (this.objectiveStage === 0 && this.player.carrying) {
       this.objectiveStage = 1;
