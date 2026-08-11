@@ -392,12 +392,19 @@ export class GameSimulation {
         this.endGame("starved");
       } else if (this.player.health <= 0) {
         this.player.health = 0;
-        this.endGame("killed");
+        // 血归零有两条完全不同的路：被狼咬死，或者体力恒定流失把你耗干
+        // （0.24/s，417 秒不吃不休就见底，全程可以一只狼都没碰到）。
+        // 混成一个"被狼撕碎"会让玩家完全学不到自己其实是没吃饭死的。
+        this.endGame(this.combatTimer > 0 ? "killed" : "exhausted");
       }
     }
   }
 
+  /** 死亡瞬间的瘫痪状态，供结算文案指出真正的死因链。 */
+  deathCondition: SurvivalCondition = "normal";
+
   private endGame(cause: DeathCause): void {
+    this.deathCondition = this.player.condition;
     this.setResting(false);
     this.running = false;
     this.gameOverSent = true;

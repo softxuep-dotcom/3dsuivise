@@ -76,7 +76,12 @@ export interface CritterSpec {
 }
 /** 体温越界后的瘫痪状态，带迟滞：进入与解除阈值不同。 */
 export type SurvivalCondition = "normal" | "heatstroke" | "hypothermia";
-export type DeathCause = "dehydrated" | "starved" | "killed";
+/**
+ * 死因。体温越界**不**致死（沿用原图：只施加中暑/失温的瘫痪状态），
+ * 所以没有"冻死/热死"这两项 —— 但体温会经由减速间接把你送走，
+ * 因此结算时要连带报出当时的瘫痪状态，否则玩家学不到真正的死因链。
+ */
+export type DeathCause = "dehydrated" | "starved" | "killed" | "exhausted";
 export type CampKind = "windy-ridge" | "deep-cave" | "abandoned-camp";
 export type TerrainStyle = "broken-spur" | "saddle-shoulder" | "cliff-alcove" | "wide-ledge" | "wind-crown";
 export type LandmarkKind = "deadwood" | "wreck" | "monolith";

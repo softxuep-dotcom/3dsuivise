@@ -4,6 +4,7 @@ import type {
   GameEvent,
   InteractionHint,
   InventoryItemKind,
+  DeathCause,
   SurvivalCondition,
   WeaponKind,
   ArmorKind,
@@ -51,6 +52,14 @@ const ACTION_LABELS: Record<InteractionHint["action"], string> = {
 const CONDITION_COPY: Record<Exclude<SurvivalCondition, "normal">, string> = {
   heatstroke: "中暑 · 移速 −60% 攻速 −50%",
   hypothermia: "失温 · 移速 −75% 攻速 −65%",
+};
+
+const DEATH_COPY: Record<DeathCause, string> = {
+  dehydrated: "水分见底，你倒在了滚烫的沙子上 —— 仙人掌就在几十步外，你没能走到。",
+  starved: "饥饿耗尽，你再没有力气站起来。",
+  killed: "狼群撕碎了你的最后一道防线。",
+  // 体力恒定流失把血耗干 —— 可能全程一只狼都没碰到，文案必须说清是没吃饭。
+  exhausted: "没有一只狼碰到你。是体力一点点流干的 —— 熟肉是唯一能大量回体力的东西。",
 };
 
 const WOLF_LABELS: Record<WolfKind, string> = {
@@ -431,12 +440,21 @@ export class HudController {
   private showGameOver(): void {
     const wolfCount = this.simulation.wolves.filter((wolf) => wolf.mode !== "dead").length;
     const cause = this.simulation.deathCause;
-    const causeText = cause === "dehydrated"
-      ? "水分见底，你倒在了滚烫的沙子上 —— 仙人掌就在几十步外，你没能走到。"
-      : cause === "starved"
-        ? "饥饿耗尽，你再没有力气站起来。"
-        : "狼群撕碎了你的最后一道防线。";
-    this.resultCopy.textContent = `坚持到第 ${this.simulation.day} 天，猎杀 ${this.simulation.player.kills} 只狼。${causeText} 沙海上仍有 ${wolfCount} 只狼在活动。`;
+    const causeText = DEATH_COPY[cause ?? "killed"];
+    // 体温越界本身不致死，但 -60%/-75% 的减速经常才是真凶。
+    // 不点出来的话，玩家只会记住"被狼咬死了"，学不到该去烤火或降温。
+    const condition = this.simulation.deathCondition;
+    const conditionText = condition === "heatstroke"
+      ? "倒下时你正中暑，移速只剩四成 —— 白天该喝水或用洗脸水压住体温。"
+      : condition === "hypothermia"
+        ? "倒下时你正失温，几乎迈不开腿 —— 夜里该守着篝火，或者早点添柴。"
+        : "";
+    this.resultCopy.textContent = [
+      `坚持到第 ${this.simulation.day} 天，猎杀 ${this.simulation.player.kills} 只狼。`,
+      causeText,
+      conditionText,
+      `沙海上仍有 ${wolfCount} 只狼在活动。`,
+    ].filter(Boolean).join(" ");
     this.gameOver.classList.remove("hidden");
   }
 
