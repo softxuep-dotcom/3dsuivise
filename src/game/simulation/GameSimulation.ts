@@ -473,14 +473,15 @@ export class GameSimulation {
 
     // 添柴：从背包里取一根烧掉。木头进背包之后不必再扛着走，
     // 配合放大到 10 米的火焰半径，营地事务不用全挤在火堆脚下。
+    //
+    // 但 10 米几乎盖住整座营地，所以添柴只在**它比脚边的东西更近**时才抢 E ——
+    // 否则站在营地里就永远捡不起第二根柴：捡完第一根，第二根旁边的 E 会直接烧掉它。
     if (this.getInventoryCount("wood") > 0) {
-      // 自己搭的火窖优先 —— 你走到它跟前多半就是为了喂它。
       const hearth = this.findNearestHearth(FIRE_WARMTH_RADIUS);
-      if (hearth) {
+      if (hearth && !this.hasNearerTarget(hearth.distance)) {
         this.removeInventory("wood", 1);
-        if (hearth.structure) hearth.structure.fuel = clamp(hearth.structure.fuel + 95, 0, 300);
-        else if (hearth.campId >= 0) this.camps[hearth.campId].fuel = clamp(this.camps[hearth.campId].fuel + 95, 0, 300);
-        this.events.push({ type: "feed-fire", campId: Math.max(0, hearth.campId) });
+        this.camps[hearth.campId].fuel = clamp(this.camps[hearth.campId].fuel + 95, 0, 300);
+        this.events.push({ type: "feed-fire", campId: hearth.campId });
         return;
       }
     }
@@ -526,6 +527,23 @@ export class GameSimulation {
       this.beginWaterDraw(well);
       return;
     }
+  }
+
+  /**
+   * 火塘之外还有没有更近的可交互目标。
+   * 采集类目标的判定半径都在 3.2 米以内，火塘却有 10 米 —— 不比距离的话，
+   * 营地范围内的拾取、割仙人掌、挖矿、提水会被添柴全部吃掉。
+   */
+  private hasNearerTarget(hearthDistance: number): boolean {
+    const item = this.findNearestItem(2.5);
+    if (item && distance(this.player, item) < hearthDistance) return true;
+    const cactus = this.findNearestCactus(2.7);
+    if (cactus && distance(this.player, cactus) < hearthDistance) return true;
+    const iron = this.findNearestIron(2.8);
+    if (iron && distance(this.player, iron) < hearthDistance) return true;
+    const well = this.findNearestWell(WELL_REACH);
+    if (well && distance(this.player, this.world.wells[well.id]) < hearthDistance) return true;
+    return false;
   }
 
   /** 返回射程内蓄着水的井；没有则 null。 */
@@ -665,7 +683,9 @@ export class GameSimulation {
       if (dot(this.player.facing, direction(this.player, critter)) < -0.15) continue;
       const needsMultiplier = this.player.hunger < 15 || this.player.water < 15 ? 0.8 : 1;
       const staminaMultiplier = exhausted ? EXHAUSTED_DAMAGE_SCALE : 1;
-      critter.health -= Math.max(1, Math.round(this.player.attack * needsMultiplier * staminaMultiplier));
+      // 和打狼走同一个攻击力（含随身枯木加成）—— 否则 HUD 上显示的攻击力
+      // 在砍猎物时对不上账。
+      critter.health -= Math.max(1, Math.round(this.getAttackPower() * needsMultiplier * staminaMultiplier));
       critter.hurtFlash = 0.18;
       // 挨了一下必然受惊，冲刺条也回满 —— 第一刀没打死就得追。
       critter.mode = "flee";
@@ -835,7 +855,9 @@ export class GameSimulation {
     const index = tiers.findIndex((tier) => tier.id === current);
     const next = tiers[index + 1];
     if (!next) return false;
-    if (next.needsFire && !this.findNearestLitCamp(5.2)) {
+    // 判定半径与取暖、烤肉统一走 FIRE_WARMTH_RADIUS：原先这里单独写死 5.2，
+    // 于是"站在营地里就算烤着火"对升级装备这一条不成立。
+    if (next.needsFire && !this.findNearestLitFire(FIRE_WARMTH_RADIUS)) {
       this.events.push({ type: "message", text: `${next.label}必须在燃烧的篝火旁制作` });
       return false;
     }
@@ -866,6 +888,8 @@ export class GameSimulation {
     this.noteInPlaceAction();
     this.removeInventory("raw-meat", 1);
     if (!this.addInventory("cooked-meat", 1)) {
+      // 生肉必须放回去 —— 刚腾出来的位置一定装得下，否则这一步等于凭空烧掉一块肉。
+      this.addInventory("raw-meat", 1);
       this.events.push({ type: "message", text: "背包已满 · 烤好的肉没处放" });
       return false;
     }
@@ -908,7 +932,6 @@ export class GameSimulation {
       z: spot.z,
       hp: spec.maxHp,
       maxHp: spec.maxHp,
-      fuel: spec.fuel,
       rotation: Math.atan2(this.player.facing.z, this.player.facing.x),
       active: true,
     });
@@ -929,11 +952,6 @@ export class GameSimulation {
     for (const wall of this.world.walls) {
       if (distanceSquared(spot, wall) < (wall.radius + spec.radius) ** 2) return "这里有东西挡着";
     }
-    // 火窖离固定营火太近就失去意义 —— 它存在的理由是让你能在别处过夜。
-    if (kind === "campfire") {
-      const camp = this.getNearestCamp();
-      if (camp && camp.distance < FIRE_WARMTH_RADIUS) return "营地已经有火了";
-    }
     return null;
   }
 
@@ -950,7 +968,12 @@ export class GameSimulation {
     }
     this.noteInPlaceAction();
     this.removeInventory("water", 1);
-    this.addInventory("wash-water", 1);
+    if (!this.addInventory("wash-water", 1)) {
+      // 同烤肉：兑不出来就把那份水还回去，绝不能凭空蒸发。
+      this.addInventory("water", 1);
+      this.events.push({ type: "message", text: "背包已满 · 洗脸水没处放" });
+      return false;
+    }
     this.events.push({ type: "craft-wash-water" });
     this.events.push({ type: "message", text: "兑成洗脸水 · 降温 25~50，是直接喝的四倍" });
     return true;
@@ -971,8 +994,12 @@ export class GameSimulation {
     if (this.player.carrying) {
       return { action: "drop", text: "放下大石 · 一块即可封住窄口" };
     }
-    if (this.getInventoryCount("wood") > 0 && this.findNearestHearth(FIRE_WARMTH_RADIUS)) {
-      return { action: "feed", text: `添一根枯木 · 火焰延长 95 秒（余 ${this.getInventoryCount("wood")}）` };
+    // 与 requestInteraction 同一套优先级：火塘只在比脚边的东西更近时才占住 E。
+    if (this.getInventoryCount("wood") > 0) {
+      const hearth = this.findNearestHearth(FIRE_WARMTH_RADIUS);
+      if (hearth && !this.hasNearerTarget(hearth.distance)) {
+        return { action: "feed", text: `添一根枯木 · 火焰延长 95 秒（余 ${this.getInventoryCount("wood")}）` };
+      }
     }
     const item = this.findNearestItem(2.5);
     if (item) {
@@ -1010,9 +1037,9 @@ export class GameSimulation {
   }
 
   /**
-   * 燃着的热源里最近的一个，固定营火与玩家搭的火窖一视同仁。
-   * 取暖、烤肉、二阶以上装备合成全部走这一个查询 —— 火窖能建之后，
-   * "必须回营地"就自动变成了"必须有火"，而火可以是你自己搭的。
+   * 燃着的热源里最近的一个。
+   * 取暖、烤肉、二阶以上装备合成全部走这一个查询，半径统一为 FIRE_WARMTH_RADIUS ——
+   * 只要"待在营地里"就算烤着火，营地事务不必再挤在火堆脚下办。
    */
   findNearestLitFire(maxDistance: number): { x: number; z: number; fuel: number } | null {
     let best: { x: number; z: number; fuel: number } | null = null;
@@ -1025,47 +1052,23 @@ export class GameSimulation {
       best = { x: camp.x, z: camp.z, fuel };
       bestDistance = value;
     }
-    for (const structure of this.structures) {
-      if (!structure.active || structure.kind !== "campfire" || structure.fuel <= 0) continue;
-      const value = distanceSquared(this.player, structure);
-      if (value >= bestDistance) continue;
-      best = { x: structure.x, z: structure.z, fuel: structure.fuel };
-      bestDistance = value;
-    }
     return best;
   }
 
   /**
-   * 最近的**火塘**，不论燃着没燃 —— 添柴要能点燃已经灭掉的火窖，
+   * 最近的**火塘**，不论燃着没燃 —— 添柴要能重新点燃已经烧空的营火，
    * 所以这里不能复用只找"燃着的火"的 findNearestLitFire。
    */
-  private findNearestHearth(maxDistance: number): { campId: number; structure: PlacedStructure | null } | null {
-    let best: { campId: number; structure: PlacedStructure | null } | null = null;
+  private findNearestHearth(maxDistance: number): { campId: number; distance: number } | null {
+    let best: { campId: number; distance: number } | null = null;
     let bestDistance = maxDistance * maxDistance;
-    for (const structure of this.structures) {
-      if (!structure.active || structure.kind !== "campfire") continue;
-      const value = distanceSquared(this.player, structure);
-      if (value >= bestDistance) continue;
-      best = { campId: -1, structure };
-      bestDistance = value;
-    }
     for (const camp of this.world.camps) {
       const value = distanceSquared(this.player, camp);
       if (value >= bestDistance) continue;
-      best = { campId: camp.id, structure: null };
+      best = { campId: camp.id, distance: Math.sqrt(value) };
       bestDistance = value;
     }
     return best;
-  }
-
-  /** 最近的营地，不论有没有火 —— 扛着柴时要指的是"哪儿有火堆"，不是"哪儿有火"。 */
-  getNearestCamp(): { camp: CampDefinition; distance: number } | null {
-    let closest: { camp: CampDefinition; distance: number } | null = null;
-    for (const camp of this.world.camps) {
-      const campDistance = distance(this.player, camp);
-      if (!closest || campDistance < closest.distance) closest = { camp, distance: campDistance };
-    }
-    return closest;
   }
 
   getNearestLitCamp(): { camp: CampDefinition; fuel: number; distance: number } | null {
@@ -1124,8 +1127,11 @@ export class GameSimulation {
 
     if (this.player.resting) return "休息中 · 生命与劳力都在回复";
     // 枯木现在进背包，所以指引从"往哪搬"变成"够不够、去哪烧"。
-    if (this.getInventoryCount("wood") > 0 && this.findNearestHearth(FIRE_WARMTH_RADIUS)) {
-      return "就在火边 · 按互动键添柴";
+    // 同样要让过 requestInteraction 的优先级：脚边有东西可捡时 E 不会去添柴，
+    // 这里就不能喊"按互动键添柴"。
+    if (this.getInventoryCount("wood") > 0) {
+      const hearth = this.findNearestHearth(FIRE_WARMTH_RADIUS);
+      if (hearth && !this.hasNearerTarget(hearth.distance)) return "就在火边 · 按互动键添柴";
     }
     const alpha = this.getAlpha();
     if (alpha) return `头狼 ${Math.max(0, Math.ceil(alpha.health))}/${alpha.maxHealth} · 杀死它即可获救`;
@@ -1358,11 +1364,6 @@ export class GameSimulation {
 
   private updateFires(delta: number): void {
     for (const camp of this.camps) camp.fuel = Math.max(0, camp.fuel - delta);
-    // 火窖烧完不消失，只是灭了 —— 还能再添柴复燃，这样搭出去的火点是长期资产。
-    for (const structure of this.structures) {
-      if (!structure.active || structure.kind !== "campfire") continue;
-      structure.fuel = Math.max(0, structure.fuel - delta);
-    }
   }
 
   private updateCacti(): void {
@@ -1382,9 +1383,16 @@ export class GameSimulation {
         continue;
       }
       if (distanceSquared(this.player, drop) > 1.8 * 1.8) continue;
-      if (!this.addInventory(drop.kind, drop.count)) continue;
-      drop.active = false;
+      // 装得下多少拿多少，剩下的**留在地上并从堆里扣掉**。
+      // 骆驼一次掉 4 块肉，背包常常只剩两格位置 —— 全有或全无的话玩家只能眼睁睁
+      // 看着一头骆驼烂在沙子里；而不扣数量就等于允许同一堆反复领取。
+      const taken = Math.min(drop.count, this.getInventorySpace(drop.kind));
+      if (taken <= 0) continue;
+      this.addInventory(drop.kind, taken);
+      drop.count -= taken;
       this.events.push({ type: "pickup", kind: drop.kind });
+      if (drop.count > 0) continue;
+      drop.active = false;
     }
   }
 
@@ -1974,7 +1982,7 @@ export class GameSimulation {
     return distanceSquared(wolf, entrance) > 3.2 * 3.2 ? entrance : nearest;
   }
 
-  /** 挡在狼前进方向上的放置物。火窖也会被拆 —— 不然它就是无敌的安全屋。 */
+  /** 挡在狼前进方向上的放置物。 */
   private findBlockingStructure(wolf: WolfState, desired: Vec2): PlacedStructure | null {
     let closest: PlacedStructure | null = null;
     let closestDistance = Number.POSITIVE_INFINITY;
@@ -2119,7 +2127,25 @@ export class GameSimulation {
     return this.items.some((item) => item.active && item.placed && item.kind === "stone" && distanceSquared(item, entrance) < 3.6 * 3.6);
   }
 
+  /** 背包还能再装下多少个 kind。addInventory 靠它保证"要么全进、要么不动"。 */
+  getInventorySpace(kind: InventoryItemKind): number {
+    const limit = INVENTORY_STACK_LIMITS[kind];
+    let space = 0;
+    for (const stack of this.player.inventory) {
+      if (!stack) space += limit;
+      else if (stack.kind === kind) space += Math.max(0, limit - stack.count);
+    }
+    return space;
+  }
+
+  /**
+   * 入包，**原子操作**：装不下就一个都不装。
+   * 所有调用方写的都是 `if (!addInventory(...)) 报错回滚`，可原先它会先把塞得下的
+   * 那部分塞进去再返回 false —— 掉落物因此能被反复领取（拿走一半、地上那堆还是满的）。
+   */
   private addInventory(kind: InventoryItemKind, count: number): boolean {
+    if (count <= 0) return true;
+    if (this.getInventorySpace(kind) < count) return false;
     let remaining = count;
     const limit = INVENTORY_STACK_LIMITS[kind];
     for (const stack of this.player.inventory) {
@@ -2156,11 +2182,6 @@ export class GameSimulation {
     if (!stack) return;
     stack.count -= count;
     if (stack.count <= 0) this.player.inventory[index] = null;
-  }
-
-  private findNearestLitCamp(maxDistance: number): CampDefinition | null {
-    const camp = this.findNearestCamp(maxDistance);
-    return camp && this.camps[camp.id].fuel > 0 ? camp : null;
   }
 
   private findNearestCamp(maxDistance: number): CampDefinition | null {

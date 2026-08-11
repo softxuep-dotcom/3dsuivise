@@ -91,7 +91,6 @@ export class HudController {
   private readonly craftWashButton = required<HTMLButtonElement>("craft-wash-button");
   private readonly craftCookButton = required<HTMLButtonElement>("craft-cook-button");
   private readonly buildButtons: Array<[HTMLButtonElement, StructureKind]> = [
-    [required<HTMLButtonElement>("build-campfire-button"), "campfire"],
     [required<HTMLButtonElement>("build-stake-button"), "stake"],
   ];
   private readonly hungerValue = required<HTMLElement>("hunger-value");
@@ -184,10 +183,9 @@ export class HudController {
       this.simulation.craftWeapon();
       this.updateInventory();
     });
-    this.washButton.addEventListener("click", () => {
-      this.simulation.consumeWashWater();
-      this.updateInventory();
-    });
+    // 喝水 / 洗脸水这两个按钮的点击由 InputController 统一接管（pointerdown）。
+    // 这里**不能**再挂一份 click：pointerdown 上的 preventDefault 拦不住随后的 click，
+    // 两条路径会各消耗一份，按一次喝掉两口水。
     for (const [button, kind] of this.buildButtons) {
       button.addEventListener("click", () => {
         // 建造要看着放置结果，所以放完直接关掉背包回到游戏。
@@ -201,10 +199,6 @@ export class HudController {
     });
     this.craftWashButton.addEventListener("click", () => {
       this.simulation.craftWashWater();
-      this.updateInventory();
-    });
-    this.drinkButton.addEventListener("click", () => {
-      this.simulation.consumeWater();
       this.updateInventory();
     });
   }
