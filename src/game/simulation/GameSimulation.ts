@@ -60,6 +60,7 @@ const ITEM_LABELS: Record<InventoryItemKind, string> = {
   "iron-ore": "铁矿",
   water: "水",
   "wash-water": "洗脸水",
+  wood: "枯木",
 };
 
 export interface EquipTier {
@@ -202,7 +203,21 @@ const STAMINA_IDLE_REGEN = 1.6;   // 站着不动但没进入休息
 const STAMINA_ACTIVE_REGEN = 1.1; // 移动中：仍只有休息的 1/7，但走路不再是完全的死区
                                   // （0.5 时走满全图 200 秒才回满，而游戏大部分时间在走）
 const STAMINA_COST_CACTUS = 10;
-const STAMINA_COST_MINE = 15;   // 20 → 15：两级武器共需 8 块铁 = 原先两整管劳力的站桩
+const STAMINA_COST_MINE = 15;
+/**
+ * 捡一根枯木 30 劳力。
+ * 木头进背包之后，原来"双手被占、一次一根、不能攻击"这三条约束同时消失，
+ * 木头会变成免费无限。原图用采集成本接住稀缺性（砍一根 150 劳力 / 满值 225，
+ * 一管只够 1.5 根），我们按量程缩到 30 —— 一管三根，而一夜要烧两根。
+ */
+const STAMINA_COST_WOOD = 30;
+/**
+ * 随身枯木每根 +2 攻击，最多两根生效。
+ * 抄自原图 I00E「一块木头。增加 5 点的攻击力」—— 背包里的材料同时是个边际武器，
+ * 占那一格才有回报，否则玩家只会觉得被收了格子税。
+ */
+const WOOD_ATTACK_BONUS = 2;
+const WOOD_ATTACK_CAP = 2;   // 20 → 15：两级武器共需 8 块铁 = 原先两整管劳力的站桩
 const STAMINA_COST_DRAW = 8;
 const STAMINA_COST_ATTACK = 4;
 /** 劳力低于此值时攻击仍可挥出，但伤害衰减到 EXHAUSTED_DAMAGE_SCALE。 */
@@ -448,21 +463,33 @@ export class GameSimulation {
     }
 
     if (this.player.carrying) {
-      const nearestCamp = this.findNearestCamp(4.3);
-      if (nearestCamp && this.player.carrying === "wood") {
-        const campState = this.camps[nearestCamp.id];
-        campState.fuel = clamp(campState.fuel + 95, 0, 300);
-        this.player.carrying = null;
-        this.events.push({ type: "feed-fire", campId: nearestCamp.id });
-        return;
-      }
       this.dropCarriedItem();
+      return;
+    }
+
+    // 添柴：从背包里取一根烧掉。木头进背包之后不必再扛着走，
+    // 配合放大到 10 米的火焰半径，营地事务不用全挤在火堆脚下。
+    const fireCamp = this.findNearestCamp(FIRE_WARMTH_RADIUS);
+    if (fireCamp && this.getInventoryCount("wood") > 0) {
+      this.removeInventory("wood", 1);
+      const campState = this.camps[fireCamp.id];
+      campState.fuel = clamp(campState.fuel + 95, 0, 300);
+      this.events.push({ type: "feed-fire", campId: fireCamp.id });
       return;
     }
 
     const item = this.findNearestItem(2.5);
     if (item) {
-      this.player.carrying = item.kind;
+      if (item.kind === "wood") {
+        if (!this.spendStamina(STAMINA_COST_WOOD, "捡枯木")) return;
+        if (!this.addInventory("wood", 1)) {
+          this.player.stamina = Math.min(this.player.maxStamina, this.player.stamina + STAMINA_COST_WOOD);
+          this.events.push({ type: "message", text: "背包已满 · 放不下枯木" });
+          return;
+        }
+      } else {
+        this.player.carrying = item.kind;
+      }
       item.active = false;
       this.events.push({ type: "pickup", kind: item.kind });
       return;
@@ -613,7 +640,7 @@ export class GameSimulation {
       const wasRetreating = wolf.mode === "retreating";
       const needsMultiplier = this.player.hunger < 15 || this.player.water < 15 ? 0.8 : 1;
       const staminaMultiplier = exhausted ? EXHAUSTED_DAMAGE_SCALE : 1;
-      const damage = Math.max(1, Math.round(this.player.attack * needsMultiplier * staminaMultiplier) - wolf.defense);
+      const damage = Math.max(1, Math.round(this.getAttackPower() * needsMultiplier * staminaMultiplier) - wolf.defense);
       wolf.health -= damage;
       wolf.hurtFlash = 0.18;
       wolf.provoked = true;
@@ -872,22 +899,18 @@ export class GameSimulation {
       if (urgentWell) return { action: "well", text: `水分告急 · 提水 · 劳力 ${STAMINA_COST_DRAW}` };
     }
     if (this.player.carrying) {
-      const camp = this.findNearestCamp(4.3);
-      if (camp && this.player.carrying === "wood") return { action: "feed", text: "点燃这根枯木 · 篝火延长 95 秒" };
-      if (this.player.carrying === "wood") {
-        // 扛着柴却不在火边：提示语要说清"放下等于白搬"，而不是只写一个放下。
-        const target = this.getNearestCamp();
-        return {
-          action: "drop",
-          text: target
-            ? `放下枯木（要烧得搬到 ${Math.round(target.distance)} 米外的篝火边）`
-            : "放下枯木（要烧得搬到篝火边）",
-        };
-      }
       return { action: "drop", text: "放下大石 · 一块即可封住窄口" };
     }
+    const woodCamp = this.findNearestCamp(FIRE_WARMTH_RADIUS);
+    if (woodCamp && this.getInventoryCount("wood") > 0) {
+      return { action: "feed", text: `点燃一根枯木 · 篝火延长 95 秒（余 ${this.getInventoryCount("wood")}）` };
+    }
     const item = this.findNearestItem(2.5);
-    if (item) return { action: "pickup", text: `双手搬起${item.kind === "wood" ? "枯木" : "大石"}` };
+    if (item) {
+      return item.kind === "wood"
+        ? { action: "pickup", text: `拾起枯木入包 · 劳力 ${STAMINA_COST_WOOD}` }
+        : { action: "pickup", text: "双手搬起大石" };
+    }
     if (this.findNearestCactus(2.7)) return { action: "cactus", text: `割仙人掌取汁 · 劳力 ${STAMINA_COST_CACTUS}` };
     if (this.findNearestIron(2.8)) return { action: "mine", text: `敲取铁矿 · 劳力 ${STAMINA_COST_MINE}` };
     const well = this.findNearestWell(WELL_REACH);
@@ -982,15 +1005,9 @@ export class GameSimulation {
     if (this.player.condition === "heatstroke") return "中暑 · 离开火边，喝水降温";
 
     if (this.player.resting) return "休息中 · 生命与劳力都在回复";
-    // 枯木必须搬到篝火边才能烧掉 —— 手里扛着柴却离火很远时，
-    // 之前只有一句"放下枯木"，没有任何人告诉玩家该往哪走。
-    if (this.player.carrying === "wood") {
-      const camp = this.findNearestCamp(4.3);
-      if (camp) return "就在火边 · 按互动键把枯木添进去";
-      const target = this.getNearestCamp();
-      return target
-        ? `枯木只能在篝火边烧 · 搬去 ${Math.round(target.distance)} 米外的${CAMP_LABELS[target.camp.kind]}`
-        : "枯木只能在篝火边烧 · 搬回营地";
+    // 枯木现在进背包，所以指引从"往哪搬"变成"够不够、去哪烧"。
+    if (this.getInventoryCount("wood") > 0 && this.findNearestCamp(FIRE_WARMTH_RADIUS)) {
+      return "就在火边 · 按互动键添柴";
     }
     const alpha = this.getAlpha();
     if (alpha) return `头狼 ${Math.max(0, Math.ceil(alpha.health))}/${alpha.maxHealth} · 杀死它即可获救`;
@@ -1008,8 +1025,8 @@ export class GameSimulation {
     if (this.player.warmth > 78) return "劳作让体温快爆了 · 喝水或停下来歇会儿";
     const retreatingWolves = this.wolves.filter((wolf) => wolf.mode === "retreating").length;
     if (retreatingWolves > 0) return `天亮了 · ${retreatingWolves}只狼正在撤离`;
-    if (this.objectiveStage === 0) return "拿起身边的枯木";
-    if (this.objectiveStage === 1) return "把枯木送到篝火旁添柴";
+    if (this.objectiveStage === 0) return `捡起身边的枯木 · 劳力 ${STAMINA_COST_WOOD}/根`;
+    if (this.objectiveStage === 1) return "走到篝火旁，按互动键添柴";
     if (this.objectiveStage === 2) return "找到入口旁的大石并搬到缺口中央";
     if (this.getInventoryCount("water") === 0 && this.getInventoryCount("cactus-juice") === 0) return "先囤水 · 割仙人掌，或走一趟水井";
     if (this.player.armor === "none" && this.getInventoryCount("hide") > 0) return "收集4张兽皮制作兽皮衣";
@@ -1146,6 +1163,16 @@ export class GameSimulation {
     if (next === "heatstroke") this.events.push({ type: "message", text: "中暑 · 行动迟缓，立刻离开火边并喝水降温" });
     else if (next === "hypothermia") this.events.push({ type: "message", text: "失温 · 几乎迈不开腿，爬向最近的篝火" });
     else this.events.push({ type: "message", text: "体温回到安全区间" });
+  }
+
+  /**
+   * 实际攻击力 = 基础 + 随身枯木加成（每根 +2，最多两根）。
+   * 加成不写进 player.attack，因为那个字段被装备升级永久累加；
+   * 枯木是会烧掉的临时物，必须每次现算。
+   */
+  getAttackPower(): number {
+    const logs = Math.min(this.getInventoryCount("wood"), WOOD_ATTACK_CAP);
+    return this.player.attack + logs * WOOD_ATTACK_BONUS;
   }
 
   /** 中暑 -60% 移速，失温 -75% 移速。（原图是 -85% / -99%，浏览器手感下放宽） */
@@ -1920,7 +1947,9 @@ export class GameSimulation {
         this.events.push({ type: "message", text: "入口的大石一块就能封住窄口" });
       }
     }
-    if (this.objectiveStage === 0 && this.player.carrying) {
+    // 枯木改为进背包之后，这一阶不能再只看 carrying —— 否则捡了柴也不算数，
+    // 玩家会永远卡在"拿起身边的枯木"。
+    if (this.objectiveStage === 0 && (this.player.carrying || this.getInventoryCount("wood") > 0)) {
       this.objectiveStage = 1;
       this.events.push({ type: "message", text: "枯木用于添火；入口旁的大石负责封路" });
     } else if (this.objectiveStage === 1 && this.camps.some((camp) => camp.fuel > 90)) {

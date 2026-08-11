@@ -1210,7 +1210,8 @@ export class GameRenderer {
     if (!this.playerModel) {
       this.weaponMount.rotation.z = -0.35 - Math.sin(attackProgress * Math.PI) * 1.7;
     }
-    this.carriedWood.visible = player.carrying === "wood";
+    // 枯木已改为背包物品，手上不再显示；carriedWood 保留给放置物预览复用。
+    this.carriedWood.visible = false;
     this.carriedStone.visible = player.carrying === "stone";
     this.playerCoat.visible = player.armor !== "none" && !this.playerModel;
     if (this.playerCape) this.playerCape.visible = player.armor !== "none";

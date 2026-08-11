@@ -38,6 +38,7 @@ const ITEM_PRESENTATION: Record<InventoryItemKind, { glyph: string; name: string
   "iron-ore": { glyph: "铁", name: "铁矿" },
   "wash-water": { glyph: "洗", name: "洗脸水" },
   water: { glyph: "水", name: "水" },
+  wood: { glyph: "柴", name: "枯木" },
 };
 
 const ACTION_LABELS: Record<InteractionHint["action"], string> = {
@@ -242,7 +243,7 @@ export class HudController {
     this.updateDrainNote();
     this.updateHuntProgress();
 
-    this.attackValue.textContent = String(player.attack);
+    this.attackValue.textContent = String(this.simulation.getAttackPower());
     this.defenseValue.textContent = String(player.defense);
     const berries = this.simulation.getInventoryCount("cactus-juice");
     this.berryCount.textContent = String(berries);
@@ -392,12 +393,12 @@ export class HudController {
       slot.innerHTML = `<span class="item-glyph">${presentation.glyph}</span><span class="item-name">${presentation.name}</span><b class="item-count">${stack.count}</b>`;
       slot.setAttribute("aria-label", `${presentation.name} ${stack.count}个`);
     });
-    this.handsStatus.textContent = player.carrying === "wood" ? "枯木" : player.carrying === "stone" ? "大石" : "空闲";
+    this.handsStatus.textContent = player.carrying === "stone" ? "大石" : "空闲";
     this.coatStatus.textContent = ARMOR_LABELS[player.armor];
     this.weaponStatus.textContent = WEAPON_LABELS[player.weapon];
     this.statHealth.textContent = `${Math.round(player.health)}/${player.maxHealth}`;
     this.statStamina.textContent = `${Math.round(player.stamina)}/${player.maxStamina}`;
-    this.statAttack.textContent = String(player.attack);
+    this.statAttack.textContent = String(this.simulation.getAttackPower());
     this.statDefense.textContent = String(player.defense);
     this.syncUpgradeButton(this.craftButton, "armor");
     this.syncUpgradeButton(this.craftSpearButton, "weapon");

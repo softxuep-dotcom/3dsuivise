@@ -4,8 +4,15 @@ export interface Vec2 {
 }
 
 export type Phase = "day" | "night";
-export type CarryKind = "wood" | "stone";
-export type GroundItemKind = CarryKind;
+/**
+ * 双手搬运现在只剩大石。
+ * 木头和大石本是两种东西：木头是**材料**（烧掉、参与配方），搬运只是运输过程；
+ * 大石是**家具**（塞进入口当路障），搬运本身就是玩法。原图也正是这么分的 ——
+ * 它的木头 I00E 从头到尾都是背包物品，稀缺性靠 150 劳力的采集成本而不是占手。
+ */
+export type CarryKind = "stone";
+/** 地面上散落的可拾取物仍然有两种；木头进背包，大石上手。 */
+export type GroundItemKind = "wood" | "stone";
 export type InventoryItemKind =
   | "cactus-juice"
   | "raw-meat"
@@ -13,7 +20,8 @@ export type InventoryItemKind =
   | "hide"
   | "iron-ore"
   | "water"
-  | "wash-water";
+  | "wash-water"
+  | "wood";
 export type WeaponKind = "survival-knife" | "iron-spear" | "fang-spear";
 /** 护甲三阶：无 → 兽皮衣 → 镶铁重甲。 */
 export type ArmorKind = "none" | "leather" | "reinforced";
@@ -352,4 +360,5 @@ export const INVENTORY_STACK_LIMITS: Record<InventoryItemKind, number> = {
   "iron-ore": 6,
   water: 4,
   "wash-water": 3,
+  wood: 4,
 };
