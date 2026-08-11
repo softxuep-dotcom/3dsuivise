@@ -860,8 +860,18 @@ export class GameSimulation {
     }
     if (this.player.carrying) {
       const camp = this.findNearestCamp(4.3);
-      if (camp && this.player.carrying === "wood") return { action: "feed", text: "添入枯木 · 篝火延长95秒" };
-      return { action: "drop", text: `放下${this.player.carrying === "wood" ? "枯木" : "大石"}${this.player.carrying === "stone" ? " · 一块即可封住窄口" : ""}` };
+      if (camp && this.player.carrying === "wood") return { action: "feed", text: "点燃这根枯木 · 篝火延长 95 秒" };
+      if (this.player.carrying === "wood") {
+        // 扛着柴却不在火边：提示语要说清"放下等于白搬"，而不是只写一个放下。
+        const target = this.getNearestCamp();
+        return {
+          action: "drop",
+          text: target
+            ? `放下枯木（要烧得搬到 ${Math.round(target.distance)} 米外的篝火边）`
+            : "放下枯木（要烧得搬到篝火边）",
+        };
+      }
+      return { action: "drop", text: "放下大石 · 一块即可封住窄口" };
     }
     const item = this.findNearestItem(2.5);
     if (item) return { action: "pickup", text: `双手搬起${item.kind === "wood" ? "枯木" : "大石"}` };
@@ -892,6 +902,16 @@ export class GameSimulation {
       return Math.min(1, this.phaseTime / fade, elapsedInPhase / fade);
     }
     return 1 - Math.min(1, this.phaseTime / fade);
+  }
+
+  /** 最近的营地，不论有没有火 —— 扛着柴时要指的是"哪儿有火堆"，不是"哪儿有火"。 */
+  getNearestCamp(): { camp: CampDefinition; distance: number } | null {
+    let closest: { camp: CampDefinition; distance: number } | null = null;
+    for (const camp of this.world.camps) {
+      const campDistance = distance(this.player, camp);
+      if (!closest || campDistance < closest.distance) closest = { camp, distance: campDistance };
+    }
+    return closest;
   }
 
   getNearestLitCamp(): { camp: CampDefinition; fuel: number; distance: number } | null {
@@ -949,14 +969,24 @@ export class GameSimulation {
     if (this.player.condition === "heatstroke") return "中暑 · 离开火边，喝水降温";
 
     if (this.player.resting) return "休息中 · 生命与劳力都在回复";
+    // 枯木必须搬到篝火边才能烧掉 —— 手里扛着柴却离火很远时，
+    // 之前只有一句"放下枯木"，没有任何人告诉玩家该往哪走。
+    if (this.player.carrying === "wood") {
+      const camp = this.findNearestCamp(4.3);
+      if (camp) return "就在火边 · 按互动键把枯木添进去";
+      const target = this.getNearestCamp();
+      return target
+        ? `枯木只能在篝火边烧 · 搬去 ${Math.round(target.distance)} 米外的${CAMP_LABELS[target.camp.kind]}`
+        : "枯木只能在篝火边烧 · 搬回营地";
+    }
     const alpha = this.getAlpha();
     if (alpha) return `头狼 ${Math.max(0, Math.ceil(alpha.health))}/${alpha.maxHealth} · 杀死它即可获救`;
 
     if (this.phase === "night") {
       if (this.player.warmth < 30) return "体温偏低 · 回篝火，或者靠不停跑动扛住";
       const lit = this.getNearestLitCamp();
-      if (!lit) return "篝火熄灭 · 体温正在下降，尽快添柴";
-      if (lit.fuel < 25) return "火快灭了：再搬一根枯木";
+      if (!lit) return "篝火熄灭 · 沙海上捡一根枯木，搬到营地火堆上点燃";
+      if (lit.fuel < 25) return `火只剩 ${Math.round(lit.fuel)} 秒 · 再捡一根枯木搬到火边`;
       if (this.day === 1 && this.phaseTime > 60) return "守住火光 · 夜袭狼只掉肉，不掉皮";
       return `守住火光 · 累计猎杀 ${this.player.kills}/${ALPHA_KILL_REQUIREMENT} 引出头狼`;
     }
