@@ -261,6 +261,9 @@ export class GameRenderer {
   private readonly cactusViews = new Map<number, THREE.Object3D>();
   private readonly ironViews = new Map<number, THREE.Object3D>();
   private readonly wellViews = new Map<number, THREE.Object3D>();
+  private readonly wellPips = new Map<number, THREE.Object3D[]>();
+  /** 井顶水珠的浮动相位。 */
+  private wellBob = 0;
   private readonly wolfViews = new Map<number, WolfView>();
   private readonly critterViews = new Map<number, CritterView>();
   private readonly dropViews = new Map<number, THREE.Object3D>();
@@ -345,7 +348,7 @@ export class GameRenderer {
     this.syncItems();
     this.syncCacti();
     this.syncIronNodes();
-    this.syncWells();
+    this.syncWells(delta);
     this.syncCritters(delta);
     this.syncWolves(delta);
     this.syncDrops();
@@ -742,6 +745,22 @@ export class GameRenderer {
       beam.rotation.z = Math.PI / 2;
       beam.position.y = 2.05;
       group.add(beam);
+
+      // 井顶浮起三颗水珠代表存量：远距离就能读出这趟值不值得跑。
+      const pips: THREE.Object3D[] = [];
+      const pipGeometry = new THREE.OctahedronGeometry(0.17, 0);
+      for (let index = 0; index < 3; index += 1) {
+        const pip = new THREE.Mesh(pipGeometry, new THREE.MeshStandardMaterial({
+          color: 0x5cc7f0,
+          emissive: 0x1d6f96,
+          emissiveIntensity: 0.9,
+          roughness: 0.35,
+        }));
+        pip.position.set((index - 1) * 0.42, 2.55, 0);
+        group.add(pip);
+        pips.push(pip);
+      }
+      this.wellPips.set(well.id, pips);
 
       this.scene.add(group);
       this.wellViews.set(well.id, group);
@@ -1267,12 +1286,19 @@ export class GameRenderer {
     }
   }
 
-  /** 井枯了就微微矮一截，玩家远远就能看出这趟是不是白跑。 */
-  private syncWells(): void {
+  /** 井顶水珠 = 剩余格数，枯井整体矮一截。两个信号叠加，远近都读得出来。 */
+  private syncWells(delta: number): void {
+    this.wellBob = (this.wellBob + delta) % (Math.PI * 2);
     for (const well of this.simulation.wells) {
       const view = this.wellViews.get(well.id);
-      if (!view) continue;
-      view.scale.setScalar(well.charges > 0 ? 1 : 0.9);
+      if (view) view.scale.setScalar(well.charges > 0 ? 1 : 0.9);
+      const pips = this.wellPips.get(well.id);
+      if (!pips) continue;
+      for (let index = 0; index < pips.length; index += 1) {
+        const filled = index < well.charges;
+        pips[index].visible = filled;
+        if (filled) pips[index].position.y = 2.55 + Math.sin(this.wellBob * 1.6 + index * 0.7) * 0.09;
+      }
     }
   }
 

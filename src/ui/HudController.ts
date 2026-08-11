@@ -480,6 +480,22 @@ export class HudController {
       context.fill();
     }
 
+    // 水井画成空心方框，有水时填实。井是规划路线的地标，
+    // 但"这口还有没有水"必须在出发前就能看到 —— 走到跟前才知道白跑就毫无规划可言。
+    for (const well of this.simulation.world.wells) {
+      const state = this.simulation.wells[well.id];
+      const x = (well.x - player.x) * worldScale;
+      const y = (well.z - player.z) * worldScale;
+      const dry = !state || state.charges <= 0;
+      context.strokeStyle = dry ? "rgba(120, 170, 190, .5)" : "#5cc7f0";
+      context.lineWidth = 1.4;
+      context.strokeRect(x - 3, y - 3, 6, 6);
+      if (!dry) {
+        context.fillStyle = "#5cc7f0";
+        context.fillRect(x - 1.5, y - 1.5, 3, 3);
+      }
+    }
+
     for (const item of this.simulation.items) {
       if (!item.active || !item.placed) continue;
       const x = (item.x - player.x) * worldScale;

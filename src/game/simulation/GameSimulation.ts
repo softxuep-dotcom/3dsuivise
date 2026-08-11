@@ -197,7 +197,15 @@ const WELL_DRAW_SECONDS = 2.6;
 /** 井口有效交互半径。 */
 const WELL_REACH = 3.2;
 /** 每口井的蓄水上限，以及回蓄一次所需秒数。 */
-const WELL_CHARGES_MAX = 4;
+const WELL_CHARGES_MAX = 3;
+/**
+ * 井的初始存量只有 1 格，不是满的。
+ * 原图的井是多人分摊、而且要自己造（木头+石头+石头）；我们是单人还白送 5 口，
+ * 所以必须在别处收紧。开局满存量意味着白送 20 份水 = 3.4 个昼夜，
+ * 而一局才 2~3 天 —— 那样缺水压力整局都不会出现。
+ * 回蓄速度没动：逛 1 口井覆盖需求的 29%、逛 2 口 59%，剩下的交给仙人掌和骆驼水。
+ */
+const WELL_CHARGES_INITIAL = 1;
 // 210 秒 = 一口井每昼夜再生 1.7 格，只覆盖一个玩家约 30% 的饮水需求，
 // 和原图（500 容量 / +0.1/s ⇒ 1.5 次提水每昼夜）的比例一致。
 // 曾经是 50 秒，那意味着单独一口井就够你活，井的空间决策等于不存在。
@@ -285,7 +293,7 @@ export class GameSimulation {
     this.items = world.initialItems.map((item) => ({ ...item }));
     this.cacti = world.initialCacti.map((patch) => ({ ...patch }));
     this.ironNodes = world.ironNodes.map((node) => ({ ...node }));
-    this.wells = world.wells.map((well) => ({ id: well.id, charges: WELL_CHARGES_MAX, refillAt: 0 }));
+    this.wells = world.wells.map((well) => ({ id: well.id, charges: WELL_CHARGES_INITIAL, refillAt: 0 }));
     this.player = {
       x: startCamp.x,
       z: startCamp.z + 1.5,
@@ -536,6 +544,11 @@ export class GameSimulation {
   /** 井的回蓄：每 WELL_REFILL_SECONDS 补一格，补满后停表。 */
   private updateWells(): void {
     for (const well of this.wells) {
+      // 开局就未满，所以没在计时的井要先把蓄水表打开。
+      if (well.refillAt <= 0 && well.charges < WELL_CHARGES_MAX) {
+        well.refillAt = this.elapsed + WELL_REFILL_SECONDS;
+        continue;
+      }
       if (well.refillAt <= 0 || this.elapsed < well.refillAt) continue;
       well.charges = Math.min(WELL_CHARGES_MAX, well.charges + 1);
       well.refillAt = well.charges >= WELL_CHARGES_MAX ? 0 : this.elapsed + WELL_REFILL_SECONDS;
