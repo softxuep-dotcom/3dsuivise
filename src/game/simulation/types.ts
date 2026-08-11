@@ -195,6 +195,50 @@ export interface LandmarkDefinition extends Vec2 {
   scale: number;
 }
 
+/**
+ * 玩家搭建的放置物。
+ *   火窖 —— 可以到处搭的火源。原图的火窖本来就是建造物（植被+木头+石头），
+ *          我们只有 3 处固定篝火，"今晚在哪过夜"这个决策等于不存在。
+ *   树桩 —— 路障。原图只要 1 个木头、1000 血自愈、15 护甲，是整套基地防御的基石；
+ *          我们此前的防御只有"一个营地一块大石"，没有任何布防余地。
+ */
+export type StructureKind = "campfire" | "stake";
+
+export interface PlacedStructure extends Vec2 {
+  id: number;
+  kind: StructureKind;
+  hp: number;
+  maxHp: number;
+  /** 仅火窖使用：剩余燃烧秒数。 */
+  fuel: number;
+  rotation: number;
+  active: boolean;
+}
+
+export interface StructureSpec {
+  label: string;
+  /** 配方；目前两者都只吃木头 —— 木头因此成为真正的核心资源。 */
+  cost: Array<[InventoryItemKind, number]>;
+  stamina: number;
+  maxHp: number;
+  /** 占地半径，同时用于碰撞与"离得太近不让放"的判定。 */
+  radius: number;
+  /** 火窖建成时自带的燃烧秒数。 */
+  fuel: number;
+  blurb: string;
+}
+
+export const STRUCTURE_SPECS: Record<StructureKind, StructureSpec> = {
+  campfire: {
+    label: "火窖", cost: [["wood", 3]], stamina: 25, maxHp: 60, radius: 1.1, fuel: 95,
+    blurb: "半径 10 米内取暖，可烤肉与制作装备",
+  },
+  stake: {
+    label: "树桩", cost: [["wood", 1]], stamina: 12, maxHp: 220, radius: 0.9, fuel: 0,
+    blurb: "挡路的木桩，狼会先拆它",
+  },
+};
+
 export interface CampState {
   id: number;
   fuel: number;
@@ -296,6 +340,8 @@ export type GameEvent =
   | { type: "alpha-spawned" }
   | { type: "player-hit"; amount: number }
   | { type: "barrier-hit"; itemId: number }
+  | { type: "build"; kind: StructureKind }
+  | { type: "structure-destroyed"; kind: StructureKind }
   | { type: "phase"; phase: Phase; day: number }
   | { type: "message"; text: string }
   | { type: "victory" }

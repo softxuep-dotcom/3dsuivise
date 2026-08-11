@@ -262,6 +262,8 @@ export class GameRenderer {
   private readonly ironViews = new Map<number, THREE.Object3D>();
   private readonly wellViews = new Map<number, THREE.Object3D>();
   private readonly wellPips = new Map<number, THREE.Object3D[]>();
+  private readonly structureViews = new Map<number, THREE.Object3D>();
+  private readonly structureFlames = new Map<number, THREE.Object3D>();
   /** 井顶水珠的浮动相位。 */
   private wellBob = 0;
   private readonly wolfViews = new Map<number, WolfView>();
@@ -349,6 +351,7 @@ export class GameRenderer {
     this.syncCacti();
     this.syncIronNodes();
     this.syncWells(delta);
+    this.syncStructures();
     this.syncCritters(delta);
     this.syncWolves(delta);
     this.syncDrops();
@@ -1305,6 +1308,74 @@ export class GameRenderer {
         if (filled) pips[index].position.y = 2.55 + Math.sin(this.wellBob * 1.6 + index * 0.7) * 0.09;
       }
     }
+  }
+
+  /**
+   * 放置物按需建视图 —— 它们是运行时才出现的，不能像地形那样一次性建完。
+   * 火窖灭掉时只熄火焰、留下石圈，因为它还能再添柴复燃。
+   */
+  private syncStructures(): void {
+    for (const structure of this.simulation.structures) {
+      let view = this.structureViews.get(structure.id);
+      if (!view) {
+        view = structure.kind === "campfire" ? this.createCampfireView(structure.id) : this.createStakeView();
+        view.position.set(structure.x, this.worldHeight(structure.x, structure.z), structure.z);
+        view.rotation.y = structure.rotation;
+        this.scene.add(view);
+        this.structureViews.set(structure.id, view);
+      }
+      view.visible = structure.active;
+      const flame = this.structureFlames.get(structure.id);
+      if (flame) flame.visible = structure.active && structure.fuel > 0;
+      // 被啃过的树桩矮下去一截，远处也能看出防线快破了。
+      if (structure.kind === "stake") {
+        view.scale.y = 0.55 + (structure.hp / structure.maxHp) * 0.45;
+      }
+    }
+  }
+
+  private createCampfireView(id: number): THREE.Group {
+    const group = new THREE.Group();
+    const stoneMaterial = makeMaterial(0x7d7266, 1);
+    for (let index = 0; index < 7; index += 1) {
+      const angle = (index / 7) * Math.PI * 2;
+      const stone = new THREE.Mesh(new THREE.DodecahedronGeometry(0.26, 0), stoneMaterial);
+      stone.position.set(Math.cos(angle) * 0.95, 0.16, Math.sin(angle) * 0.95);
+      stone.castShadow = true;
+      group.add(stone);
+    }
+    const logs = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, 1.25, 6), makeMaterial(0x5d452c, 1));
+    logs.rotation.z = Math.PI / 2;
+    logs.position.y = 0.24;
+    group.add(logs);
+
+    const flame = new THREE.Mesh(new THREE.ConeGeometry(0.42, 1.0, 7), new THREE.MeshStandardMaterial({
+      color: 0xff8a2b, emissive: 0xff5a12, emissiveIntensity: 1.5, roughness: 0.5,
+    }));
+    flame.position.y = 0.82;
+    group.add(flame);
+    const light = new THREE.PointLight(0xff9a45, 2.1, 16, 2);
+    light.position.y = 1.1;
+    flame.add(light);
+    this.structureFlames.set(id, flame);
+    return group;
+  }
+
+  private createStakeView(): THREE.Group {
+    const group = new THREE.Group();
+    const woodMaterial = makeMaterial(0x6b5334, 1);
+    for (const offset of [-0.34, 0, 0.34]) {
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.17, 1.7, 6), woodMaterial);
+      post.position.set(offset, 0.85, offset * 0.4);
+      post.rotation.z = offset * 0.12;
+      post.castShadow = true;
+      group.add(post);
+    }
+    const tie = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.95, 5), makeMaterial(0x8a7a5c, 1));
+    tie.rotation.z = Math.PI / 2;
+    tie.position.y = 1.15;
+    group.add(tie);
+    return group;
   }
 
   private syncCritters(delta: number): void {

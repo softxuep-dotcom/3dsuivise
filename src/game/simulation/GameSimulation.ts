@@ -26,6 +26,8 @@ import type {
   WeaponKind,
   IronNode,
   WellState,
+  PlacedStructure,
+  StructureKind,
   InventoryItemKind,
   Phase,
   PlayerState,
@@ -37,7 +39,7 @@ import type {
   WorldDefinition,
   WorldDrop,
 } from "./types";
-import { CRITTER_SPECS, INVENTORY_CAPACITY, INVENTORY_STACK_LIMITS } from "./types";
+import { CRITTER_SPECS, INVENTORY_CAPACITY, INVENTORY_STACK_LIMITS, STRUCTURE_SPECS } from "./types";
 
 const PLAYER_RADIUS = 0.72;
 const WOLF_RADIUS = 0.68;
@@ -267,6 +269,7 @@ export class GameSimulation {
   readonly cacti: CactusPatch[];
   readonly ironNodes: IronNode[];
   readonly wells: WellState[];
+  readonly structures: PlacedStructure[] = [];
   readonly player: PlayerState;
   readonly wolves: WolfState[] = [];
   readonly critters: CritterState[] = [];
@@ -296,6 +299,7 @@ export class GameSimulation {
   private combatTimer = 0;
   /** 当前正在提水的井 id，-1 表示没有。 */
   private drawingWellId = -1;
+  private structureId = 0;
   /** 生肉不回体力这条只在第一次生吞时说一遍，之后靠目标行常驻。 */
   private rawMeatHintSent = false;
   /** 体温调节动作的冷却（公开给 HUD 显示）。 */
@@ -469,13 +473,16 @@ export class GameSimulation {
 
     // 添柴：从背包里取一根烧掉。木头进背包之后不必再扛着走，
     // 配合放大到 10 米的火焰半径，营地事务不用全挤在火堆脚下。
-    const fireCamp = this.findNearestCamp(FIRE_WARMTH_RADIUS);
-    if (fireCamp && this.getInventoryCount("wood") > 0) {
-      this.removeInventory("wood", 1);
-      const campState = this.camps[fireCamp.id];
-      campState.fuel = clamp(campState.fuel + 95, 0, 300);
-      this.events.push({ type: "feed-fire", campId: fireCamp.id });
-      return;
+    if (this.getInventoryCount("wood") > 0) {
+      // 自己搭的火窖优先 —— 你走到它跟前多半就是为了喂它。
+      const hearth = this.findNearestHearth(FIRE_WARMTH_RADIUS);
+      if (hearth) {
+        this.removeInventory("wood", 1);
+        if (hearth.structure) hearth.structure.fuel = clamp(hearth.structure.fuel + 95, 0, 300);
+        else if (hearth.campId >= 0) this.camps[hearth.campId].fuel = clamp(this.camps[hearth.campId].fuel + 95, 0, 300);
+        this.events.push({ type: "feed-fire", campId: Math.max(0, hearth.campId) });
+        return;
+      }
     }
 
     const item = this.findNearestItem(2.5);
@@ -763,7 +770,7 @@ export class GameSimulation {
       this.player.water = clamp(this.player.water + this.randomInt(...RAW_WATER), 0, 100);
       this.events.push({ type: "eat", kind: "cooked-meat" });
       // 火就在旁边却生吞 —— 这是提示烤肉最有说服力的一刻：机会正在被浪费。
-      if (this.findNearestLitCamp(6.5)) {
+      if (this.findNearestLitFire(FIRE_WARMTH_RADIUS)) {
         this.events.push({ type: "message", text: `旁边就有火 · 烤了再吃能多回 ${COOKED_HEALTH} 点体力` });
       } else if (!this.rawMeatHintSent) {
         this.rawMeatHintSent = true;
@@ -852,7 +859,7 @@ export class GameSimulation {
       this.events.push({ type: "message", text: "没有生肉可烤" });
       return false;
     }
-    if (!this.findNearestLitCamp(5.2)) {
+    if (!this.findNearestLitFire(FIRE_WARMTH_RADIUS)) {
       this.events.push({ type: "message", text: "要在燃烧的篝火旁才能烤肉" });
       return false;
     }
@@ -865,6 +872,69 @@ export class GameSimulation {
     this.events.push({ type: "cook" });
     this.events.push({ type: "message", text: "烤好了 · 熟肉是唯一能大量回体力的食物" });
     return true;
+  }
+
+  /**
+   * 建造。放在**玩家正前方两米**，不做自由光标预览 —— 移动端没有鼠标，
+   * "走到你想建的位置再按"本身就是位置选择，而且和其余交互是同一套语汇。
+   * 放不下时明说原因，不能只是没反应。
+   */
+  build(kind: StructureKind): boolean {
+    if (!this.running) return false;
+    const spec = STRUCTURE_SPECS[kind];
+    const missing = spec.cost.filter(([item, count]) => this.getInventoryCount(item) < count);
+    if (missing.length > 0) {
+      const need = spec.cost.map(([item, count]) => `${ITEM_LABELS[item]}×${count}`).join(" + ");
+      this.events.push({ type: "message", text: `${spec.label}需要 ${need}` });
+      return false;
+    }
+    const spot = {
+      x: this.player.x + this.player.facing.x * 2.0,
+      z: this.player.z + this.player.facing.z * 2.0,
+    };
+    const reason = this.getBuildBlocker(kind, spot);
+    if (reason) {
+      this.events.push({ type: "message", text: `这里放不下${spec.label} · ${reason}` });
+      return false;
+    }
+    if (!this.spendStamina(spec.stamina, `搭${spec.label}`)) return false;
+
+    this.noteInPlaceAction();
+    for (const [item, count] of spec.cost) this.removeInventory(item, count);
+    this.structures.push({
+      id: this.structureId++,
+      kind,
+      x: spot.x,
+      z: spot.z,
+      hp: spec.maxHp,
+      maxHp: spec.maxHp,
+      fuel: spec.fuel,
+      rotation: Math.atan2(this.player.facing.z, this.player.facing.x),
+      active: true,
+    });
+    this.events.push({ type: "build", kind });
+    this.events.push({ type: "message", text: `${spec.label}搭好了 · ${spec.blurb}` });
+    return true;
+  }
+
+  /** 放不下的原因；能放返回 null。 */
+  private getBuildBlocker(kind: StructureKind, spot: Vec2): string | null {
+    if (!isTerrainWalkable(this.world, spot)) return "地面太陡";
+    const spec = STRUCTURE_SPECS[kind];
+    for (const other of this.structures) {
+      if (!other.active) continue;
+      const gap = spec.radius + STRUCTURE_SPECS[other.kind].radius + 0.4;
+      if (distanceSquared(spot, other) < gap * gap) return `离已有的${STRUCTURE_SPECS[other.kind].label}太近`;
+    }
+    for (const wall of this.world.walls) {
+      if (distanceSquared(spot, wall) < (wall.radius + spec.radius) ** 2) return "这里有东西挡着";
+    }
+    // 火窖离固定营火太近就失去意义 —— 它存在的理由是让你能在别处过夜。
+    if (kind === "campfire") {
+      const camp = this.getNearestCamp();
+      if (camp && camp.distance < FIRE_WARMTH_RADIUS) return "营地已经有火了";
+    }
+    return null;
   }
 
   /** 洗脸水：1 份水兑成 1 份洗脸水，降温效率翻四倍（原图 I01V）。 */
@@ -901,9 +971,8 @@ export class GameSimulation {
     if (this.player.carrying) {
       return { action: "drop", text: "放下大石 · 一块即可封住窄口" };
     }
-    const woodCamp = this.findNearestCamp(FIRE_WARMTH_RADIUS);
-    if (woodCamp && this.getInventoryCount("wood") > 0) {
-      return { action: "feed", text: `点燃一根枯木 · 篝火延长 95 秒（余 ${this.getInventoryCount("wood")}）` };
+    if (this.getInventoryCount("wood") > 0 && this.findNearestHearth(FIRE_WARMTH_RADIUS)) {
+      return { action: "feed", text: `添一根枯木 · 火焰延长 95 秒（余 ${this.getInventoryCount("wood")}）` };
     }
     const item = this.findNearestItem(2.5);
     if (item) {
@@ -938,6 +1007,55 @@ export class GameSimulation {
       return Math.min(1, this.phaseTime / fade, elapsedInPhase / fade);
     }
     return 1 - Math.min(1, this.phaseTime / fade);
+  }
+
+  /**
+   * 燃着的热源里最近的一个，固定营火与玩家搭的火窖一视同仁。
+   * 取暖、烤肉、二阶以上装备合成全部走这一个查询 —— 火窖能建之后，
+   * "必须回营地"就自动变成了"必须有火"，而火可以是你自己搭的。
+   */
+  findNearestLitFire(maxDistance: number): { x: number; z: number; fuel: number } | null {
+    let best: { x: number; z: number; fuel: number } | null = null;
+    let bestDistance = maxDistance * maxDistance;
+    for (const camp of this.world.camps) {
+      const fuel = this.camps[camp.id].fuel;
+      if (fuel <= 0) continue;
+      const value = distanceSquared(this.player, camp);
+      if (value >= bestDistance) continue;
+      best = { x: camp.x, z: camp.z, fuel };
+      bestDistance = value;
+    }
+    for (const structure of this.structures) {
+      if (!structure.active || structure.kind !== "campfire" || structure.fuel <= 0) continue;
+      const value = distanceSquared(this.player, structure);
+      if (value >= bestDistance) continue;
+      best = { x: structure.x, z: structure.z, fuel: structure.fuel };
+      bestDistance = value;
+    }
+    return best;
+  }
+
+  /**
+   * 最近的**火塘**，不论燃着没燃 —— 添柴要能点燃已经灭掉的火窖，
+   * 所以这里不能复用只找"燃着的火"的 findNearestLitFire。
+   */
+  private findNearestHearth(maxDistance: number): { campId: number; structure: PlacedStructure | null } | null {
+    let best: { campId: number; structure: PlacedStructure | null } | null = null;
+    let bestDistance = maxDistance * maxDistance;
+    for (const structure of this.structures) {
+      if (!structure.active || structure.kind !== "campfire") continue;
+      const value = distanceSquared(this.player, structure);
+      if (value >= bestDistance) continue;
+      best = { campId: -1, structure };
+      bestDistance = value;
+    }
+    for (const camp of this.world.camps) {
+      const value = distanceSquared(this.player, camp);
+      if (value >= bestDistance) continue;
+      best = { campId: camp.id, structure: null };
+      bestDistance = value;
+    }
+    return best;
   }
 
   /** 最近的营地，不论有没有火 —— 扛着柴时要指的是"哪儿有火堆"，不是"哪儿有火"。 */
@@ -1006,7 +1124,7 @@ export class GameSimulation {
 
     if (this.player.resting) return "休息中 · 生命与劳力都在回复";
     // 枯木现在进背包，所以指引从"往哪搬"变成"够不够、去哪烧"。
-    if (this.getInventoryCount("wood") > 0 && this.findNearestCamp(FIRE_WARMTH_RADIUS)) {
+    if (this.getInventoryCount("wood") > 0 && this.findNearestHearth(FIRE_WARMTH_RADIUS)) {
       return "就在火边 · 按互动键添柴";
     }
     const alpha = this.getAlpha();
@@ -1087,10 +1205,7 @@ export class GameSimulation {
     //   白天奔波无火 = +1.25/s      白天静止无火 = +0.35/s
     //   夜晚奔跑无火 = -0.35/s      夜晚静止无火 = -1.25/s
     //   白天贴火奔波 = +4.65/s      夜晚贴火静止 = +2.15/s
-    const nearFire = this.camps.some((camp) => {
-      if (camp.fuel <= 0) return false;
-      return distanceSquared(this.player, this.world.camps[camp.id]) < FIRE_WARMTH_RADIUS * FIRE_WARMTH_RADIUS;
-    });
+    const nearFire = this.findNearestLitFire(FIRE_WARMTH_RADIUS) !== null;
     let warmthDelta = 0;
     if (nearFire) warmthDelta += WARMTH_FIRE_GAIN;
     if (this.phase === "day") warmthDelta += WARMTH_DAY_BASE;
@@ -1243,6 +1358,11 @@ export class GameSimulation {
 
   private updateFires(delta: number): void {
     for (const camp of this.camps) camp.fuel = Math.max(0, camp.fuel - delta);
+    // 火窖烧完不消失，只是灭了 —— 还能再添柴复燃，这样搭出去的火点是长期资产。
+    for (const structure of this.structures) {
+      if (!structure.active || structure.kind !== "campfire") continue;
+      structure.fuel = Math.max(0, structure.fuel - delta);
+    }
   }
 
   private updateCacti(): void {
@@ -1365,6 +1485,21 @@ export class GameSimulation {
     // Retreats always follow a terrain-aware flow field. A straight line to the
     // edge can look clear while still crossing an unwalkable heightfield slope.
     if (wolf.mode === "retreating") desired = this.getRetreatNavigation(wolf).directionFrom(wolf);
+    // 树桩挡在前面时先拆桩 —— 这正是它存在的意义：把狼的时间从"咬你"换成"咬木头"。
+    const blockingStructure = wolf.mode === "retreating" ? null : this.findBlockingStructure(wolf, desired);
+    if (blockingStructure) {
+      if (wolf.attackCooldown <= 0) {
+        wolf.attackCooldown = 0.95;
+        blockingStructure.hp -= Math.round(wolf.attack * (wolf.kind === "large" ? 1.45 : 1.05));
+        this.events.push({ type: "barrier-hit", itemId: -1 - blockingStructure.id });
+        if (blockingStructure.hp <= 0) {
+          blockingStructure.active = false;
+          this.events.push({ type: "structure-destroyed", kind: blockingStructure.kind });
+        }
+      }
+      return;
+    }
+
     const blockingItem = wolf.mode === "retreating" ? null : this.findBlockingItem(wolf, desired);
     if (blockingItem) {
       if (wolf.attackCooldown <= 0) {
@@ -1839,6 +1974,24 @@ export class GameSimulation {
     return distanceSquared(wolf, entrance) > 3.2 * 3.2 ? entrance : nearest;
   }
 
+  /** 挡在狼前进方向上的放置物。火窖也会被拆 —— 不然它就是无敌的安全屋。 */
+  private findBlockingStructure(wolf: WolfState, desired: Vec2): PlacedStructure | null {
+    let closest: PlacedStructure | null = null;
+    let closestDistance = Number.POSITIVE_INFINITY;
+    for (const structure of this.structures) {
+      if (!structure.active) continue;
+      const reach = STRUCTURE_SPECS[structure.kind].radius + 1.5;
+      const structureDistance = distance(wolf, structure);
+      if (structureDistance > reach) continue;
+      if (dot(desired, direction(wolf, structure)) < 0.35) continue;
+      if (structureDistance < closestDistance) {
+        closest = structure;
+        closestDistance = structureDistance;
+      }
+    }
+    return closest;
+  }
+
   private findBlockingItem(wolf: WolfState, desired: Vec2): GroundItem | null {
     let closest: GroundItem | null = null;
     let closestDistance = Number.POSITIVE_INFINITY;
@@ -2150,6 +2303,10 @@ export class GameSimulation {
       for (const item of this.items) {
         if (!item.active || !item.placed) continue;
         this.pushOutsideCircle(entity, radius, item, item.kind === "stone" ? 1.48 : 0.62);
+      }
+      for (const structure of this.structures) {
+        if (!structure.active) continue;
+        this.pushOutsideCircle(entity, radius, structure, STRUCTURE_SPECS[structure.kind].radius);
       }
     }
   }

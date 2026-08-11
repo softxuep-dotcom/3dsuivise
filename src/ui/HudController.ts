@@ -1,6 +1,7 @@
 import type { GameSimulation } from "../game/simulation/GameSimulation";
 import { clamp } from "../game/simulation/geometry";
 import { describeRecords, loadRecords, submitRun } from "./Records";
+import { STRUCTURE_SPECS } from "../game/simulation/types";
 import type {
   GameEvent,
   InteractionHint,
@@ -9,6 +10,7 @@ import type {
   SurvivalCondition,
   WeaponKind,
   ArmorKind,
+  StructureKind,
   WolfKind,
 } from "../game/simulation/types";
 
@@ -88,6 +90,10 @@ export class HudController {
   private readonly washCount = required<HTMLElement>("wash-count");
   private readonly craftWashButton = required<HTMLButtonElement>("craft-wash-button");
   private readonly craftCookButton = required<HTMLButtonElement>("craft-cook-button");
+  private readonly buildButtons: Array<[HTMLButtonElement, StructureKind]> = [
+    [required<HTMLButtonElement>("build-campfire-button"), "campfire"],
+    [required<HTMLButtonElement>("build-stake-button"), "stake"],
+  ];
   private readonly hungerValue = required<HTMLElement>("hunger-value");
   private readonly waterValue = required<HTMLElement>("water-value");
   private readonly staminaValue = required<HTMLElement>("stamina-value");
@@ -182,6 +188,13 @@ export class HudController {
       this.simulation.consumeWashWater();
       this.updateInventory();
     });
+    for (const [button, kind] of this.buildButtons) {
+      button.addEventListener("click", () => {
+        // 建造要看着放置结果，所以放完直接关掉背包回到游戏。
+        if (this.simulation.build(kind)) this.closeInventory();
+        else this.updateInventory();
+      });
+    }
     this.craftCookButton.addEventListener("click", () => {
       this.simulation.craftCookedMeat();
       this.updateInventory();
@@ -400,6 +413,13 @@ export class HudController {
     this.statStamina.textContent = `${Math.round(player.stamina)}/${player.maxStamina}`;
     this.statAttack.textContent = String(this.simulation.getAttackPower());
     this.statDefense.textContent = String(player.defense);
+    for (const [button, kind] of this.buildButtons) {
+      const spec = STRUCTURE_SPECS[kind];
+      const parts = spec.cost.map(([item, count]) =>
+        `${ITEM_PRESENTATION[item].name} ${this.simulation.getInventoryCount(item)}/${count}`);
+      button.textContent = `搭${spec.label} · ${parts.join(" + ")} · 劳力 ${spec.stamina}`;
+      button.disabled = spec.cost.some(([item, count]) => this.simulation.getInventoryCount(item) < count);
+    }
     this.syncUpgradeButton(this.craftButton, "armor");
     this.syncUpgradeButton(this.craftSpearButton, "weapon");
     const raws = this.simulation.getInventoryCount("raw-meat");
