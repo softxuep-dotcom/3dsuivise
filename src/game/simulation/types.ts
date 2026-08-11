@@ -12,8 +12,11 @@ export type InventoryItemKind =
   | "cooked-meat"
   | "hide"
   | "iron-ore"
-  | "water";
-export type WeaponKind = "wood-club" | "iron-spear";
+  | "water"
+  | "wash-water";
+export type WeaponKind = "survival-knife" | "iron-spear" | "fang-spear";
+/** 护甲三阶：无 → 兽皮衣 → 镶铁重甲。 */
+export type ArmorKind = "none" | "leather" | "reinforced";
 export type WolfKind = "small" | "large" | "alpha";
 export type WolfMode = "entering" | "patrol" | "chase" | "raid" | "retreating" | "dead";
 /** 野狼白天在地图上游荡且只在被激怒后反击；夜袭狼由边缘涌入且不掉狼皮。 */
@@ -202,7 +205,7 @@ export interface PlayerState extends Vec2 {
   condition: SurvivalCondition;
   inventory: Array<InventoryStack | null>;
   carrying: CarryKind | null;
-  hasLeatherCoat: boolean;
+  armor: ArmorKind;
   weapon: WeaponKind;
   resting: boolean;
   idleTime: number;
@@ -232,6 +235,10 @@ export interface WolfState extends Vec2 {
   speed: number;
   attackCooldown: number;
   lostTimer: number;
+  /** Absolute simulation time when this raider joins the staggered dawn retreat. */
+  retreatAt: number;
+  /** Time spent failing to advance during retreat; relaxes slope limits to unstick the wolf. */
+  retreatStuckTimer: number;
   hurtFlash: number;
   deathTimer: number;
   dropsCreated: boolean;
@@ -263,6 +270,7 @@ export type GameEvent =
   | { type: "cook" }
   | { type: "thermal"; direction: "cool" | "warm" }
   | { type: "craft-coat" }
+  | { type: "craft-wash-water" }
   | { type: "craft-weapon" }
   | { type: "rest"; active: boolean }
   | { type: "attack" }
@@ -338,4 +346,5 @@ export const INVENTORY_STACK_LIMITS: Record<InventoryItemKind, number> = {
   hide: 4,
   "iron-ore": 6,
   water: 4,
+  "wash-water": 3,
 };

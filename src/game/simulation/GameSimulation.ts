@@ -9,7 +9,7 @@ import {
   segmentIntersectsCircle,
   TAU,
 } from "./geometry";
-import { campGatePosition, isTerrainWalkable, terrainHeightAt } from "../terrain/TerrainModel";
+import { campGatePosition, isTerrainWalkable, terrainHeightAt, terrainSlopeAt } from "../terrain/TerrainModel";
 import { NavigationGrid } from "./NavigationGrid";
 import type {
   CactusPatch,
@@ -22,6 +22,8 @@ import type {
   GameEvent,
   GroundItem,
   InteractionHint,
+  ArmorKind,
+  WeaponKind,
   IronNode,
   WellState,
   InventoryItemKind,
@@ -49,6 +51,50 @@ const MAX_WOLVES = 120;
 const MOVE_STEP_FALLBACKS = [1, 0.5, 0.25];
 /** 挨打后多少秒内不能休息（原本是"附近有狼"，夜里几乎恒为真）。 */
 const REST_COMBAT_LOCK = 6;
+
+const ITEM_LABELS: Record<InventoryItemKind, string> = {
+  "cactus-juice": "仙人掌汁",
+  "raw-meat": "生肉",
+  "cooked-meat": "熟肉",
+  hide: "兽皮",
+  "iron-ore": "铁矿",
+  water: "水",
+  "wash-water": "洗脸水",
+};
+
+export interface EquipTier {
+  id: string;
+  label: string;
+  cost: Array<[InventoryItemKind, number]>;
+  needsFire: boolean;
+  blurb: string;
+  attack?: number;
+  defense?: number;
+}
+
+/** 武器三阶。第 3 阶的兽皮开销刻意压得重 —— 兽皮只从狼身上掉。 */
+const WEAPON_TIERS: EquipTier[] = [
+  { id: "survival-knife", label: "求生匕首", cost: [], needsFire: false, blurb: "" },
+  { id: "iron-spear", label: "粗铁矛", cost: [["iron-ore", 3], ["hide", 1]], needsFire: true, blurb: "攻击+18，攻程更远", attack: 18 },
+  { id: "fang-spear", label: "狼牙重矛", cost: [["iron-ore", 5], ["hide", 3]], needsFire: true, blurb: "攻击+16，攻程再进一步", attack: 16 },
+];
+
+const ARMOR_TIERS: EquipTier[] = [
+  { id: "none", label: "粗布衣", cost: [], needsFire: false, blurb: "" },
+  { id: "leather", label: "兽皮衣", cost: [["hide", 4]], needsFire: false, blurb: "防御+4", defense: 4 },
+  { id: "reinforced", label: "镶铁重甲", cost: [["hide", 6], ["iron-ore", 4]], needsFire: true, blurb: "防御+7，移速-5%", defense: 7 },
+];
+
+/** 镶铁重甲的负重：换来 11 点防御，代价是 5% 移速。 */
+const REINFORCED_ARMOR_SPEED = 0.95;
+
+// 洗脸水，对齐原图 I01V（触发器 047）：体温 -25~-50、水分 +10~25。
+const WASH_WATER_COOLING: readonly [number, number] = [25, 50];
+const WASH_WATER_HYDRATION: readonly [number, number] = [10, 25];
+/** Dawn withdrawal cadence: small packs peel away instead of the whole raid vanishing at once. */
+const RETREAT_BATCH_SIZE = 5;
+const RETREAT_BATCH_INTERVAL = 2.4;
+const RETREAT_WITHIN_BATCH_STAGGER = 0.22;
 
 // --- 体温调节动作（移植自原图 A02B 尿 / A06M 活埋）---
 // 原图的降温主力从来不是喝水（饮品只给 -5~12），而是这类**零资源消耗**的动作。
@@ -140,7 +186,10 @@ const WELL_DRAW_SECONDS = 2.6;
 const WELL_REACH = 3.2;
 /** 每口井的蓄水上限，以及回蓄一次所需秒数。 */
 const WELL_CHARGES_MAX = 4;
-const WELL_REFILL_SECONDS = 50;
+// 210 秒 = 一口井每昼夜再生 1.7 格，只覆盖一个玩家约 30% 的饮水需求，
+// 和原图（500 容量 / +0.1/s ⇒ 1.5 次提水每昼夜）的比例一致。
+// 曾经是 50 秒，那意味着单独一口井就够你活，井的空间决策等于不存在。
+const WELL_REFILL_SECONDS = 210;
 const WATER_RESTORE = 26;
 /** 一份水降 14 点体温：正好能把刚中暑的 100 拉到解除线 92 以下。 */
 const WATER_WARMTH_COST = 14;
@@ -241,8 +290,8 @@ export class GameSimulation {
       condition: "normal",
       inventory: Array.from({ length: INVENTORY_CAPACITY }, () => null),
       carrying: null,
-      hasLeatherCoat: false,
-      weapon: "wood-club",
+      armor: "none",
+      weapon: "survival-knife",
       resting: false,
       idleTime: 0,
       attackCooldown: 0,
@@ -558,11 +607,27 @@ export class GameSimulation {
     if (slot >= 0) this.useInventorySlot(slot);
   }
 
+  consumeWashWater(): void {
+    const slot = this.player.inventory.findIndex((stack) => stack?.kind === "wash-water");
+    if (slot >= 0) this.useInventorySlot(slot);
+  }
+
   useInventorySlot(index: number): void {
     if (!this.running) return;
     const stack = this.player.inventory[index];
     if (!stack) return;
     this.noteActivity();
+
+    // 洗脸水（原图 I01V）：降温主力。同样一份水，兑过之后降温效率是直接喝的四倍，
+    // 代价是补水少一半 —— 于是"这份水拿来喝还是拿来降温"成了一个真实的取舍。
+    if (stack.kind === "wash-water") {
+      this.removeFromSlot(index, 1);
+      this.player.water = clamp(this.player.water + this.randomInt(...WASH_WATER_HYDRATION), 0, 100);
+      this.player.warmth = clamp(this.player.warmth - this.randomInt(...WASH_WATER_COOLING), WARMTH_MIN, WARMTH_MAX);
+      this.updateCondition();
+      this.events.push({ type: "drink" });
+      return;
+    }
 
     // 每种消耗品同时喂多条轴，权重不同 —— 移植自原图的食物表：
     // 肉主要补体力和饥饿，仙人掌汁偏水分，水是纯水分且都要付体温代价。
@@ -618,7 +683,8 @@ export class GameSimulation {
       this.events.push({ type: "message", text: this.player.weapon === "iron-spear" ? "已经装备粗铁矛" : "3块铁矿和1张兽皮可制作粗铁矛" });
       return;
     }
-    this.events.push({ type: "message", text: this.player.hasLeatherCoat ? "已经穿着基础皮衣" : "收集4张兽皮可制作基础皮衣" });
+    const nextArmor = this.getNextTier("armor");
+    this.events.push({ type: "message", text: nextArmor ? `下一阶：${nextArmor.label} · ${nextArmor.blurb}` : "护甲已满级" });
   }
 
   /** 闭区间随机整数，对应原图的 GetRandomInt。 */
@@ -634,38 +700,75 @@ export class GameSimulation {
     return true;
   }
 
-  craftLeatherCoat(): boolean {
-    if (!this.running || this.player.hasLeatherCoat) return false;
-    if (this.getInventoryCount("hide") < 4) {
-      this.events.push({ type: "message", text: "制作皮衣需要4张兽皮" });
+  /**
+   * 装备升级：每个槽位一条线，一次推进一阶，配方读自 WEAPON_TIERS / ARMOR_TIERS。
+   *
+   * 三阶而不是两阶，是因为狼群数量按 40+(d-1)×15 一路涨到 90，而旧的两件装备
+   * 第 2 天就拿全了 —— 威胁曲线继续爬、玩家曲线却平掉，后期就变成一堵墙而不是高潮。
+   * 第 3 阶刻意吃兽皮大头：兽皮只从狼身上来，于是"打狼"自己喂养"打狼的能力"。
+   */
+  craftWeapon(): boolean {
+    return this.craftUpgrade(WEAPON_TIERS, this.player.weapon, (next) => {
+      this.player.weapon = next.id as WeaponKind;
+      this.player.attack += next.attack ?? 0;
+      this.events.push({ type: "craft-weapon" });
+    });
+  }
+
+  craftArmor(): boolean {
+    return this.craftUpgrade(ARMOR_TIERS, this.player.armor, (next) => {
+      this.player.armor = next.id as ArmorKind;
+      this.player.defense += next.defense ?? 0;
+      this.events.push({ type: "craft-coat" });
+    });
+  }
+
+  /** 返回某条装备线的下一阶；已满级返回 null。供 HUD 渲染按钮文案。 */
+  getNextTier(line: "weapon" | "armor"): EquipTier | null {
+    const tiers = line === "weapon" ? WEAPON_TIERS : ARMOR_TIERS;
+    const current = line === "weapon" ? this.player.weapon : this.player.armor;
+    const index = tiers.findIndex((tier) => tier.id === current);
+    return tiers[index + 1] ?? null;
+  }
+
+  private craftUpgrade(tiers: EquipTier[], current: string, apply: (tier: EquipTier) => void): boolean {
+    if (!this.running) return false;
+    const index = tiers.findIndex((tier) => tier.id === current);
+    const next = tiers[index + 1];
+    if (!next) return false;
+    if (next.needsFire && !this.findNearestLitCamp(5.2)) {
+      this.events.push({ type: "message", text: `${next.label}必须在燃烧的篝火旁制作` });
+      return false;
+    }
+    const missing = next.cost.filter(([kind, count]) => this.getInventoryCount(kind) < count);
+    if (missing.length > 0) {
+      const need = next.cost.map(([kind, count]) => `${ITEM_LABELS[kind]}×${count}`).join(" + ");
+      this.events.push({ type: "message", text: `${next.label}需要 ${need}` });
       return false;
     }
     this.noteActivity();
-    this.removeInventory("hide", 4);
-    this.player.hasLeatherCoat = true;
-    this.player.defense += 4;
-    this.events.push({ type: "craft-coat" });
-    this.events.push({ type: "message", text: "基础皮衣完成 · 防御+4，寒冷流失降低35%" });
+    for (const [kind, count] of next.cost) this.removeInventory(kind, count);
+    apply(next);
+    this.events.push({ type: "message", text: `${next.label}完成 · ${next.blurb}` });
     return true;
   }
 
-  craftIronSpear(): boolean {
-    if (!this.running || this.player.weapon === "iron-spear") return false;
-    if (!this.findNearestLitCamp(5.2)) {
-      this.events.push({ type: "message", text: "粗铁矛必须在燃烧的篝火旁制作" });
+  /** 洗脸水：1 份水兑成 1 份洗脸水，降温效率翻四倍（原图 I01V）。 */
+  craftWashWater(): boolean {
+    if (!this.running) return false;
+    if (this.getInventoryCount("water") < 1) {
+      this.events.push({ type: "message", text: "兑洗脸水需要 1 份水" });
       return false;
     }
-    if (this.getInventoryCount("iron-ore") < 3 || this.getInventoryCount("hide") < 1) {
-      this.events.push({ type: "message", text: "粗铁矛需要3块铁矿和1张兽皮" });
+    if (this.getInventoryCount("wash-water") >= INVENTORY_STACK_LIMITS["wash-water"] * 2) {
+      this.events.push({ type: "message", text: "洗脸水带够了" });
       return false;
     }
     this.noteActivity();
-    this.removeInventory("iron-ore", 3);
-    this.removeInventory("hide", 1);
-    this.player.weapon = "iron-spear";
-    this.player.attack += 18;
-    this.events.push({ type: "craft-weapon" });
-    this.events.push({ type: "message", text: "粗铁矛完成 · 攻击+18" });
+    this.removeInventory("water", 1);
+    this.addInventory("wash-water", 1);
+    this.events.push({ type: "craft-wash-water" });
+    this.events.push({ type: "message", text: "兑成洗脸水 · 降温 25~50，是直接喝的四倍" });
     return true;
   }
 
@@ -792,9 +895,9 @@ export class GameSimulation {
     if (this.objectiveStage === 1) return "把枯木送到篝火旁添柴";
     if (this.objectiveStage === 2) return "找到入口旁的大石并搬到缺口中央";
     if (this.getInventoryCount("water") === 0 && this.getInventoryCount("cactus-juice") === 0) return "先囤水 · 割仙人掌，或走一趟水井";
-    if (!this.player.hasLeatherCoat && this.getInventoryCount("hide") > 0) return "收集4张兽皮制作基础皮衣";
+    if (this.player.armor === "none" && this.getInventoryCount("hide") > 0) return "收集4张兽皮制作兽皮衣";
     const wildWolves = this.wolves.filter((wolf) => wolf.role === "wild" && wolf.mode !== "dead").length;
-    if (!this.player.hasLeatherCoat && wildWolves > 0) return `沙海上有 ${wildWolves} 只野狼 · 只有它们掉兽皮`;
+    if (this.player.armor === "none" && wildWolves > 0) return `沙海上有 ${wildWolves} 只野狼 · 只有它们掉兽皮`;
     if (this.getInventoryCount("raw-meat") === 0 && this.getInventoryCount("cooked-meat") === 0) {
       const camel = this.critters.find((critter) => critter.kind === "camel" && critter.mode !== "dead");
       if (camel) return "缺肉了 · 骆驼一头顶四块肉外加两份水，但它跑得比你快";
@@ -815,7 +918,8 @@ export class GameSimulation {
     this.player.facing = movement;
     const carryingPenalty = this.player.carrying === "stone" ? 0.54 : this.player.carrying ? 0.82 : 1;
     const needsPenalty = this.player.hunger < 12 || this.player.water < 12 ? 0.84 : 1;
-    const speed = 8.2 * carryingPenalty * needsPenalty * this.getConditionSpeedScale();
+    const armorPenalty = this.player.armor === "reinforced" ? REINFORCED_ARMOR_SPEED : 1;
+    const speed = 8.2 * carryingPenalty * needsPenalty * armorPenalty * this.getConditionSpeedScale();
     this.moveEntity(this.player, movement.x * speed * delta, movement.z * speed * delta, PLAYER_RADIUS, true);
   }
 
@@ -1020,7 +1124,10 @@ export class GameSimulation {
       }
     }
 
-    for (const wolf of this.wolves) this.updateWolf(wolf, delta);
+    for (const wolf of this.wolves) {
+      if (wolf.retreatAt > 0 && this.elapsed >= wolf.retreatAt) this.beginRetreat(wolf);
+      this.updateWolf(wolf, delta);
+    }
     for (let index = this.wolves.length - 1; index >= 0; index -= 1) {
       const wolf = this.wolves[index];
       if (wolf.mode === "dead" && wolf.deathTimer <= 0) this.wolves.splice(index, 1);
@@ -1093,9 +1200,9 @@ export class GameSimulation {
 
     let desired = direction(wolf, target);
     if (wolf.mode === "chase" && this.lineOfSightBlocked(wolf, this.player)) desired = this.navigation.directionFrom(wolf);
-    if (wolf.mode === "retreating" && this.lineOfSightBlocked(wolf, wolf.anchor)) {
-      desired = this.getRetreatNavigation(wolf).directionFrom(wolf);
-    }
+    // Retreats always follow a terrain-aware flow field. A straight line to the
+    // edge can look clear while still crossing an unwalkable heightfield slope.
+    if (wolf.mode === "retreating") desired = this.getRetreatNavigation(wolf).directionFrom(wolf);
     const blockingItem = wolf.mode === "retreating" ? null : this.findBlockingItem(wolf, desired);
     if (blockingItem) {
       if (wolf.attackCooldown <= 0) {
@@ -1110,8 +1217,27 @@ export class GameSimulation {
 
     const steered = this.getSteeredDirection(wolf, desired);
     wolf.facing = steered;
-    const pace = wolf.mode === "retreating" ? wolf.speed * 2.25 : wolf.mode === "chase" ? wolf.speed * 1.2 : wolf.speed;
-    this.moveEntity(wolf, steered.x * pace * delta, steered.z * pace * delta, WOLF_RADIUS, wolf.mode !== "retreating");
+    const pace = wolf.mode === "retreating" ? wolf.speed * 1.45 : wolf.mode === "chase" ? wolf.speed * 1.2 : wolf.speed;
+    const beforeX = wolf.x;
+    const beforeZ = wolf.z;
+    // Wolves may cross slightly steeper ground while fleeing. If one still
+    // stalls, the allowance increases gradually instead of leaving it pinned
+    // against the same heightfield cell until the hard despawn timer fires.
+    const retreatSlopeAllowance = wolf.mode === "retreating"
+      ? Math.min(3.2, 1.55 + wolf.retreatStuckTimer * 0.9)
+      : 1;
+    this.moveEntity(
+      wolf,
+      steered.x * pace * delta,
+      steered.z * pace * delta,
+      WOLF_RADIUS,
+      wolf.mode !== "retreating",
+      retreatSlopeAllowance,
+    );
+    if (wolf.mode === "retreating") {
+      const advanced = Math.hypot(wolf.x - beforeX, wolf.z - beforeZ);
+      wolf.retreatStuckTimer = advanced < pace * delta * 0.12 ? wolf.retreatStuckTimer + delta : 0;
+    }
   }
 
   private beginRetreat(wolf: WolfState): void {
@@ -1128,7 +1254,38 @@ export class GameSimulation {
       distanceSquared(wolf, candidate) < distanceSquared(wolf, best) ? candidate : best
     ));
     wolf.lostTimer = 0;
+    wolf.retreatAt = 0;
+    wolf.retreatStuckTimer = 0;
     wolf.attackCooldown = 0;
+  }
+
+  private scheduleRaiderRetreat(): void {
+    const raiders = this.wolves
+      .filter((wolf) => wolf.role === "raider" && wolf.kind !== "alpha" && wolf.mode !== "dead")
+      // Wolves already near an edge form the first packs, keeping later packs
+      // visible around the camps while the withdrawal unfolds.
+      .sort((a, b) => this.distanceToWorldEdge(a) - this.distanceToWorldEdge(b) || a.id - b.id);
+
+    for (let index = 0; index < raiders.length; index += 1) {
+      const wolf = raiders[index];
+      const batch = Math.floor(index / RETREAT_BATCH_SIZE);
+      const withinBatch = index % RETREAT_BATCH_SIZE;
+      wolf.mode = "patrol";
+      wolf.provoked = false;
+      wolf.anchor = { x: wolf.x, z: wolf.z };
+      wolf.lostTimer = 0;
+      wolf.retreatStuckTimer = 0;
+      wolf.retreatAt = this.elapsed
+        + 0.6
+        + batch * RETREAT_BATCH_INTERVAL
+        + withinBatch * RETREAT_WITHIN_BATCH_STAGGER
+        + this.random() * 0.18;
+    }
+  }
+
+  private distanceToWorldEdge(point: Vec2): number {
+    const half = this.world.size / 2;
+    return half - Math.max(Math.abs(point.x), Math.abs(point.z));
   }
 
   private getRetreatNavigation(wolf: WolfState): NavigationGrid {
@@ -1146,6 +1303,8 @@ export class GameSimulation {
     if (wolf.dropsCreated) return;
     wolf.dropsCreated = true;
     wolf.mode = "dead";
+    wolf.retreatAt = 0;
+    wolf.retreatStuckTimer = 0;
     wolf.health = 0;
     wolf.deathTimer = 0.8;
     this.player.kills += 1;
@@ -1291,6 +1450,8 @@ export class GameSimulation {
       speed,
       attackCooldown: this.random(),
       lostTimer: 0,
+      retreatAt: 0,
+      retreatStuckTimer: 0,
       hurtFlash: 0,
       deathTimer: 0,
       dropsCreated: false,
@@ -1569,12 +1730,10 @@ export class GameSimulation {
     this.phaseTime = LATER_DAY_DURATION;
     // 只有夜袭部队撤离；白天的野狼留在原地继续游荡，它们才是狼皮的来源。
     // 头狼绝不撤退 —— 它一旦登场就必须被杀死，否则玩家再也没有通关途径。
-    for (const wolf of this.wolves) {
-      if (wolf.role === "raider" && wolf.kind !== "alpha") this.beginRetreat(wolf);
-    }
+    this.scheduleRaiderRetreat();
     this.wildRespawnCountdown = 2;
     this.events.push({ type: "phase", phase: "day", day: this.day });
-    this.events.push({ type: "message", text: "天亮了 · 狼群撤离；白天的野狼可以猎取兽皮" });
+    this.events.push({ type: "message", text: "天亮了 · 夜袭狼正在分批撤离；白天的野狼可以猎取兽皮" });
   }
 
   private updateObjectives(): void {
@@ -1748,21 +1907,28 @@ export class GameSimulation {
    * 没有这个回退的话，贴着坡沿走会在"整步 0.14m"和"原地不动"之间反复横跳
    * —— 那正是走路发卡的手感。有了回退，玩家会平滑地贴到坡沿再停住。
    */
-  private stepAxis(entity: Vec2, axis: "x" | "z", amount: number): void {
+  private stepAxis(entity: Vec2, axis: "x" | "z", amount: number, terrainSlopeAllowance = 1): void {
     const origin = entity[axis];
     for (const scale of MOVE_STEP_FALLBACKS) {
       entity[axis] = origin + amount * scale;
       const from = axis === "x" ? { x: origin, z: entity.z } : { x: entity.x, z: origin };
-      if (this.canTraverseTerrain(from, entity)) return;
+      if (this.canTraverseTerrain(from, entity, terrainSlopeAllowance)) return;
     }
     entity[axis] = origin;
   }
 
-  private moveEntity(entity: Vec2, dx: number, dz: number, radius: number, collideWithItems: boolean): void {
+  private moveEntity(
+    entity: Vec2,
+    dx: number,
+    dz: number,
+    radius: number,
+    collideWithItems: boolean,
+    terrainSlopeAllowance = 1,
+  ): void {
     // 分轴推进本身就提供了沿墙滑行：一轴被挡时另一轴仍然生效。
-    this.stepAxis(entity, "x", dx);
+    this.stepAxis(entity, "x", dx, terrainSlopeAllowance);
     this.resolveCollisions(entity, radius, collideWithItems);
-    this.stepAxis(entity, "z", dz);
+    this.stepAxis(entity, "z", dz, terrainSlopeAllowance);
     this.resolveCollisions(entity, radius, collideWithItems);
     const half = this.world.size / 2 - radius;
     entity.x = clamp(entity.x, -half, half);
@@ -1780,12 +1946,12 @@ export class GameSimulation {
     }
   }
 
-  private canTraverseTerrain(from: Vec2, to: Vec2): boolean {
-    if (!isTerrainWalkable(this.world, to)) return false;
+  private canTraverseTerrain(from: Vec2, to: Vec2, terrainSlopeAllowance = 1): boolean {
+    if (terrainSlopeAt(this.world, to) > this.world.terrain.maxWalkableSlope * terrainSlopeAllowance) return false;
     const travel = Math.hypot(to.x - from.x, to.z - from.z);
     if (travel < 0.0001) return true;
     const rise = Math.abs(terrainHeightAt(this.world, to) - terrainHeightAt(this.world, from));
-    return rise / travel <= this.world.terrain.maxWalkableSlope * 1.12;
+    return rise / travel <= this.world.terrain.maxWalkableSlope * 1.12 * terrainSlopeAllowance;
   }
 
   private pushOutsideCircle(entity: Vec2, radius: number, obstacle: Vec2, obstacleRadius: number): void {

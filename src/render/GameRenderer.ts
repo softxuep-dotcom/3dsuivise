@@ -244,7 +244,8 @@ export class GameRenderer {
   private readonly playerBodyMaterial: THREE.MeshStandardMaterial;
   private readonly carriedWood: THREE.Object3D;
   private readonly carriedStone: THREE.Object3D;
-  private readonly club: THREE.Mesh;
+  private readonly weaponMount: THREE.Group;
+  private readonly knife: THREE.Group;
   private readonly spear: THREE.Group;
   private readonly playerCoat: THREE.Group;
   private readonly previousPlayerPosition = new THREE.Vector2();
@@ -315,7 +316,8 @@ export class GameRenderer {
     this.playerFallback = player.fallback;
     this.carriedWood = player.carriedWood;
     this.carriedStone = player.carriedStone;
-    this.club = player.club;
+    this.weaponMount = player.weaponMount;
+    this.knife = player.knife;
     this.spear = player.spear;
     this.playerCoat = player.coat;
     this.scene.add(this.playerGroup);
@@ -919,7 +921,8 @@ export class GameRenderer {
     fallback: THREE.Group;
     carriedWood: THREE.Object3D;
     carriedStone: THREE.Object3D;
-    club: THREE.Mesh;
+    weaponMount: THREE.Group;
+    knife: THREE.Group;
     spear: THREE.Group;
     coat: THREE.Group;
   } {
@@ -960,24 +963,20 @@ export class GameRenderer {
     coat.visible = false;
     fallback.add(coat);
 
-    const club = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.14, 1.55, 6), makeMaterial(0x59402e, 1));
-    club.position.set(0.55, 1.12, -0.46);
-    club.rotation.z = -0.35;
-    club.castShadow = true;
-    group.add(club);
+    // A single pivot owns every weapon view. The pivot is reparented from the
+    // fallback character to the animated hand slot after the GLB loads, so a
+    // future weapon replacement only needs a new view under this mount.
+    const weaponMount = new THREE.Group();
+    weaponMount.name = "PlayerWeaponMount";
+    weaponMount.position.set(0.55, 1.12, -0.46);
+    weaponMount.rotation.z = -0.35;
+    group.add(weaponMount);
 
-    const spear = new THREE.Group();
-    spear.position.set(0.62, 1.12, -0.5);
-    spear.rotation.z = -0.24;
-    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.075, 2.45, 6), makeMaterial(0x60442d, 1));
-    shaft.position.y = 0.28;
-    shaft.castShadow = true;
-    const point = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.55, 5), makeMaterial(0x8b9693, 0.65));
-    point.position.y = 1.76;
-    point.castShadow = true;
-    spear.add(shaft, point);
+    const knife = this.createKnifeView();
+    weaponMount.add(knife);
+    const spear = this.createSpearView();
     spear.visible = false;
-    group.add(spear);
+    weaponMount.add(spear);
 
     const carriedWood = this.createItemView({ kind: "wood" } as GroundItem);
     carriedWood.position.set(-0.1, 1.6, 0.75);
@@ -989,7 +988,56 @@ export class GameRenderer {
     carriedStone.scale.setScalar(0.85);
     carriedStone.visible = false;
     group.add(carriedStone);
-    return { group, fallback, carriedWood, carriedStone, club, spear, coat };
+    return { group, fallback, carriedWood, carriedStone, weaponMount, knife, spear, coat };
+  }
+
+  /** Default one-handed weapon. Its origin is the grip point used by handslot.r. */
+  private createKnifeView(): THREE.Group {
+    const knife = new THREE.Group();
+    knife.name = "SurvivalKnife";
+
+    const handle = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.085, 0.105, 0.42, 7),
+      makeMaterial(0x4b3023, 0.92),
+    );
+    handle.position.y = -0.08;
+    const pommel = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.08, 7), makeMaterial(0x8a6842, 0.72));
+    pommel.position.y = -0.32;
+    const guard = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.07, 0.1), makeMaterial(0x75644f, 0.58));
+    guard.position.y = 0.15;
+
+    const bladeShape = new THREE.Shape();
+    bladeShape.moveTo(-0.11, 0);
+    bladeShape.lineTo(0.14, 0);
+    bladeShape.lineTo(0.09, 0.78);
+    bladeShape.lineTo(0, 0.95);
+    bladeShape.lineTo(-0.07, 0.77);
+    bladeShape.closePath();
+    const blade = new THREE.Mesh(
+      new THREE.ExtrudeGeometry(bladeShape, { depth: 0.055, bevelEnabled: false }),
+      new THREE.MeshStandardMaterial({ color: 0xb8c1bd, roughness: 0.42, metalness: 0.52, flatShading: true }),
+    );
+    blade.position.set(0, 0.17, -0.0275);
+
+    knife.add(handle, pommel, guard, blade);
+    knife.traverse((object) => {
+      if (object instanceof THREE.Mesh) object.castShadow = true;
+    });
+    return knife;
+  }
+
+  /** Upgraded two-handed weapon; shares the same grip-space origin as the knife. */
+  private createSpearView(): THREE.Group {
+    const spear = new THREE.Group();
+    spear.name = "IronSpear";
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.075, 2.45, 6), makeMaterial(0x60442d, 1));
+    shaft.position.y = 0.72;
+    shaft.castShadow = true;
+    const point = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.55, 5), makeMaterial(0x8b9693, 0.65));
+    point.position.y = 2.22;
+    point.castShadow = true;
+    spear.add(shaft, point);
+    return spear;
   }
 
   /**
@@ -1035,7 +1083,7 @@ export class GameRenderer {
 
       this.playerModel = model;
       this.playerCape = model.getObjectByName("RogueHooded_Cape") ?? null;
-      if (this.playerCape) this.playerCape.visible = this.simulation.player.hasLeatherCoat;
+      if (this.playerCape) this.playerCape.visible = this.simulation.player.armor !== "none";
       this.playerFallback.visible = false;
       this.playerGroup.add(model);
       this.attachPlayerWeapons(model);
@@ -1056,15 +1104,10 @@ export class GameRenderer {
     const rightHandSlot = model.getObjectByName("handslot.r") ?? model.getObjectByName("hand.r");
     if (!rightHandSlot) return;
 
-    rightHandSlot.add(this.club);
-    this.club.position.set(0, 0.48, 0);
-    this.club.rotation.set(0, 0, 0);
-    this.club.scale.setScalar(0.86);
-
-    rightHandSlot.add(this.spear);
-    this.spear.position.set(0, 0.04, 0);
-    this.spear.rotation.set(0, 0, 0);
-    this.spear.scale.setScalar(0.86);
+    rightHandSlot.add(this.weaponMount);
+    this.weaponMount.position.set(0, 0, 0);
+    this.weaponMount.rotation.set(0, 0, 0);
+    this.weaponMount.scale.setScalar(0.86);
   }
 
   private playPlayerAnimation(name: string, oneShot = false, speed = 1): void {
@@ -1139,16 +1182,15 @@ export class GameRenderer {
     const angle = -Math.atan2(player.facing.z, player.facing.x);
     this.playerGroup.rotation.y = angle;
     const attackProgress = player.attackFlash > 0 ? 1 - player.attackFlash / 0.22 : 0;
-    this.club.visible = player.weapon === "wood-club";
+    this.knife.visible = player.weapon === "survival-knife";
     this.spear.visible = player.weapon === "iron-spear";
     if (!this.playerModel) {
-      this.club.rotation.z = -0.35 - Math.sin(attackProgress * Math.PI) * 1.7;
-      this.spear.rotation.z = -0.24 - Math.sin(attackProgress * Math.PI) * 1.25;
+      this.weaponMount.rotation.z = -0.35 - Math.sin(attackProgress * Math.PI) * 1.7;
     }
     this.carriedWood.visible = player.carrying === "wood";
     this.carriedStone.visible = player.carrying === "stone";
-    this.playerCoat.visible = player.hasLeatherCoat && !this.playerModel;
-    if (this.playerCape) this.playerCape.visible = player.hasLeatherCoat;
+    this.playerCoat.visible = player.armor !== "none" && !this.playerModel;
+    if (this.playerCape) this.playerCape.visible = player.armor !== "none";
     const hurt = player.hurtFlash > 0;
     this.playerBodyMaterial.color.setHex(hurt ? 0xe4544d : 0x2f7b8d);
     for (const material of this.playerModelMaterials) {

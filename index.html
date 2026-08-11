@@ -20,16 +20,21 @@
         <section class="status-strip" aria-label="生存状态">
           <div id="condition-badge" class="condition-badge hidden"></div>
           <div class="meter health"><span>体力</span><i><b id="health-bar"></b></i><em id="health-value">100</em></div>
-          <div class="drain-note" id="drain-note">体力持续消耗 · 进食或休息回复</div>
           <div class="meter water"><span>水分</span><i><b id="water-bar"></b></i><em id="water-value">90</em></div>
           <div class="meter hunger"><span>饱食</span><i><b id="hunger-bar"></b></i><em id="hunger-value">82</em></div>
-          <div class="meter warmth"><span>体温</span><i><b id="warmth-bar"></b></i><em id="warmth-value">22</em></div>
+          <div class="meter warmth bipolar" id="warmth-meter">
+            <span>体温</span>
+            <i><u class="comfort-band"></u><b id="warmth-bar"></b><s class="mid-tick"></s></i>
+            <em id="warmth-value">22</em>
+          </div>
           <div class="meter stamina"><span>劳力</span><i><b id="stamina-bar"></b></i><em id="stamina-value">100</em></div>
+          <div class="drain-note" id="drain-note">体力持续消耗 · 进食或休息回复</div>
           <div class="combat-line"><span>攻击 <b id="attack-value">28</b></span><span>防御 <b id="defense-value">2</b></span></div>
           <div class="combat-line hunt-line"><span id="hunt-progress">猎杀 0/40</span></div>
           <div class="hud-actions">
             <button id="drink-button" class="inventory-button" type="button" aria-label="喝一份水">水 <b id="water-count">0</b></button>
             <button id="thermal-button" class="inventory-button" type="button" aria-label="调节体温">体温 <b id="thermal-state">—</b></button>
+            <button id="wash-button" class="inventory-button" type="button" aria-label="用洗脸水降温">洗脸水 <b id="wash-count">0</b></button>
             <button id="eat-button" class="inventory-button" type="button" aria-label="快速饮用仙人掌汁">掌汁 <b id="berry-count">0</b></button>
             <button id="backpack-button" class="inventory-button backpack-button" type="button" aria-label="打开背包">背包 <b id="bag-usage">0/8</b></button>
           </div>
@@ -106,10 +111,11 @@
             <button class="inventory-slot" data-slot="7" type="button"></button>
           </div>
           <div class="craft-list" aria-label="制作配方">
-            <button id="craft-coat-button" class="craft-button" type="button">基础皮衣 · 兽皮4 · 防御+4</button>
-            <button id="craft-spear-button" class="craft-button" type="button">粗铁矛 · 铁矿3 + 兽皮1 · 需燃烧篝火</button>
+            <button id="craft-coat-button" class="craft-button" type="button">护甲升级</button>
+            <button id="craft-spear-button" class="craft-button" type="button">武器升级</button>
+            <button id="craft-wash-button" class="craft-button" type="button">兑洗脸水 · 水1 · 降温25~50</button>
           </div>
-          <p class="inventory-help">配方材料满足后点击制作；生肉可在火边烤熟。兽皮只有白天的野狼和骆驼会掉，夜袭狼只掉肉。仙人掌一刀出汁，空地上挖沙约五成出水。</p>
+          <p class="inventory-help">配方材料满足后点击制作；生肉可在火边烤熟。兽皮只有白天的野狼和骆驼会掉，夜袭狼只掉肉。仙人掌一刀出汁；水井在营地外，提水必出但会见底、回蓄很慢。洗脸水降温是直接喝水的四倍。</p>
         </div>
       </div>
 

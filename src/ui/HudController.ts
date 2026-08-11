@@ -5,6 +5,8 @@ import type {
   InteractionHint,
   InventoryItemKind,
   SurvivalCondition,
+  WeaponKind,
+  ArmorKind,
   WolfKind,
 } from "../game/simulation/types";
 
@@ -14,12 +16,25 @@ const required = <T extends HTMLElement>(id: string): T => {
   return element as T;
 };
 
+const WEAPON_LABELS: Record<WeaponKind, string> = {
+  "survival-knife": "求生匕首",
+  "iron-spear": "粗铁矛 · 攻击+18",
+  "fang-spear": "狼牙重矛 · 攻击+34",
+};
+
+const ARMOR_LABELS: Record<ArmorKind, string> = {
+  none: "粗布衣",
+  leather: "兽皮衣 · 防御+4",
+  reinforced: "镶铁重甲 · 防御+11 移速-5%",
+};
+
 const ITEM_PRESENTATION: Record<InventoryItemKind, { glyph: string; name: string }> = {
   "cactus-juice": { glyph: "汁", name: "仙人掌汁" },
   "raw-meat": { glyph: "肉", name: "生肉" },
   "cooked-meat": { glyph: "熟", name: "烤肉" },
   hide: { glyph: "皮", name: "兽皮" },
   "iron-ore": { glyph: "铁", name: "铁矿" },
+  "wash-water": { glyph: "洗", name: "洗脸水" },
   water: { glyph: "水", name: "水" },
 };
 
@@ -58,6 +73,10 @@ export class HudController {
   private readonly staminaBar = required<HTMLElement>("stamina-bar");
   private readonly healthValue = required<HTMLElement>("health-value");
   private readonly warmthValue = required<HTMLElement>("warmth-value");
+  private readonly warmthMeter = required<HTMLElement>("warmth-meter");
+  private readonly washButton = required<HTMLButtonElement>("wash-button");
+  private readonly washCount = required<HTMLElement>("wash-count");
+  private readonly craftWashButton = required<HTMLButtonElement>("craft-wash-button");
   private readonly hungerValue = required<HTMLElement>("hunger-value");
   private readonly waterValue = required<HTMLElement>("water-value");
   private readonly staminaValue = required<HTMLElement>("stamina-value");
@@ -140,11 +159,19 @@ export class HudController {
     required<HTMLButtonElement>("backpack-button").addEventListener("click", () => this.toggleInventory());
     required<HTMLButtonElement>("inventory-close").addEventListener("click", () => this.closeInventory());
     this.craftButton.addEventListener("click", () => {
-      this.simulation.craftLeatherCoat();
+      this.simulation.craftArmor();
       this.updateInventory();
     });
     this.craftSpearButton.addEventListener("click", () => {
-      this.simulation.craftIronSpear();
+      this.simulation.craftWeapon();
+      this.updateInventory();
+    });
+    this.washButton.addEventListener("click", () => {
+      this.simulation.consumeWashWater();
+      this.updateInventory();
+    });
+    this.craftWashButton.addEventListener("click", () => {
+      this.simulation.craftWashWater();
       this.updateInventory();
     });
     this.drinkButton.addEventListener("click", () => {
@@ -187,7 +214,7 @@ export class HudController {
     this.setMeter(this.healthBar, this.healthValue, player.health);
     this.setMeter(this.waterBar, this.waterValue, player.water);
     this.setMeter(this.hungerBar, this.hungerValue, player.hunger);
-    this.setMeter(this.warmthBar, this.warmthValue, player.warmth);
+    this.setBipolarWarmth(player.warmth);
     this.setMeter(this.staminaBar, this.staminaValue, player.stamina, player.maxStamina);
     this.healthBar.closest(".meter")?.classList.toggle("critical", player.health < 30);
     // 水分与饱食是"归零即死"的轴，所以告警阈值比体温更保守。
@@ -209,6 +236,9 @@ export class HudController {
     this.waterCount.textContent = String(waters);
     this.drinkButton.disabled = waters <= 0 || player.water >= 99;
     this.syncThermalButton(player.warmth);
+    const washes = this.simulation.getInventoryCount("wash-water");
+    this.washCount.textContent = String(washes);
+    this.washButton.disabled = washes <= 0;
     this.bagUsage.textContent = `${player.inventory.filter(Boolean).length}/8`;
     this.objective.textContent = this.simulation.getObjective();
     this.dayLabel.textContent = `第 ${this.simulation.day} 天 · ${this.simulation.getCurrentLocationLabel()} · 狼 ${this.simulation.wolves.filter((wolf) => wolf.mode !== "dead").length}`;
@@ -348,18 +378,54 @@ export class HudController {
       slot.setAttribute("aria-label", `${presentation.name} ${stack.count}个`);
     });
     this.handsStatus.textContent = player.carrying === "wood" ? "枯木" : player.carrying === "stone" ? "大石" : "空闲";
-    this.coatStatus.textContent = player.hasLeatherCoat ? "基础皮衣 · 防御+4" : "粗布衣";
-    this.weaponStatus.textContent = player.weapon === "iron-spear" ? "粗铁矛 · 攻击+18" : "木棒";
+    this.coatStatus.textContent = ARMOR_LABELS[player.armor];
+    this.weaponStatus.textContent = WEAPON_LABELS[player.weapon];
     this.statHealth.textContent = `${Math.round(player.health)}/${player.maxHealth}`;
     this.statStamina.textContent = `${Math.round(player.stamina)}/${player.maxStamina}`;
     this.statAttack.textContent = String(player.attack);
     this.statDefense.textContent = String(player.defense);
-    const hides = this.simulation.getInventoryCount("hide");
-    const ore = this.simulation.getInventoryCount("iron-ore");
-    this.craftButton.textContent = player.hasLeatherCoat ? "基础皮衣已装备" : `基础皮衣 · 兽皮 ${hides}/4 · 防御+4`;
-    this.craftButton.disabled = player.hasLeatherCoat || hides < 4;
-    this.craftSpearButton.textContent = player.weapon === "iron-spear" ? "粗铁矛已装备" : `粗铁矛 · 铁矿 ${ore}/3 + 兽皮 ${hides}/1 · 需燃烧篝火`;
-    this.craftSpearButton.disabled = player.weapon === "iron-spear" || ore < 3 || hides < 1;
+    this.syncUpgradeButton(this.craftButton, "armor");
+    this.syncUpgradeButton(this.craftSpearButton, "weapon");
+    const waters = this.simulation.getInventoryCount("water");
+    this.craftWashButton.textContent = waters > 0
+      ? `兑洗脸水 · 水 ${waters} → 降温 25~50`
+      : "兑洗脸水 · 需要 1 份水";
+    this.craftWashButton.disabled = waters < 1;
+  }
+
+  /**
+   * 升级按钮自己说清三件事：下一阶叫什么、还差多少材料、缺不缺篝火。
+   * 材料以「已有/需要」显示，玩家不用回头数背包。
+   */
+  private syncUpgradeButton(button: HTMLButtonElement, line: "weapon" | "armor"): void {
+    const next = this.simulation.getNextTier(line);
+    if (!next) {
+      button.textContent = line === "armor" ? "护甲已满级" : "武器已满级";
+      button.disabled = true;
+      return;
+    }
+    const parts = next.cost.map(([kind, count]) => {
+      const have = this.simulation.getInventoryCount(kind);
+      return `${ITEM_PRESENTATION[kind].name} ${have}/${count}`;
+    });
+    const fire = next.needsFire ? " · 需燃烧篝火" : "";
+    button.textContent = `${next.label} · ${parts.join(" + ")}${fire} · ${next.blurb}`;
+    button.disabled = next.cost.some(([kind, count]) => this.simulation.getInventoryCount(kind) < count);
+  }
+
+  /**
+   * 体温条是中心锚定的：填充从 50% 处向偏离方向生长。
+   * 越靠近两端条越长，方向色也从绿转蓝/橙 —— 玩家读到的是"偏了多少、往哪偏"，
+   * 而不是普通进度条那种"越长越好"。
+   */
+  private setBipolarWarmth(warmth: number): void {
+    const value = clamp(warmth, 0, 100);
+    const offset = value - 50;
+    this.warmthBar.style.left = offset >= 0 ? "50%" : `${value}%`;
+    this.warmthBar.style.width = `${Math.abs(offset)}%`;
+    this.warmthMeter.classList.toggle("toward-hot", value > 62);
+    this.warmthMeter.classList.toggle("toward-cold", value < 35);
+    this.warmthValue.textContent = String(Math.round(value));
   }
 
   private setMeter(bar: HTMLElement, valueLabel: HTMLElement, rawValue: number, max = 100): void {

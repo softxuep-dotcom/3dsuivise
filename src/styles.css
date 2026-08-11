@@ -122,15 +122,59 @@ button { font: inherit; }
 .meter.critical { color: #ff9b85; }
 .meter.critical i { box-shadow: 0 0 0 1px rgba(255, 99, 74, .45), 0 0 10px rgba(226, 67, 47, .24); }
 
-/* 体温条同时标出白天地板与夜晚天花板：越界的那一段视觉上就是"危险区"。 */
+/*
+ * 体温是唯一的**双端致死轴**：0 冻死、100 中暑，50 附近才安全。
+ * 做成普通左起进度条会被读成"越长越好"—— 那是会死人的误读。
+ * 所以它单独做成中心锚定：填充从中线向偏离的那一侧生长，
+ * 舒适区画成一条底纹，中线一根刻度。玩家的直觉因此变成"往中间靠"。
+ */
 .meter.warmth i {
   position: relative;
-  background:
-    linear-gradient(90deg,
-      rgba(80, 150, 235, .34) 0 15%,
-      rgba(255,255,255,.12) 15% 80%,
-      rgba(255, 140, 60, .34) 80% 100%);
+  overflow: visible;
+  height: 9px;
+  background: linear-gradient(90deg,
+    rgba(80, 150, 235, .42) 0 12%,
+    rgba(255,255,255,.10) 30% 70%,
+    rgba(255, 140, 60, .42) 88% 100%);
 }
+
+/* 舒适区 35~62：落在这一段内不掉速度也不掉攻速。 */
+.meter.warmth .comfort-band {
+  position: absolute;
+  left: 35%;
+  width: 27%;
+  top: 0;
+  bottom: 0;
+  background: rgba(150, 235, 170, .22);
+  border-left: 1px solid rgba(150, 235, 170, .4);
+  border-right: 1px solid rgba(150, 235, 170, .4);
+  pointer-events: none;
+}
+
+.meter.warmth .mid-tick {
+  position: absolute;
+  left: 50%;
+  top: -2px;
+  bottom: -2px;
+  width: 1px;
+  background: rgba(255,255,255,.5);
+  pointer-events: none;
+}
+
+/* 从中线向外生长；left/width 由 HudController 计算。 */
+.meter.warmth i b {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  height: auto;
+  width: 0;
+  left: 50%;
+  border-radius: 3px;
+  background: #9fe6b4;
+  transition: left .18s ease, width .18s ease, background .3s ease;
+}
+.meter.warmth.toward-cold i b { background: linear-gradient(90deg, #3f77c9, #8fc0f5); }
+.meter.warmth.toward-hot i b { background: linear-gradient(90deg, #e7782e, #ffc05e); }
 
 .condition-badge {
   margin: 0 0 8px;
