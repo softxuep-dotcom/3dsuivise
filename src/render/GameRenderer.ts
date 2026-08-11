@@ -234,6 +234,8 @@ export class GameRenderer {
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.PerspectiveCamera(47, 1, 0.1, 320);
   private readonly renderer: THREE.WebGLRenderer;
+  /** 上下文丢失期间跳过绘制，否则每帧都会刷一串 GL 错误。 */
+  private contextLost = false;
   private readonly raycaster = new THREE.Raycaster();
   private readonly pointer = new THREE.Vector2();
   private readonly terrainMesh: THREE.Mesh;
@@ -288,6 +290,7 @@ export class GameRenderer {
     this.renderer.toneMappingExposure = 1.05;
     this.canvas = this.renderer.domElement;
     root.appendChild(this.canvas);
+    this.bindContextRecovery();
 
     // 荒漠白天：泛黄的尘霾天空，地面反照强烈。
     this.scene.background = new THREE.Color(0xd8bf8d);
@@ -344,6 +347,8 @@ export class GameRenderer {
   }
 
   render(deltaSeconds: number): void {
+    // 上下文丢失期间任何 GL 调用都会报错刷屏，直接跳过这一帧。
+    if (this.contextLost) return;
     const delta = Math.min(deltaSeconds, 0.05);
     this.time += delta;
     this.syncPlayer(delta);
@@ -461,7 +466,19 @@ export class GameRenderer {
     return ground;
   }
 
-  private createGroundTexture(): THREE.CanvasTexture {
+  /**
+   * 地面噪点贴图。
+   *
+   * 这里**必须**是 DataTexture 而不是 CanvasTexture：CanvasTexture 只持有一个
+   * 从未挂进 DOM 的 <canvas>，移动端 Chrome 在标签页切后台时会在内存压力下
+   * 丢弃游离 canvas 的后备存储；回到前台重新上传纹理就是一片全黑。
+   * （地面是 vertexColors + map，贴图一黑就整片黑；树石用纯色材质，所以不受影响。）
+   *
+   * 改成把像素抓进一个常驻的 Uint8Array 之后，浏览器没法回收它，
+   * WebGL 上下文真的丢失时 three.js 也能从这份数据重新上传。
+   * canvas 仍然用来画那 90 道划痕 —— 只是它现在只是个临时画板，用完即弃。
+   */
+  private createGroundTexture(): THREE.DataTexture {
     const canvas = document.createElement("canvas");
     canvas.width = 128;
     canvas.height = 128;
@@ -487,13 +504,44 @@ export class GameRenderer {
       context.lineTo(x + 1 + random() * 3, y - 1 - random() * 3);
       context.stroke();
     }
-    const texture = new THREE.CanvasTexture(canvas);
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+    const texture = new THREE.DataTexture(
+      new Uint8Array(pixels.data.buffer.slice(0)),
+      canvas.width,
+      canvas.height,
+      THREE.RGBAFormat,
+    );
+    texture.needsUpdate = true;
     texture.wrapS = THREE.RepeatWrapping;
     texture.wrapT = THREE.RepeatWrapping;
     texture.repeat.set(24, 24);
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.anisotropy = Math.min(4, this.renderer.capabilities.getMaxAnisotropy());
     return texture;
+  }
+
+  /**
+   * WebGL 上下文丢失/恢复。
+   *
+   * 移动端把标签页切到后台、或系统回收显存时，浏览器会丢掉 WebGL 上下文。
+   * 默认行为是**永不恢复**——必须 preventDefault 才会触发 restore，
+   * 否则回到前台就是一块死掉的黑画布。
+   *
+   * 恢复之后 three.js 会自己把几何体和纹理重新上传，前提是它们的 CPU 侧数据还在；
+   * 地面贴图已经从 CanvasTexture 换成 DataTexture 正是为了保证这一点。
+   */
+  private bindContextRecovery(): void {
+    this.canvas.addEventListener("webglcontextlost", (event) => {
+      event.preventDefault();
+      this.contextLost = true;
+      console.warn("WebGL 上下文丢失，等待浏览器恢复");
+    });
+    this.canvas.addEventListener("webglcontextrestored", () => {
+      this.contextLost = false;
+      // 尺寸在丢失期间可能变过（转屏），恢复后重新对齐一次。
+      this.resize();
+      console.info("WebGL 上下文已恢复");
+    });
   }
 
   private createGrassTuftGeometry(): THREE.BufferGeometry {
