@@ -1,5 +1,6 @@
 import type { GameSimulation } from "../game/simulation/GameSimulation";
 import { clamp } from "../game/simulation/geometry";
+import { describeRecords, loadRecords, submitRun } from "./Records";
 import type {
   GameEvent,
   InteractionHint,
@@ -141,6 +142,7 @@ export class HudController {
   private readonly radar = required<HTMLCanvasElement>("radar");
   private readonly resultCopy = required<HTMLElement>("result-copy");
   private readonly victoryCopy = required<HTMLElement>("victory-copy");
+  private readonly recordsLine = required<HTMLElement>("records-line");
   private readonly handsStatus = required<HTMLElement>("hands-status");
   private readonly coatStatus = required<HTMLElement>("coat-status");
   private readonly weaponStatus = required<HTMLElement>("weapon-status");
@@ -437,6 +439,30 @@ export class HudController {
     valueLabel.textContent = String(Math.round(value));
   }
 
+  /**
+   * 结算本局并返回一句"破纪录 / 历史最好"的话。
+   * 破了纪录就只报破的那几项 —— 平局时再念一遍旧纪录只会冲淡成就感。
+   */
+  private submitAndDescribe(won: boolean): string {
+    const { records, brokeDay, brokeKills } = submitRun({
+      day: this.simulation.day,
+      kills: this.simulation.player.kills,
+      won,
+    });
+    this.refreshRecordsLine();
+    if (brokeDay && brokeKills) return `新纪录：第 ${records.bestDay} 天 · 猎杀 ${records.bestKills}。`;
+    if (brokeDay) return `新纪录：活到了第 ${records.bestDay} 天。`;
+    if (brokeKills) return `新纪录：单局猎杀 ${records.bestKills} 只。`;
+    return `历史最好：第 ${records.bestDay} 天 · 猎杀 ${records.bestKills}。`;
+  }
+
+  /** 开场页那一行；没玩过时整行隐藏，不占版面。 */
+  refreshRecordsLine(): void {
+    const text = describeRecords(loadRecords());
+    this.recordsLine.textContent = text ?? "";
+    this.recordsLine.classList.toggle("hidden", text === null);
+  }
+
   private showGameOver(): void {
     const wolfCount = this.simulation.wolves.filter((wolf) => wolf.mode !== "dead").length;
     const cause = this.simulation.deathCause;
@@ -454,13 +480,17 @@ export class HudController {
       causeText,
       conditionText,
       `沙海上仍有 ${wolfCount} 只狼在活动。`,
+      this.submitAndDescribe(false),
     ].filter(Boolean).join(" ");
     this.gameOver.classList.remove("hidden");
   }
 
   private showVictory(): void {
     const player = this.simulation.player;
-    this.victoryCopy.textContent = `第 ${this.simulation.day} 天，你击倒了头狼，累计猎杀 ${player.kills} 只。狼群散了，营地的火终于可以安心地烧到天亮。`;
+    this.victoryCopy.textContent = [
+      `第 ${this.simulation.day} 天，你击倒了头狼，累计猎杀 ${player.kills} 只。狼群散了，营地的火终于可以安心地烧到天亮。`,
+      this.submitAndDescribe(true),
+    ].filter(Boolean).join(" ");
     this.victory.classList.remove("hidden");
   }
 

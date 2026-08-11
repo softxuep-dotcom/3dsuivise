@@ -156,6 +156,21 @@ button { font: inherit; }
 }
 .drain-note.healing { color: #8fd6a8; }
 
+/* 开场页的历史最好成绩：一行就够，没玩过时整行隐藏，不占版面。 */
+.records-line {
+  margin: 14px 0 0;
+  padding: 7px 12px;
+  border: 1px solid rgba(242, 210, 158, .28);
+  border-radius: 999px;
+  background: rgba(242, 210, 158, .08);
+  color: #f2d29e;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .02em;
+  text-align: center;
+}
+.record-break { color: #ffd98a; font-weight: 900; }
+
 .hunt-line { color: #d6c3a2; }
 .hunt-line.alpha { background: rgba(200, 60, 48, .2); color: #ff9d8c; }
 

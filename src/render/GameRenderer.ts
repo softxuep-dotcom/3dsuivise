@@ -1124,7 +1124,11 @@ export class GameRenderer {
     if (!rightHandSlot) return;
 
     rightHandSlot.add(this.weaponMount);
-    this.weaponMount.position.set(0, 0, 0);
+    // KayKit's handslot.r sits just beyond the fingertips. Pull the shared
+    // grip pivot back to the palm centre so handles pass through the hand
+    // instead of appearing to float beside it. This offset is expressed in
+    // handslot-local space and is shared by every weapon view.
+    this.weaponMount.position.set(-0.096, 0, 0.058);
     this.weaponMount.rotation.set(0, 0, 0);
     this.weaponMount.scale.setScalar(0.86);
   }

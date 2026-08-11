@@ -1446,13 +1446,17 @@ export class GameSimulation {
       return;
     }
 
-    // 夜袭狼只掉肉不掉皮：把"守夜"和"打猎"拆成两件事。
-    // 小猎物也不掉皮 —— 兽皮只能来自野狼和骆驼这类大型动物。
-    // 皮革（也就是防具线）只能靠白天出门猎杀游荡野狼取得 —— 移植自原图
-    // "夜里 Player(11) 的狼不触发掉落"的判定。
-    const bulk = wolf.kind === "large" ? 2 : 1;
-    this.createDrop(wolf, "raw-meat", -0.65, bulk);
-    if (wolf.role === "wild") this.createDrop(wolf, "hide", 0.65, bulk);
+    // 夜袭狼**什么都不掉**（原图：Player(11) 的狼不触发掉落表）。
+    // 这条把"守夜"和"打猎"彻底拆开 —— 夜里打赢只是活下来，资源必须白天出去拿。
+    //
+    // 不只是为了还原：一夜刷 40~90 只，按每只 1~2 块肉算就是几十上百块，
+    // 而一个昼夜只需要约 6 块熟肉。夜袭掉落等于把食物供给放大十几倍，
+    // 饥饿和体力这两条轴因此永远咬不住人。
+    if (wolf.role === "wild") {
+      const bulk = wolf.kind === "large" ? 2 : 1;
+      this.createDrop(wolf, "raw-meat", -0.65, bulk);
+      this.createDrop(wolf, "hide", 0.65, bulk);
+    }
     this.events.push({ type: "wolf-killed", wolfId: wolf.id });
     this.maybeSpawnAlpha();
   }

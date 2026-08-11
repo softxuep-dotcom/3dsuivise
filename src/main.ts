@@ -28,6 +28,8 @@ if (import.meta.env.DEV && new URLSearchParams(window.location.search).get("nigh
 }
 const audio = new SynthAudio();
 const hud = new HudController(simulation);
+// 重开是整页刷新，所以开场页每次都会重新读一次记录。
+hud.refreshRecordsLine();
 
 if (import.meta.env.DEV) {
   // 开发期调试句柄：用来在浏览器控制台里快进模拟、检查五轴状态。
