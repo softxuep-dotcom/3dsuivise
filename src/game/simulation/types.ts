@@ -242,8 +242,15 @@ export interface PlayerState extends Vec2 {
   facing: Vec2;
   health: number;
   maxHealth: number;
-  attack: number;
-  defense: number;
+  /**
+   * 攻击与防御**不再是玩家身上的字段** —— 它们由当前 weapon / armor 派生，
+   * 见 GameSimulation.getAttackPower() / getDefense()。
+   *
+   * 原先是 `player.attack += 本阶增量` 一路累加上去的。那种写法在装备只有一条
+   * 直线时勉强成立，一旦允许换装（骨剑 → 铁刀）就会重复计数：卸下的那件装备
+   * 没有对应的减法，攻击力只增不减。派生之后"当前装备是什么，属性就是什么"，
+   * 换线、降级、读档都不会算错。
+   */
   /** 体温：0~100，白天有地板、夜晚有天花板，越界只致瘫不致死。 */
   warmth: number;
   /** 饥饿：归零立即死亡。 */

@@ -65,27 +65,37 @@ const ITEM_LABELS: Record<InventoryItemKind, string> = {
   wood: "枯木",
 };
 
+/**
+ * 一阶装备。
+ *
+ * `attack` / `defense` 是**这件装备自己的绝对属性**，不是相对上一阶的增量。
+ * 增量口径只在"装备是一条直线"时说得清；一旦分叉成多条线，"+18" 是相对谁的 +18
+ * 就没有答案了。绝对值还顺带修掉一处口径不一致：HUD 上写的是累计值（狼牙重矛
+ * "攻击+34"），配方表的 blurb 写的是增量（"攻击+16"），同一件装备两个数字。
+ */
 export interface EquipTier {
   id: string;
   label: string;
   cost: Array<[InventoryItemKind, number]>;
   needsFire: boolean;
   blurb: string;
+  /** 装备后的攻击力绝对值。武器线必填。 */
   attack?: number;
+  /** 装备后的防御力绝对值。护甲线必填。 */
   defense?: number;
 }
 
 /** 武器三阶。第 3 阶的兽皮开销刻意压得重 —— 兽皮只从狼身上掉。 */
 const WEAPON_TIERS: EquipTier[] = [
-  { id: "survival-knife", label: "求生匕首", cost: [], needsFire: false, blurb: "" },
-  { id: "iron-spear", label: "粗铁矛", cost: [["iron-ore", 3], ["hide", 1]], needsFire: true, blurb: "攻击+18，攻程更远", attack: 18 },
-  { id: "fang-spear", label: "狼牙重矛", cost: [["iron-ore", 5], ["hide", 3]], needsFire: true, blurb: "攻击+16，攻程再进一步", attack: 16 },
+  { id: "survival-knife", label: "求生匕首", cost: [], needsFire: false, blurb: "", attack: 28 },
+  { id: "iron-spear", label: "粗铁矛", cost: [["iron-ore", 3], ["hide", 1]], needsFire: true, blurb: "攻击 46，攻程更远", attack: 46 },
+  { id: "fang-spear", label: "狼牙重矛", cost: [["iron-ore", 5], ["hide", 3]], needsFire: true, blurb: "攻击 62，攻程再进一步", attack: 62 },
 ];
 
 const ARMOR_TIERS: EquipTier[] = [
-  { id: "none", label: "粗布衣", cost: [], needsFire: false, blurb: "" },
-  { id: "leather", label: "兽皮衣", cost: [["hide", 4]], needsFire: false, blurb: "防御+4", defense: 4 },
-  { id: "reinforced", label: "镶铁重甲", cost: [["hide", 6], ["iron-ore", 4]], needsFire: true, blurb: "防御+7，移速-5%", defense: 7 },
+  { id: "none", label: "粗布衣", cost: [], needsFire: false, blurb: "", defense: 2 },
+  { id: "leather", label: "兽皮衣", cost: [["hide", 4]], needsFire: false, blurb: "防御 6", defense: 6 },
+  { id: "reinforced", label: "镶铁重甲", cost: [["hide", 6], ["iron-ore", 4]], needsFire: true, blurb: "防御 13，移速-5%", defense: 13 },
 ];
 
 /**
@@ -99,7 +109,7 @@ const WEAPON_STATS: Record<WeaponKind, { cooldown: number; range: number }> = {
   "fang-spear": { cooldown: 0.62, range: 4.2 },
 };
 
-/** 镶铁重甲的负重：换来 11 点防御，代价是 5% 移速。 */
+/** 镶铁重甲的负重：换来 13 点防御（比粗布衣的 2 高出 11），代价是 5% 移速。 */
 const REINFORCED_ARMOR_SPEED = 0.95;
 
 // 肉的两级。生肉顶饿不回体力，烤肉才回 —— 烤肉的价值全在体力那一条上。
@@ -351,8 +361,6 @@ export class GameSimulation {
       facing: { x: 0.7, z: 0.7 },
       health: 100,
       maxHealth: 100,
-      attack: 28,
-      defense: 2,
       warmth: WARMTH_INITIAL,
       hunger: 82,
       water: 90,
@@ -826,7 +834,6 @@ export class GameSimulation {
   craftWeapon(): boolean {
     return this.craftUpgrade(WEAPON_TIERS, this.player.weapon, (next) => {
       this.player.weapon = next.id as WeaponKind;
-      this.player.attack += next.attack ?? 0;
       this.events.push({ type: "craft-weapon" });
     });
   }
@@ -834,7 +841,6 @@ export class GameSimulation {
   craftArmor(): boolean {
     return this.craftUpgrade(ARMOR_TIERS, this.player.armor, (next) => {
       this.player.armor = next.id as ArmorKind;
-      this.player.defense += next.defense ?? 0;
       this.events.push({ type: "craft-coat" });
     });
   }
@@ -1269,13 +1275,25 @@ export class GameSimulation {
   }
 
   /**
-   * 实际攻击力 = 基础 + 随身枯木加成（每根 +2，最多两根）。
-   * 加成不写进 player.attack，因为那个字段被装备升级永久累加；
-   * 枯木是会烧掉的临时物，必须每次现算。
+   * 实际攻击力 = 当前武器的绝对攻击 + 随身枯木加成（每根 +2，最多两根）。
+   * 两项都是每次现算：武器可以换、枯木会烧掉，任何一边缓存都会算错。
    */
   getAttackPower(): number {
     const logs = Math.min(this.getInventoryCount("wood"), WOOD_ATTACK_CAP);
-    return this.player.attack + logs * WOOD_ATTACK_BONUS;
+    return (this.getWeaponTier().attack ?? 0) + logs * WOOD_ATTACK_BONUS;
+  }
+
+  /** 防御力完全由当前护甲决定，没有其它来源。 */
+  getDefense(): number {
+    return this.getArmorTier().defense ?? 0;
+  }
+
+  private getWeaponTier(): EquipTier {
+    return WEAPON_TIERS.find((tier) => tier.id === this.player.weapon) ?? WEAPON_TIERS[0];
+  }
+
+  private getArmorTier(): EquipTier {
+    return ARMOR_TIERS.find((tier) => tier.id === this.player.armor) ?? ARMOR_TIERS[0];
   }
 
   /** 中暑 -60% 移速，失温 -75% 移速。（原图是 -85% / -99%，浏览器手感下放宽） */
@@ -1460,7 +1478,7 @@ export class GameSimulation {
     if (wolf.mode === "chase" && playerDistance < 1.75) {
       if (wolf.attackCooldown <= 0) {
         wolf.attackCooldown = 1.15;
-        const damage = Math.max(1, wolf.attack - this.player.defense);
+        const damage = Math.max(1, wolf.attack - this.getDefense());
         this.player.health -= damage;
         this.player.hurtFlash = 0.3;
         this.combatTimer = REST_COMBAT_LOCK;

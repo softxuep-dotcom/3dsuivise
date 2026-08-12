@@ -20,16 +20,21 @@ const required = <T extends HTMLElement>(id: string): T => {
   return element as T;
 };
 
+/**
+ * 装备标签统一用**绝对值**，和 EquipTier.attack / .defense 同口径。
+ * 原先武器写累计增量（"攻击+34"）、配方表写单阶增量（"攻击+16"），
+ * 同一件装备在两个地方是两个数字。
+ */
 const WEAPON_LABELS: Record<WeaponKind, string> = {
-  "survival-knife": "求生匕首",
-  "iron-spear": "粗铁矛 · 攻击+18",
-  "fang-spear": "狼牙重矛 · 攻击+34",
+  "survival-knife": "求生匕首 · 攻击 28",
+  "iron-spear": "粗铁矛 · 攻击 46",
+  "fang-spear": "狼牙重矛 · 攻击 62",
 };
 
 const ARMOR_LABELS: Record<ArmorKind, string> = {
-  none: "粗布衣",
-  leather: "兽皮衣 · 防御+4",
-  reinforced: "镶铁重甲 · 防御+11 移速-5%",
+  none: "粗布衣 · 防御 2",
+  leather: "兽皮衣 · 防御 6",
+  reinforced: "镶铁重甲 · 防御 13 移速-5%",
 };
 
 const ITEM_PRESENTATION: Record<InventoryItemKind, { glyph: string; name: string }> = {
@@ -394,7 +399,7 @@ export class HudController {
     this.statHealth.textContent = `${Math.round(player.health)}/${player.maxHealth}`;
     this.statStamina.textContent = `${Math.round(player.stamina)}/${player.maxStamina}`;
     this.statAttack.textContent = String(this.simulation.getAttackPower());
-    this.statDefense.textContent = String(player.defense);
+    this.statDefense.textContent = String(this.simulation.getDefense());
     for (const [button, kind] of this.buildButtons) {
       const spec = STRUCTURE_SPECS[kind];
       const parts = spec.cost.map(([item, count]) =>
