@@ -44,7 +44,8 @@ button { font: inherit; }
 .left-stack,
 .status-strip,
 .top-stack,
-.prompt {
+.prompt,
+.bottom-right {
   position: absolute;
   z-index: 5;
 }
@@ -101,7 +102,17 @@ button { font: inherit; }
   text-transform: uppercase;
 }
 
-.objective-chip strong { font-size: 14px; letter-spacing: .02em; }
+.objective-chip strong { display: block; font-size: 14px; letter-spacing: .02em; }
+
+.objective-progress {
+  display: block;
+  margin-top: 5px;
+  color: #d6c3a2;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .04em;
+}
+.objective-progress.alpha { color: #ff9d8c; }
 
 .status-strip {
   top: max(18px, env(safe-area-inset-top));
@@ -197,10 +208,14 @@ button { font: inherit; }
 }
 .record-break { color: #ffd98a; font-weight: 900; }
 
-/* 攻/防/猎杀合并成一行 —— 原先是两行两个面板，纯粹在浪费右上角的垂直空间。 */
-.combat-line {
+/*
+ * 随身补给：**只读**。攻/防那一行删了（几乎是静态数字，背包里本来就有同样的两个），
+ * 换成这一行 —— "还有没有水"是每隔几秒就要瞄一眼的决策信息，不该只藏在背包里。
+ * 四项位置固定、有无都在，为 0 时淡掉：位置稳定比省那点密度重要。
+ */
+.supply-line {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   justify-content: space-between;
   margin: 1px 0 6px;
   padding: 5px 7px;
@@ -212,9 +227,9 @@ button { font: inherit; }
   white-space: nowrap;
 }
 
-.combat-line b { color: #f2d29e; }
-#hunt-progress { color: #d6c3a2; }
-#hunt-progress.alpha { color: #ff9d8c; }
+.supply-line b { color: #f2d29e; }
+.supply-line span.empty { opacity: .34; }
+.supply-line span.empty b { color: inherit; }
 
 .inventory-button {
   width: 100%;
@@ -228,20 +243,58 @@ button { font: inherit; }
   pointer-events: auto;
 }
 
+/* 状态栏里只剩声音开关了 —— 所有玩法操作都下放到了拇指区。 */
 .hud-actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
+  display: flex;
+  justify-content: flex-end;
 }
 
-.backpack-button {
-  color: #eef6f8;
-  border-color: rgba(150, 204, 221, .35);
-  background: rgba(47, 92, 108, .48);
-}
+.hud-actions .inventory-button { width: auto; }
 
 .inventory-button:active { transform: translateY(1px); }
 .inventory-button:disabled { opacity: .45; cursor: default; }
+
+/*
+ * 右下操作簇：[体温][背包]  ⟨大间距⟩  [攻击][行动]。
+ * 排成一行而不是叠两层 —— 340px 高的横屏上多一层就会把行动提示顶进画面中央。
+ * 中间那道 18px 的间距是防误触的：体温和攻击挨着就会点错。
+ */
+.bottom-right {
+  right: max(18px, env(safe-area-inset-right));
+  bottom: max(18px, env(safe-area-inset-bottom));
+  display: flex;
+  align-items: flex-end;
+  gap: 18px;
+  pointer-events: auto;
+}
+
+.utility-buttons { display: flex; gap: 8px; }
+
+.utility-button {
+  display: grid;
+  gap: 2px;
+  place-items: center;
+  min-width: 58px;
+  padding: 8px 10px;
+  border: 1px solid rgba(150, 204, 221, .32);
+  border-radius: 12px;
+  background: rgba(30, 55, 68, .66);
+  color: #d6e8ee;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.utility-button b { color: #ffcf9e; font-size: 12px; }
+.utility-button:active { transform: translateY(1px); filter: brightness(1.15); }
+.utility-button:disabled { opacity: .42; cursor: default; }
+/* 冷却中的体温键：整颗压暗，数字仍然读得出来还要等多久。 */
+.utility-button:disabled b { color: #9fb4bd; }
+
+/* 攻击/行动是触屏专属；桌面端只留体温和背包两颗，占住右下角。 */
+.action-buttons { display: none; }
 
 .clock {
   display: flex;
@@ -287,17 +340,19 @@ button { font: inherit; }
   transition: width .18s ease;
 }
 
-#radar {
-  width: 126px;
-  height: 126px;
-  border: 1px solid var(--line);
-  border-radius: 50%;
-  background: rgba(9, 18, 24, .72);
-  box-shadow: inset 0 0 30px rgba(116, 188, 210, .05);
-  backdrop-filter: blur(5px);
+/*
+ * 声音开关是状态栏里唯一剩下的按钮，靠右收成一颗小的。
+ * 它的可视高度只有 20px，远低于能可靠点中的尺寸 —— 用一层透明的伪元素把命中区域
+ * 向外扩 12px，视觉不变、面板也不长高。面板里已经没有别的可点元素，扩出去不会抢点击。
+ */
+.sound-button { position: relative; }
+
+.sound-button::before {
+  content: "";
+  position: absolute;
+  inset: -12px;
 }
 
-/* 声音开关收进状态栏的按钮网格里，正好补上"背包"旁边那个空格，不额外占高度。 */
 .sound-button {
   color: #b9ccd4;
   border-color: rgba(150, 178, 190, .3);
@@ -637,14 +692,13 @@ button { font: inherit; }
 
   .meter { grid-template-columns: 28px 1fr; gap: 5px; margin-bottom: 5px; font-size: 9px; }
   .meter em { display: none; }
-  .combat-line { margin-bottom: 4px; padding: 3px 5px; font-size: 9px; }
+  .supply-line { margin-bottom: 4px; padding: 3px 5px; font-size: 9px; }
   .inventory-button { padding: 4px 6px; font-size: 10px; }
   .hud-actions { gap: 4px; }
   .top-stack { top: max(10px, env(safe-area-inset-top)); gap: 6px; }
   .clock { padding: 5px 10px; }
   .toast { padding: 7px 12px; font-size: 12px; }
   .status-pill { padding: 5px 11px; font-size: 10px; }
-  #radar { width: 90px; height: 90px; }
 
   /*
    * 触屏上的行动提示挪到右下"行动"键的正上方、右对齐。
@@ -696,15 +750,14 @@ button { font: inherit; }
     box-shadow: 0 5px 15px rgba(0,0,0,.2);
   }
 
-  .action-buttons {
-    position: absolute;
+  .bottom-right {
     right: max(20px, env(safe-area-inset-right));
     bottom: max(24px, env(safe-area-inset-bottom));
-    display: flex;
-    align-items: flex-end;
-    gap: 12px;
-    pointer-events: auto;
   }
+
+  .action-buttons { display: flex; align-items: flex-end; gap: 12px; }
+  .utility-button { min-width: 54px; padding: 7px 9px; font-size: 9px; }
+  .utility-button b { font-size: 11px; }
 
   .round-button {
     width: 68px;
@@ -742,15 +795,28 @@ button { font: inherit; }
    * 目标文案换行），任何写死的 top 都只是在赌当下这一屏 —— 上一版赌输了，正好压在两者身上。
    * 底部锚点则相反：往上生长的方向全是空地，最坏情况也够不到状态栏。
    */
+  /*
+   * 竖屏放不下一行四键：[体温][背包][攻击][行动] 要 282px，而摇杆已经占掉左边 124px，
+   * 375px 宽的屏幕横向不够。改成两层（工具键在上、动作键在下）——
+   * 竖屏的纵向空间本来就富裕。下面三个 bottom 偏移是连着算的：
+   *   动作簇 24..140 → 行动提示 152..183 → 中央栏从 195 起往上长。
+   */
+  .bottom-right {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 10px;
+  }
+
+  .prompt { bottom: calc(max(24px, env(safe-area-inset-bottom)) + 152px); }
+
   .top-stack {
     top: auto;
-    bottom: calc(max(24px, env(safe-area-inset-bottom)) + 152px);
+    bottom: calc(max(24px, env(safe-area-inset-bottom)) + 195px);
     left: max(10px, env(safe-area-inset-left));
     align-items: flex-start;
     max-width: calc(100vw - 20px);
     transform: none;
   }
-  #radar { width: 76px; height: 76px; }
 }
 
 /*
@@ -764,7 +830,7 @@ button { font: inherit; }
   .meter i { height: 5px; }
   .condition-badge { margin-bottom: 4px; padding: 3px 6px; font-size: 9px; }
   .drain-note { display: none; }
-  .combat-line { margin-bottom: 3px; padding: 2px 5px; font-size: 8px; }
+  .supply-line { margin-bottom: 3px; padding: 2px 5px; font-size: 8px; }
   .inventory-button { padding: 3px 6px; font-size: 9px; }
   .hud-actions { gap: 3px; }
   .top-stack { gap: 5px; }
@@ -775,7 +841,6 @@ button { font: inherit; }
 @media (pointer: coarse) and (orientation: landscape) {
   .left-stack { max-width: 32vw; }
   .status-strip { width: 190px; }
-  #radar { width: 84px; height: 84px; }
   .top-stack { max-width: 32vw; }
   .prompt { bottom: calc(max(24px, env(safe-area-inset-bottom)) + 80px); }
   .joystick { width: 94px; height: 94px; }
@@ -798,7 +863,7 @@ button { font: inherit; }
   .meter i { height: 5px; }
   .condition-badge { margin-bottom: 4px; padding: 3px 6px; font-size: 9px; }
   .drain-note { margin: -2px 0 4px; padding-left: 32px; font-size: 8px; }
-  .combat-line { margin-bottom: 3px; padding: 2px 5px; font-size: 8px; }
+  .supply-line { margin-bottom: 3px; padding: 2px 5px; font-size: 8px; }
   .inventory-button { padding: 3px 6px; font-size: 9px; }
   .hud-actions { gap: 3px; }
   .top-stack { top: max(6px, env(safe-area-inset-top)); gap: 5px; }
@@ -826,11 +891,12 @@ button { font: inherit; }
 @media (orientation: landscape) and (max-height: 320px) {
   .prompt {
     right: auto;
-    left: 50%;
+    /* 卡在摇杆和右下操作簇之间那条空带里，左对齐贴着摇杆走 —— 居中会撞上操作簇。 */
+    left: calc(max(20px, env(safe-area-inset-left)) + 96px);
     bottom: max(8px, env(safe-area-inset-bottom));
-    max-width: 42vw;
-    transform: translateX(-50%);
-    text-align: center;
+    max-width: 34vw;
+    transform: none;
+    text-align: left;
   }
 }
 
@@ -839,7 +905,6 @@ button { font: inherit; }
   .intro-card h1 { font-size: 38px; }
   .tagline { margin: 7px 0 10px; }
   .verb-row { margin: 10px 0 14px; }
-  #radar { display: none; }
   .backpack-card {
     max-height: calc(100vh - 12px);
     padding: 12px 16px;

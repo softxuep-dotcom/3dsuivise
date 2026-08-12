@@ -1,13 +1,15 @@
 import { distance, normalize } from "../simulation/geometry";
 import type { PlayerState, Vec2 } from "../simulation/types";
 
+/**
+ * 吃喝没有热键，也没有 HUD 快捷键 —— 一律回背包里点物品格。
+ * 开背包会暂停游戏，所以不存在"打斗中来不及"；而三颗常驻的快捷键既和背包重复，
+ * 又把最不该占地方的右上角占满了。
+ */
 interface InputCallbacks {
   onAction: () => void;
   onAttack: () => void;
-  onEat: () => void;
-  onDrink: () => void;
   onThermal: () => void;
-  onWash: () => void;
   onInventory: () => void;
 }
 
@@ -24,10 +26,7 @@ export class InputController {
     window.addEventListener("blur", this.clear);
     this.bindButton("action-button", callbacks.onAction);
     this.bindButton("attack-button", callbacks.onAttack);
-    this.bindButton("eat-button", callbacks.onEat);
-    this.bindButton("drink-button", callbacks.onDrink);
     this.bindButton("thermal-button", callbacks.onThermal);
-    this.bindButton("wash-button", callbacks.onWash);
     this.bindJoystick();
   }
 
@@ -71,7 +70,7 @@ export class InputController {
   }
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
-    const gameKeys = ["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "KeyE", "KeyF", "KeyQ", "KeyR", "KeyC", "KeyB", "Tab", "Space"];
+    const gameKeys = ["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "KeyE", "KeyQ", "KeyB", "Tab", "Space"];
     if (gameKeys.includes(event.code)) event.preventDefault();
     if (event.repeat) {
       this.keys.add(event.code);
@@ -80,10 +79,7 @@ export class InputController {
     this.keys.add(event.code);
     if (event.code === "KeyE") this.callbacks.onAction();
     if (event.code === "Space") this.callbacks.onAttack();
-    if (event.code === "KeyF") this.callbacks.onEat();
-    if (event.code === "KeyR") this.callbacks.onDrink();
     if (event.code === "KeyQ") this.callbacks.onThermal();
-    if (event.code === "KeyC") this.callbacks.onWash();
     if (event.code === "KeyB" || event.code === "Tab") this.callbacks.onInventory();
   };
 

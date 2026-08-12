@@ -86,8 +86,6 @@ export class HudController {
   private readonly staminaBar = required<HTMLElement>("stamina-bar");
   private readonly healthValue = required<HTMLElement>("health-value");
   private readonly warmthValue = required<HTMLElement>("warmth-value");
-  private readonly washButton = required<HTMLButtonElement>("wash-button");
-  private readonly washCount = required<HTMLElement>("wash-count");
   private readonly craftWashButton = required<HTMLButtonElement>("craft-wash-button");
   private readonly craftCookButton = required<HTMLButtonElement>("craft-cook-button");
   private readonly buildButtons: Array<[HTMLButtonElement, StructureKind]> = [
@@ -99,13 +97,14 @@ export class HudController {
   private readonly conditionBadge = required<HTMLElement>("condition-badge");
   private readonly drainNote = required<HTMLElement>("drain-note");
   private readonly huntProgress = required<HTMLElement>("hunt-progress");
-  private readonly attackValue = required<HTMLElement>("attack-value");
-  private readonly defenseValue = required<HTMLElement>("defense-value");
-  private readonly berryCount = required<HTMLElement>("berry-count");
-  private readonly waterCount = required<HTMLElement>("water-count");
+  /** 随身补给的只读计数；消耗一律回背包里点物品格。 */
+  private readonly supplies: Array<[HTMLElement, InventoryItemKind]> = [
+    [required<HTMLElement>("supply-water"), "water"],
+    [required<HTMLElement>("supply-juice"), "cactus-juice"],
+    [required<HTMLElement>("supply-wash"), "wash-water"],
+    [required<HTMLElement>("supply-meat"), "cooked-meat"],
+  ];
   private readonly bagUsage = required<HTMLElement>("bag-usage");
-  private readonly eatButton = required<HTMLButtonElement>("eat-button");
-  private readonly drinkButton = required<HTMLButtonElement>("drink-button");
   private readonly thermalButton = required<HTMLButtonElement>("thermal-button");
   private readonly thermalState = required<HTMLElement>("thermal-state");
 
@@ -144,7 +143,6 @@ export class HudController {
   private readonly gatherIndicator = required<HTMLElement>("gather-indicator");
   private readonly actionButton = required<HTMLButtonElement>("action-button");
   private readonly toast = required<HTMLElement>("toast");
-  private readonly radar = required<HTMLCanvasElement>("radar");
   private readonly resultCopy = required<HTMLElement>("result-copy");
   private readonly victoryCopy = required<HTMLElement>("victory-copy");
   private readonly recordsLine = required<HTMLElement>("records-line");
@@ -182,9 +180,6 @@ export class HudController {
       this.simulation.craftWeapon();
       this.updateInventory();
     });
-    // 喝水 / 洗脸水这两个按钮的点击由 InputController 统一接管（pointerdown）。
-    // 这里**不能**再挂一份 click：pointerdown 上的 preventDefault 拦不住随后的 click，
-    // 两条路径会各消耗一份，按一次喝掉两口水。
     for (const [button, kind] of this.buildButtons) {
       button.addEventListener("click", () => {
         // 建造要看着放置结果，所以放完直接关掉背包回到游戏。
@@ -249,18 +244,13 @@ export class HudController {
     this.updateDrainNote();
     this.updateHuntProgress();
 
-    this.attackValue.textContent = String(this.simulation.getAttackPower());
-    this.defenseValue.textContent = String(player.defense);
-    const berries = this.simulation.getInventoryCount("cactus-juice");
-    this.berryCount.textContent = String(berries);
-    this.eatButton.disabled = berries <= 0 || (player.hunger >= 99 && player.health >= player.maxHealth);
-    const waters = this.simulation.getInventoryCount("water");
-    this.waterCount.textContent = String(waters);
-    this.drinkButton.disabled = waters <= 0 || player.water >= 99;
+    for (const [element, kind] of this.supplies) {
+      const count = this.simulation.getInventoryCount(kind);
+      const value = element.querySelector("b");
+      if (value) value.textContent = String(count);
+      element.classList.toggle("empty", count === 0);
+    }
     this.syncThermalButton(player.warmth);
-    const washes = this.simulation.getInventoryCount("wash-water");
-    this.washCount.textContent = String(washes);
-    this.washButton.disabled = washes <= 0;
     this.bagUsage.textContent = `${player.inventory.filter(Boolean).length}/8`;
     this.objective.textContent = this.simulation.getObjective();
     this.dayLabel.textContent = `第 ${this.simulation.day} 天 · ${this.simulation.getCurrentLocationLabel()} · 狼 ${this.simulation.wolves.filter((wolf) => wolf.mode !== "dead").length}`;
@@ -300,7 +290,6 @@ export class HudController {
       this.prompt.classList.remove("hidden");
     }
     if (this.inventoryOpen) this.updateInventory();
-    this.drawRadar();
   }
 
   private updateConditionBadge(): void {
@@ -506,95 +495,5 @@ export class HudController {
       this.submitAndDescribe(true),
     ].filter(Boolean).join(" ");
     this.victory.classList.remove("hidden");
-  }
-
-  private drawRadar(): void {
-    const context = this.radar.getContext("2d");
-    if (!context) return;
-    const size = this.radar.width;
-    const center = size / 2;
-    const worldScale = (size - 18) / this.simulation.world.size;
-    context.clearRect(0, 0, size, size);
-    context.save();
-    context.translate(center, center);
-    context.strokeStyle = "rgba(190, 224, 234, .16)";
-    context.lineWidth = 1;
-    for (let ring = 1; ring <= 3; ring += 1) {
-      context.beginPath();
-      context.arc(0, 0, ring * 22, 0, Math.PI * 2);
-      context.stroke();
-    }
-
-    const player = this.simulation.player;
-    for (const camp of this.simulation.world.camps) {
-      const x = (camp.x - player.x) * worldScale;
-      const y = (camp.z - player.z) * worldScale;
-      const lit = this.simulation.camps[camp.id].fuel > 0;
-      context.fillStyle = lit ? "#ff9d43" : "rgba(177, 213, 223, .62)";
-      context.beginPath();
-      context.arc(x, y, lit ? 3.2 : 2, 0, Math.PI * 2);
-      context.fill();
-    }
-
-    // 水井画成空心方框，有水时填实。井是规划路线的地标，
-    // 但"这口还有没有水"必须在出发前就能看到 —— 走到跟前才知道白跑就毫无规划可言。
-    for (const well of this.simulation.world.wells) {
-      const state = this.simulation.wells[well.id];
-      const x = (well.x - player.x) * worldScale;
-      const y = (well.z - player.z) * worldScale;
-      const dry = !state || state.charges <= 0;
-      context.strokeStyle = dry ? "rgba(120, 170, 190, .5)" : "#5cc7f0";
-      context.lineWidth = 1.4;
-      context.strokeRect(x - 3, y - 3, 6, 6);
-      if (!dry) {
-        context.fillStyle = "#5cc7f0";
-        context.fillRect(x - 1.5, y - 1.5, 3, 3);
-      }
-    }
-
-    for (const item of this.simulation.items) {
-      if (!item.active || !item.placed) continue;
-      const x = (item.x - player.x) * worldScale;
-      const y = (item.z - player.z) * worldScale;
-      context.fillStyle = item.kind === "stone" ? "#a7b2b5" : "#9c724c";
-      context.fillRect(x - 1, y - 1, 2, 2);
-    }
-
-    // 猎物用暗黄小点，和狼的红色系明确区分：地图上一眼能分出"能吃的"和"要命的"。
-    for (const critter of this.simulation.critters) {
-      if (critter.mode === "dead") continue;
-      const x = (critter.x - player.x) * worldScale;
-      const y = (critter.z - player.z) * worldScale;
-      if (Math.hypot(x, y) > center - 7) continue;
-      context.fillStyle = critter.kind === "camel" ? "rgba(232, 200, 130, .9)" : "rgba(196, 176, 128, .6)";
-      const size = critter.kind === "camel" ? 4 : 2.5;
-      context.fillRect(x - size / 2, y - size / 2, size, size);
-    }
-
-    for (const wolf of this.simulation.wolves) {
-      if (wolf.mode === "dead") continue;
-      const x = (wolf.x - player.x) * worldScale;
-      const y = (wolf.z - player.z) * worldScale;
-      if (Math.hypot(x, y) > center - 7) continue;
-      // 头狼用亮红方块最醒目；白天的野狼用青灰，和夜袭狼一眼可分。
-      context.fillStyle = wolf.kind === "alpha" ? "#ff2b1f"
-        : wolf.role === "wild" ? "rgba(150, 205, 175, .72)"
-          : wolf.mode === "chase" ? "#ff5347"
-            : wolf.mode === "retreating" ? "rgba(150, 190, 198, .55)"
-              : "rgba(225, 115, 99, .62)";
-      const wolfSize = wolf.kind === "alpha" ? 7 : wolf.kind === "large" ? 4.5 : 3;
-      context.fillRect(x - wolfSize / 2, y - wolfSize / 2, wolfSize, wolfSize);
-    }
-
-    context.rotate(Math.atan2(player.facing.z, player.facing.x) + Math.PI / 2);
-    context.fillStyle = "#eafaff";
-    context.beginPath();
-    context.moveTo(0, -7);
-    context.lineTo(5, 6);
-    context.lineTo(0, 3.5);
-    context.lineTo(-5, 6);
-    context.closePath();
-    context.fill();
-    context.restore();
   }
 }

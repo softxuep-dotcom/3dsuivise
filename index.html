@@ -12,13 +12,13 @@
       <div id="render-root" aria-label="3D 游戏画面"></div>
 
       <div id="hud" class="hidden" aria-live="polite">
-        <!-- 左上纵列：目标条 + 小地图。小地图原先写死 top，而目标条会随文案长到两三行。 -->
         <div class="left-stack">
           <section class="objective-chip">
             <span class="eyebrow" id="day-label">第 1 天</span>
             <strong id="objective">收集枯木，选择今晚的营地</strong>
+            <!-- 通关进度贴着目标走：它就是"我为什么在打狼"的答案。 -->
+            <span class="objective-progress" id="hunt-progress">猎杀 0/40</span>
           </section>
-          <canvas id="radar" width="160" height="160" aria-label="营地雷达"></canvas>
         </div>
 
         <section class="status-strip" aria-label="生存状态">
@@ -29,17 +29,17 @@
           <div class="meter warmth" id="warmth-meter"><span>体温</span><i><b id="warmth-bar"></b></i><em id="warmth-value">22</em></div>
           <div class="meter stamina"><span>劳力</span><i><b id="stamina-bar"></b></i><em id="stamina-value">100</em></div>
           <div class="drain-note hidden" id="drain-note"></div>
-          <div class="combat-line">
-            <span>攻 <b id="attack-value">28</b></span>
-            <span>防 <b id="defense-value">2</b></span>
-            <span id="hunt-progress">猎杀 0/40</span>
+          <!--
+            补给计数是**只读**的：消耗一律回背包操作，但"我还有没有水"是随时要瞄一眼的决策信息，
+            不能只藏在背包里。位置固定不随有无变动，扫一眼就知道。
+          -->
+          <div class="supply-line" aria-label="随身补给">
+            <span id="supply-water">水 <b>0</b></span>
+            <span id="supply-juice">汁 <b>0</b></span>
+            <span id="supply-wash">洗 <b>0</b></span>
+            <span id="supply-meat">熟 <b>0</b></span>
           </div>
           <div class="hud-actions">
-            <button id="drink-button" class="inventory-button" type="button" aria-label="喝一份水">水 <b id="water-count">0</b></button>
-            <button id="thermal-button" class="inventory-button" type="button" aria-label="调节体温">体温 <b id="thermal-state">—</b></button>
-            <button id="wash-button" class="inventory-button" type="button" aria-label="用洗脸水降温">洗脸水 <b id="wash-count">0</b></button>
-            <button id="eat-button" class="inventory-button" type="button" aria-label="快速饮用仙人掌汁">掌汁 <b id="berry-count">0</b></button>
-            <button id="backpack-button" class="inventory-button backpack-button" type="button" aria-label="打开背包">背包 <b id="bag-usage">0/8</b></button>
             <button id="sound-button" class="inventory-button sound-button" type="button" aria-label="切换声音" aria-pressed="true">声音 开</button>
           </div>
         </section>
@@ -63,6 +63,18 @@
 
         <div id="touch-controls">
           <div id="joystick" class="joystick" aria-label="移动摇杆"><i></i></div>
+        </div>
+
+        <!--
+          右下操作簇。体温是全 HUD 唯一需要"反射性按"的东西（需要它时你正中暑、移速剩四成），
+          原先却待在横屏最难够到的右上角；背包是吃/烤/建造的总入口，同样高频。
+          两者都挪到拇指底下，和攻击/行动排成一行，中间留出更大的间距防误触。
+        -->
+        <div class="bottom-right">
+          <div class="utility-buttons">
+            <button id="thermal-button" class="utility-button" type="button" aria-label="调节体温">体温 <b id="thermal-state">—</b></button>
+            <button id="backpack-button" class="utility-button" type="button" aria-label="打开背包">背包 <b id="bag-usage">0/8</b></button>
+          </div>
           <div class="action-buttons">
             <button id="attack-button" class="round-button attack" type="button">攻击</button>
             <button id="action-button" class="round-button action" type="button" aria-label="上下文行动">行动</button>
@@ -91,8 +103,8 @@
             <span id="boot-status">载入引擎…</span>
           </div>
           <p class="controls-copy">
-            <span class="desktop-copy">键盘：WASD 移动 · E 捡柴/添柴/搬石/取汁/提水 · 空格攻击 · R 喝水 · C 洗脸水 · F 仙人掌汁 · Q 调体温 · B/Tab 背包<br />鼠标：点击地面移动</span>
-            <span class="touch-copy">左侧摇杆移动 · 右下攻击/行动 · 右上打开背包</span>
+            <span class="desktop-copy">键盘：WASD 移动 · E 捡柴/添柴/搬石/取汁/提水 · 空格攻击 · Q 调体温 · B/Tab 背包<br />鼠标：点击地面移动 · 吃喝在背包里点物品格（开背包会暂停）</span>
+            <span class="touch-copy">左侧摇杆移动 · 右下攻击/行动/体温/背包 · 吃喝在背包里点物品格</span>
           </p>
         </div>
       </div>

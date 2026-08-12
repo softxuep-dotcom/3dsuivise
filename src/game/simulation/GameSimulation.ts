@@ -715,21 +715,9 @@ export class GameSimulation {
     if (!hit && this.objectiveStage >= 3) this.events.push({ type: "message", text: "挥空会暴露位置" });
   }
 
-  consumeJuice(): void {
-    const slot = this.player.inventory.findIndex((stack) => stack?.kind === "cactus-juice");
-    if (slot >= 0) this.useInventorySlot(slot);
-  }
-
-  consumeWater(): void {
-    const slot = this.player.inventory.findIndex((stack) => stack?.kind === "water");
-    if (slot >= 0) this.useInventorySlot(slot);
-  }
-
-  consumeWashWater(): void {
-    const slot = this.player.inventory.findIndex((stack) => stack?.kind === "wash-water");
-    if (slot >= 0) this.useInventorySlot(slot);
-  }
-
+  // consumeJuice / consumeWater / consumeWashWater 已删除：它们只服务于 HUD 上那三颗
+  // 快捷键和 R/F/C 热键。消耗现在一律走背包的物品格（开背包会暂停游戏），
+  // "这份水拿来喝还是兑洗脸水"这个取舍因此发生在看得见全部存量的地方。
   useInventorySlot(index: number): void {
     if (!this.running) return;
     const stack = this.player.inventory[index];
