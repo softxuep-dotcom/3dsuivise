@@ -125,8 +125,8 @@ export class SynthAudio {
         this.tone(240, 0.08, "square", 0.4, 0.6);
         break;
       case "critter-killed":
-        // 骆驼是大猎物，给一个更沉更长的音，和小猎物区分开。
-        if (event.kind === "camel") this.tone(150, 0.4, "triangle", 0.75, 0.42);
+        // 长角羚是大猎物，给一个更沉更长的音，和小猎物区分开。
+        if (event.kind === "oryx") this.tone(150, 0.4, "triangle", 0.75, 0.42);
         else this.tone(330, 0.18, "triangle", 0.5, 0.5);
         break;
       case "player-hit":

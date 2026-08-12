@@ -394,7 +394,7 @@ const WELL_CHARGES_MAX = 3;
  * 原图的井是多人分摊、而且要自己造（木头+石头+石头）；我们是单人还白送 5 口，
  * 所以必须在别处收紧。开局满存量意味着白送 20 份水 = 3.4 个昼夜，
  * 而一局才 2~3 天 —— 那样缺水压力整局都不会出现。
- * 回蓄速度没动：逛 1 口井覆盖需求的 29%、逛 2 口 59%，剩下的交给仙人掌和骆驼水。
+ * 回蓄速度没动：逛 1 口井覆盖需求的 29%、逛 2 口 59%，剩下的交给仙人掌和长角羚。
  */
 const WELL_CHARGES_INITIAL = 1;
 // 210 秒 = 一口井每昼夜再生 1.7 格，只覆盖一个玩家约 30% 的饮水需求，
@@ -459,6 +459,8 @@ export class GameSimulation {
   /** 当前正在提水的井 id，-1 表示没有。 */
   private drawingWellId = -1;
   private structureId = 0;
+  /** 正被玩家双手搬运的树桩；保留原对象才能避免搬运受损树桩时把生命值刷满。 */
+  private carriedStructure: PlacedStructure | null = null;
   /** 生肉不回体力这条只在第一次生吞时说一遍，之后靠目标行常驻。 */
   private rawMeatHintSent = false;
   /** 体温调节动作的冷却（公开给 HUD 显示）。 */
@@ -660,6 +662,15 @@ export class GameSimulation {
       return;
     }
 
+    const structure = this.findNearestStructure(2.7);
+    if (structure) {
+      structure.active = false;
+      this.carriedStructure = structure;
+      this.player.carrying = structure.kind;
+      this.events.push({ type: "pickup", kind: structure.kind });
+      return;
+    }
+
     const cactusPatch = this.findNearestCactus(2.7);
     if (cactusPatch) {
       this.harvestCactus(cactusPatch);
@@ -694,6 +705,8 @@ export class GameSimulation {
   private hasNearerTarget(hearthDistance: number): boolean {
     const item = this.findNearestItem(2.5);
     if (item && distance(this.player, item) < hearthDistance) return true;
+    const structure = this.findNearestStructure(2.7);
+    if (structure && distance(this.player, structure) < hearthDistance) return true;
     const cactus = this.findNearestCactus(2.7);
     if (cactus && distance(this.player, cactus) < hearthDistance) return true;
     const iron = this.findNearestIron(2.8);
@@ -1282,7 +1295,9 @@ export class GameSimulation {
       if (urgentWell) return { action: "well", text: `水分告急 · 提水 · 劳力 ${STAMINA_COST_DRAW}` };
     }
     if (this.player.carrying) {
-      return { action: "drop", text: "放下大石 · 一块即可封住窄口" };
+      return this.player.carrying === "stake"
+        ? { action: "drop", text: "放下树桩" }
+        : { action: "drop", text: "放下大石 · 一块即可封住窄口" };
     }
     // 与 requestInteraction 同一套优先级：火塘只在比脚边的东西更近时才占住 E。
     if (this.getInventoryCount("wood") > 0) {
@@ -1297,6 +1312,8 @@ export class GameSimulation {
         ? { action: "pickup", text: `拾起枯木入包 · 劳力 ${STAMINA_COST_WOOD}` }
         : { action: "pickup", text: "双手搬起大石" };
     }
+    const structure = this.findNearestStructure(2.7);
+    if (structure) return { action: "pickup", text: "双手搬起树桩" };
     if (this.findNearestCactus(2.7)) return { action: "cactus", text: `割仙人掌取汁 · 劳力 ${STAMINA_COST_CACTUS}` };
     if (this.findNearestIron(2.8)) return { action: "mine", text: `敲取铁矿 · 劳力 ${STAMINA_COST_MINE}` };
     const well = this.findNearestWell(WELL_REACH);
@@ -1462,9 +1479,9 @@ export class GameSimulation {
         : `体力在掉 · 生肉烤熟才回体力，先找个篝火添柴`;
     }
     if (this.getInventoryCount("raw-meat") === 0 && this.getInventoryCount("cooked-meat") === 0) {
-      const camel = this.critters.find((critter) => critter.kind === "camel" && critter.mode !== "dead");
-      if (camel) return "缺肉了 · 骆驼一头顶四块肉外加两份水，但它跑得比你快";
-      return "缺肉了 · 打点甲壳虫、蜥蜴或野兔";
+      const oryx = this.critters.find((critter) => critter.kind === "oryx" && critter.mode !== "dead");
+      if (oryx) return "缺肉了 · 长角羚一头顶四块肉外加两份水，但它跑得比你快";
+      return "缺肉了 · 打点铠甲虫、岩蜥或跳鼠";
     }
     return "白天备水备食，夜里守火";
   }
@@ -1479,7 +1496,7 @@ export class GameSimulation {
     this.noteActivity();
     const movement = normalize(rawMovement);
     this.player.facing = movement;
-    const carryingPenalty = this.player.carrying === "stone" ? 0.54 : this.player.carrying ? 0.82 : 1;
+    const carryingPenalty = this.player.carrying ? 0.54 : 1;
     const needsPenalty = this.player.hunger < 12 || this.player.water < 12 ? 0.84 : 1;
     // 武器与护甲的移速系数相乘。全重装（熔渣重刀 + 熔渣板甲）是 0.92 × 0.88 = 0.810
     // → 6.64，全轻装是 1.06 × 1.09 = 1.155 → 9.47，差 43%。
@@ -1707,8 +1724,8 @@ export class GameSimulation {
       }
       if (distanceSquared(this.player, drop) > 1.8 * 1.8) continue;
       // 装得下多少拿多少，剩下的**留在地上并从堆里扣掉**。
-      // 骆驼一次掉 4 块肉，背包常常只剩两格位置 —— 全有或全无的话玩家只能眼睁睁
-      // 看着一头骆驼烂在沙子里；而不扣数量就等于允许同一堆反复领取。
+      // 长角羚一次掉 4 块肉，背包常常只剩两格位置 —— 全有或全无的话玩家只能眼睁睁
+      // 看着一头长角羚烂在沙子里；而不扣数量就等于允许同一堆反复领取。
       const taken = Math.min(drop.count, this.getInventorySpace(drop.kind));
       if (taken <= 0) continue;
       this.addInventory(drop.kind, taken);
@@ -2272,7 +2289,7 @@ export class GameSimulation {
     critter.deathTimer = 0.7;
     if (spec.meat > 0) this.createDrop(critter, "raw-meat", -0.6, spec.meat);
     if (spec.hide > 0) this.createDrop(critter, "hide", 0.6, spec.hide);
-    // 骆驼是唯一会掉水的猎物 —— 对应原图杀骆驼掉「骆驼水」。
+    // 长角羚是唯一会掉水的猎物：沙漠里猎杀大型有蹄类取体液是真实做法。
     if (spec.water > 0) this.createDrop(critter, "water", 1.8, spec.water);
     this.events.push({ type: "critter-killed", critterId: critter.id, kind: critter.kind });
   }
@@ -2633,6 +2650,26 @@ export class GameSimulation {
       x: this.player.x + this.player.facing.x * 2.05,
       z: this.player.z + this.player.facing.z * 2.05,
     };
+    if (kind === "stake") {
+      const structure = this.carriedStructure;
+      if (!structure) {
+        this.player.carrying = null;
+        return;
+      }
+      const reason = this.getBuildBlocker(structure.kind, dropPosition);
+      if (reason) {
+        this.events.push({ type: "message", text: `这里放不下树桩 · ${reason}` });
+        return;
+      }
+      structure.x = dropPosition.x;
+      structure.z = dropPosition.z;
+      structure.rotation = Math.atan2(this.player.facing.z, this.player.facing.x);
+      structure.active = true;
+      this.carriedStructure = null;
+      this.player.carrying = null;
+      this.events.push({ type: "drop", kind });
+      return;
+    }
     const existing = this.items.find((item) => !item.active);
     const item: GroundItem = existing ?? {
       id: this.items.length,
@@ -2654,6 +2691,20 @@ export class GameSimulation {
     if (!existing) this.items.push(item);
     this.player.carrying = null;
     this.events.push({ type: "drop", kind });
+  }
+
+  private findNearestStructure(maxDistance: number): PlacedStructure | null {
+    let nearest: PlacedStructure | null = null;
+    let best = maxDistance * maxDistance;
+    for (const structure of this.structures) {
+      if (!structure.active) continue;
+      const value = distanceSquared(this.player, structure);
+      if (value < best) {
+        nearest = structure;
+        best = value;
+      }
+    }
+    return nearest;
   }
 
   /**

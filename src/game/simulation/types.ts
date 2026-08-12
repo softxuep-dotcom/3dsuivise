@@ -4,13 +4,8 @@ export interface Vec2 {
 }
 
 export type Phase = "day" | "night";
-/**
- * 双手搬运现在只剩大石。
- * 木头和大石本是两种东西：木头是**材料**（烧掉、参与配方），搬运只是运输过程；
- * 大石是**家具**（塞进入口当路障），搬运本身就是玩法。原图也正是这么分的 ——
- * 它的木头 I00E 从头到尾都是背包物品，稀缺性靠 150 劳力的采集成本而不是占手。
- */
-export type CarryKind = "stone";
+/** 双手搬运物：地图大石，以及玩家搭好后可以重新布置的树桩。 */
+export type CarryKind = "stone" | "stake";
 /** 地面上散落的可拾取物仍然有两种；木头进背包，大石上手。 */
 export type GroundItemKind = "wood" | "stone";
 export type InventoryItemKind =
@@ -66,17 +61,17 @@ export type WolfRole = "wild" | "raider";
 /**
  * 荒漠猎物。取自原图的非毒生物 —— 蜘蛛、蝎子、眼镜蛇（都带 60 秒毒）没有移植。
  * 全部不攻击玩家，靠"警觉半径 + 冲刺时长"区分难度：
- * 骆驼最快最肥但冲得最久，甲壳虫几乎站着让你打。
+ * 长角羚最快最肥但冲得最久，铠甲虫几乎站着让你打。
  */
 export type CritterKind =
-  | "camel"
+  | "oryx"
   | "lizard"
-  | "hare"
-  | "vulture"
+  | "jerboa"
+  | "corvid"
   | "gerbil"
   | "rat"
   | "beetle"
-  | "sandworm";
+  | "sandeel";
 
 export type CritterMode = "graze" | "flee" | "dead";
 
@@ -400,42 +395,42 @@ export interface InteractionHint {
  * 猎物图鉴。数值按原图等比缩放（原图主角 600 血 / 240 移速，我们是 100 / 8.2）。
  *
  * 设计意图是拉开一条「好抓但不值钱 ←→ 难抓但一顿管饱」的谱：
- *   甲壳虫  几乎不跑，一刀一块肉
- *   野兔    比玩家快，但冲 2 秒就没劲，绕两下能追到
- *   骆驼    比玩家快得多、冲 4.5 秒、90 血，但一头顶得上四块肉外加两份水
+ *   铠甲虫  几乎不跑，一刀一块肉
+ *   跳鼠    比玩家快，但冲 2 秒就没劲，绕两下能追到
+ *   长角羚  比玩家快得多、冲 4.5 秒、90 血，但一头顶得上四块肉外加两份水
  */
 export const CRITTER_SPECS: Record<CritterKind, CritterSpec> = {
   beetle: {
-    label: "甲壳虫", maxHealth: 8, fleeSpeed: 2.6, grazeSpeed: 0.7, alertRadius: 3.5,
+    label: "铠甲虫", maxHealth: 8, fleeSpeed: 2.6, grazeSpeed: 0.7, alertRadius: 3.5,
     sprintSeconds: 99, sprintRecovery: 1, meat: 1, hide: 0, water: 0, population: 9, scale: 0.5,
   },
-  sandworm: {
-    // 原图沙虫会「钻沙」瞬间脱离，这里用极短的冲刺 + 极快的速度近似。
-    label: "沙虫", maxHealth: 6, fleeSpeed: 7.4, grazeSpeed: 0.5, alertRadius: 5,
+  sandeel: {
+    // 钻沙脱离用「极短的冲刺 + 极快的速度」近似：一眨眼就没影，但只跑得动 1.4 秒。
+    label: "沙鳗", maxHealth: 6, fleeSpeed: 7.4, grazeSpeed: 0.5, alertRadius: 5,
     sprintSeconds: 1.4, sprintRecovery: 3, meat: 1, hide: 0, water: 0, population: 8, scale: 0.55,
   },
   gerbil: {
-    label: "沙鼠", maxHealth: 12, fleeSpeed: 7.6, grazeSpeed: 1.1, alertRadius: 7,
+    label: "穴鼠", maxHealth: 12, fleeSpeed: 7.6, grazeSpeed: 1.1, alertRadius: 7,
     sprintSeconds: 2.4, sprintRecovery: 3.5, meat: 1, hide: 0, water: 0, population: 7, scale: 0.6,
   },
   rat: {
-    label: "白颈鼠", maxHealth: 14, fleeSpeed: 7, grazeSpeed: 1.1, alertRadius: 6.5,
+    label: "灰背鼠", maxHealth: 14, fleeSpeed: 7, grazeSpeed: 1.1, alertRadius: 6.5,
     sprintSeconds: 2.6, sprintRecovery: 3.5, meat: 1, hide: 0, water: 0, population: 6, scale: 0.65,
   },
   lizard: {
-    label: "蜥蜴", maxHealth: 16, fleeSpeed: 6.2, grazeSpeed: 0.9, alertRadius: 6,
+    label: "岩蜥", maxHealth: 16, fleeSpeed: 6.2, grazeSpeed: 0.9, alertRadius: 6,
     sprintSeconds: 3, sprintRecovery: 3, meat: 1, hide: 0, water: 0, population: 7, scale: 0.7,
   },
-  hare: {
-    label: "野兔", maxHealth: 10, fleeSpeed: 9.6, grazeSpeed: 1.3, alertRadius: 9,
+  jerboa: {
+    label: "跳鼠", maxHealth: 10, fleeSpeed: 9.6, grazeSpeed: 1.3, alertRadius: 9,
     sprintSeconds: 2, sprintRecovery: 4, meat: 2, hide: 0, water: 0, population: 6, scale: 0.7,
   },
-  vulture: {
-    label: "秃鹰", maxHealth: 10, fleeSpeed: 5.2, grazeSpeed: 0.8, alertRadius: 8,
+  corvid: {
+    label: "拾骨鸦", maxHealth: 10, fleeSpeed: 5.2, grazeSpeed: 0.8, alertRadius: 8,
     sprintSeconds: 2.6, sprintRecovery: 3, meat: 2, hide: 0, water: 0, population: 5, scale: 0.85,
   },
-  camel: {
-    label: "骆驼", maxHealth: 90, fleeSpeed: 10.5, grazeSpeed: 1.4, alertRadius: 11,
+  oryx: {
+    label: "长角羚", maxHealth: 90, fleeSpeed: 10.5, grazeSpeed: 1.4, alertRadius: 11,
     sprintSeconds: 4.5, sprintRecovery: 6, meat: 4, hide: 2, water: 2, population: 4, scale: 1.5,
   },
 };

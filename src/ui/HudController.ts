@@ -397,7 +397,7 @@ export class HudController {
     }
     if (event.type === "critter-killed") {
       const label = this.simulation.getCritterLabel(event.kind);
-      this.showToast(event.kind === "camel" ? `猎到${label} · 大量肉与水` : `猎到${label}`, 1.8);
+      this.showToast(event.kind === "oryx" ? `猎到${label} · 大量肉与水` : `猎到${label}`, 1.8);
     }
     if (event.type === "alpha-spawned") this.showToast("头犬登场 · 击杀它即可获救", 4);
     if (event.type === "victory") {
@@ -433,7 +433,9 @@ export class HudController {
       slot.innerHTML = `<span class="item-glyph">${presentation.glyph}</span><span class="item-name">${presentation.name}</span><b class="item-count">${stack.count}</b>`;
       slot.setAttribute("aria-label", `${presentation.name} ${stack.count}个`);
     });
-    this.handsStatus.textContent = player.carrying === "stone" ? "大石" : "空闲";
+    this.handsStatus.textContent = player.carrying === "stone"
+      ? "大石"
+      : player.carrying === "stake" ? "树桩" : "空闲";
     this.coatStatus.textContent = ARMOR_LABELS[player.armor];
     this.weaponStatus.textContent = WEAPON_LABELS[player.weapon];
     this.statHealth.textContent = `${Math.round(player.health)}/${player.maxHealth}`;
