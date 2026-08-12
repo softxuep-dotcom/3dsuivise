@@ -12,10 +12,14 @@
       <div id="render-root" aria-label="3D 游戏画面"></div>
 
       <div id="hud" class="hidden" aria-live="polite">
-        <section class="objective-chip">
-          <span class="eyebrow" id="day-label">第 1 天</span>
-          <strong id="objective">收集枯木，选择今晚的营地</strong>
-        </section>
+        <!-- 左上纵列：目标条 + 小地图。小地图原先写死 top，而目标条会随文案长到两三行。 -->
+        <div class="left-stack">
+          <section class="objective-chip">
+            <span class="eyebrow" id="day-label">第 1 天</span>
+            <strong id="objective">收集枯木，选择今晚的营地</strong>
+          </section>
+          <canvas id="radar" width="160" height="160" aria-label="营地雷达"></canvas>
+        </div>
 
         <section class="status-strip" aria-label="生存状态">
           <div id="condition-badge" class="condition-badge hidden"></div>
@@ -24,29 +28,38 @@
           <div class="meter hunger"><span>饱食</span><i><b id="hunger-bar"></b></i><em id="hunger-value">82</em></div>
           <div class="meter warmth" id="warmth-meter"><span>体温</span><i><b id="warmth-bar"></b></i><em id="warmth-value">22</em></div>
           <div class="meter stamina"><span>劳力</span><i><b id="stamina-bar"></b></i><em id="stamina-value">100</em></div>
-          <div class="drain-note" id="drain-note">体力持续消耗 · 进食或休息回复</div>
-          <div class="combat-line"><span>攻击 <b id="attack-value">28</b></span><span>防御 <b id="defense-value">2</b></span></div>
-          <div class="combat-line hunt-line"><span id="hunt-progress">猎杀 0/40</span></div>
+          <div class="drain-note hidden" id="drain-note"></div>
+          <div class="combat-line">
+            <span>攻 <b id="attack-value">28</b></span>
+            <span>防 <b id="defense-value">2</b></span>
+            <span id="hunt-progress">猎杀 0/40</span>
+          </div>
           <div class="hud-actions">
             <button id="drink-button" class="inventory-button" type="button" aria-label="喝一份水">水 <b id="water-count">0</b></button>
             <button id="thermal-button" class="inventory-button" type="button" aria-label="调节体温">体温 <b id="thermal-state">—</b></button>
             <button id="wash-button" class="inventory-button" type="button" aria-label="用洗脸水降温">洗脸水 <b id="wash-count">0</b></button>
             <button id="eat-button" class="inventory-button" type="button" aria-label="快速饮用仙人掌汁">掌汁 <b id="berry-count">0</b></button>
             <button id="backpack-button" class="inventory-button backpack-button" type="button" aria-label="打开背包">背包 <b id="bag-usage">0/8</b></button>
+            <button id="sound-button" class="inventory-button sound-button" type="button" aria-label="切换声音" aria-pressed="true">声音 开</button>
           </div>
         </section>
 
-        <div class="clock" id="clock"><span id="phase-label">白昼</span><b id="time-label">00:50</b></div>
-        <section id="enemy-chip" class="enemy-chip hidden" aria-label="附近敌人">
-          <div><strong id="enemy-name">小狼</strong><span id="enemy-stats">攻10 · 防1</span></div>
-          <i><b id="enemy-health-bar"></b></i><em id="enemy-health-value">58/58</em>
-        </section>
-        <canvas id="radar" width="160" height="160" aria-label="营地雷达"></canvas>
+        <!--
+          顶部中央栏。时钟、头狼血条、提示都排在同一个纵向流里，靠 flex 自己让位 ——
+          原先每个元素各写一套 top 偏移，每加一档响应式断点就要重算一遍，迟早叠在一起。
+        -->
+        <div class="top-stack">
+          <div class="clock" id="clock"><span id="phase-label">白昼</span><b id="time-label">00:50</b></div>
+          <section id="boss-bar" class="boss-bar hidden" aria-label="头狼">
+            <div><strong id="boss-name">头狼</strong><span id="boss-stats">攻26 · 防9</span></div>
+            <i><b id="boss-health-bar"></b></i>
+          </section>
+          <div id="toast" class="toast hidden"></div>
+          <div id="gather-indicator" class="status-pill gather-indicator hidden">取水中…</div>
+          <div id="rest-indicator" class="status-pill rest-indicator hidden">休息中 · 生命与劳力回复</div>
+        </div>
+
         <div id="prompt" class="prompt hidden"></div>
-        <div id="gather-indicator" class="rest-indicator gather-indicator hidden">取水中…</div>
-        <div id="rest-indicator" class="rest-indicator hidden">休息中 · 生命与劳力回复</div>
-        <div id="toast" class="toast hidden"></div>
-        <button id="sound-button" class="sound-button" type="button" aria-label="切换声音">声音 开</button>
 
         <div id="touch-controls">
           <div id="joystick" class="joystick" aria-label="移动摇杆"><i></i></div>

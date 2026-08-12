@@ -140,7 +140,10 @@ async function bootstrap(): Promise<void> {
     await audio.unlock().catch(() => { /* 同上 */ });
     const enabled = audio.toggle();
     const button = document.getElementById("sound-button");
-    if (button) button.textContent = enabled ? "声音 开" : "声音 关";
+    if (button) {
+      button.textContent = enabled ? "声音 开" : "声音 关";
+      button.setAttribute("aria-pressed", String(enabled));
+    }
   });
 
   document.addEventListener("visibilitychange", () => {

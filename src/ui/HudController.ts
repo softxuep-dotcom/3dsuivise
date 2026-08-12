@@ -135,11 +135,10 @@ export class HudController {
   private readonly phaseLabel = required<HTMLElement>("phase-label");
   private readonly timeLabel = required<HTMLElement>("time-label");
   private readonly clock = required<HTMLElement>("clock");
-  private readonly enemyChip = required<HTMLElement>("enemy-chip");
-  private readonly enemyName = required<HTMLElement>("enemy-name");
-  private readonly enemyStats = required<HTMLElement>("enemy-stats");
-  private readonly enemyHealthBar = required<HTMLElement>("enemy-health-bar");
-  private readonly enemyHealthValue = required<HTMLElement>("enemy-health-value");
+  private readonly bossBar = required<HTMLElement>("boss-bar");
+  private readonly bossName = required<HTMLElement>("boss-name");
+  private readonly bossStats = required<HTMLElement>("boss-stats");
+  private readonly bossHealthBar = required<HTMLElement>("boss-health-bar");
   private readonly prompt = required<HTMLElement>("prompt");
   private readonly restIndicator = required<HTMLElement>("rest-indicator");
   private readonly gatherIndicator = required<HTMLElement>("gather-indicator");
@@ -269,18 +268,22 @@ export class HudController {
     this.clock.classList.toggle("night", this.simulation.phase === "night");
     const seconds = Math.max(0, Math.ceil(this.simulation.phaseTime));
     this.timeLabel.textContent = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
-    this.restIndicator.classList.toggle("hidden", !player.resting);
-    this.gatherIndicator.classList.toggle("hidden", player.gatherTimer <= 0);
-    if (player.gatherTimer > 0) this.gatherIndicator.textContent = `取水中… ${player.gatherTimer.toFixed(1)}s`;
+    // 取水和休息在模拟层本来就互斥（取水时 getRestBlocker 返回"取水中"），这里再显式
+    // 互斥一次：竖屏上中央栏和右上状态栏之间只剩 10px 余量，两个胶囊同时出现就会顶上去。
+    // 把这条保证放在布局本地，将来改模拟层也不会悄悄把它弄坏。
+    const gathering = player.gatherTimer > 0;
+    this.gatherIndicator.classList.toggle("hidden", !gathering);
+    this.restIndicator.classList.toggle("hidden", gathering || !player.resting);
+    if (gathering) this.gatherIndicator.textContent = `取水中… ${player.gatherTimer.toFixed(1)}s`;
 
-    const threat = this.simulation.getNearestThreat();
-    this.enemyChip.classList.toggle("hidden", !threat);
-    if (threat) {
-      const wild = threat.role === "wild" ? " · 野生" : "";
-      this.enemyName.textContent = WOLF_LABELS[threat.kind] + wild;
-      this.enemyStats.textContent = `攻${threat.attack} · 防${threat.defense}`;
-      this.enemyHealthBar.style.width = `${clamp(threat.health / threat.maxHealth, 0, 1) * 100}%`;
-      this.enemyHealthValue.textContent = `${Math.max(0, Math.ceil(threat.health))}/${threat.maxHealth}`;
+    // 只有头狼配得上一条常驻 BOSS 血槽；普通狼的血量走头顶跟随血条（见 GameRenderer）。
+    const alpha = this.simulation.getAlpha();
+    this.bossBar.classList.toggle("hidden", !alpha);
+    if (alpha) {
+      const ratio = clamp(alpha.health / alpha.maxHealth, 0, 1);
+      this.bossName.textContent = WOLF_LABELS[alpha.kind];
+      this.bossStats.textContent = `${Math.max(0, Math.ceil(alpha.health))} / ${alpha.maxHealth}`;
+      this.bossHealthBar.style.width = `${ratio * 100}%`;
     }
 
     const hint = this.simulation.getInteractionHint();
@@ -288,9 +291,12 @@ export class HudController {
     this.actionButton.textContent = ACTION_LABELS[hint.action];
     if (hint.action === "none") {
       this.prompt.classList.add("hidden");
+    } else if (touchLayout) {
+      // 提示就贴在"行动"键上方，键名由那颗按钮自己说 —— 这里再写一遍纯属重复。
+      this.prompt.textContent = hint.text;
+      this.prompt.classList.remove("hidden");
     } else {
-      const key = touchLayout ? `行动：${ACTION_LABELS[hint.action]}` : "E";
-      this.prompt.innerHTML = `<kbd>${key}</kbd>${hint.text}`;
+      this.prompt.innerHTML = `<kbd>E</kbd>${hint.text}`;
       this.prompt.classList.remove("hidden");
     }
     if (this.inventoryOpen) this.updateInventory();
@@ -315,24 +321,20 @@ export class HudController {
   }
 
   /**
-   * 体力恒定流失最容易被误读成"被看不见的东西攻击"，所以这一行必须常驻，
-   * 而且要随状态改写：休息时明确显示在回复，被狼咬时明确显示是受击。
+   * 体力恒定流失最容易被误读成"被看不见的东西攻击"，所以要有一行说明 ——
+   * 但**不必常驻**。满血时它只是噪音，而右上角本来就挤。
+   * 只在两种时候出现：站定却回不了血（必须说清是哪条挡住了，否则像 bug），
+   * 或者体力已经掉到值得管的程度。
+   *
+   * "休息中"交给顶部的状态胶囊，这里不再重复；"正在被攻击"也去掉了 ——
+   * 受击有屏幕震动和红闪，而那句话还在指一个矮屏上根本不显示的小地图。
    */
   private updateDrainNote(): void {
     const player = this.simulation.player;
-    if (player.hurtFlash > 0) {
-      this.drainNote.className = "drain-note";
-      this.drainNote.textContent = "正在被攻击 · 看小地图红点";
-      return;
-    }
-    if (player.resting) {
-      this.drainNote.className = "drain-note healing";
-      this.drainNote.textContent = "休息中 · 体力与劳力回升";
-      return;
-    }
-    this.drainNote.className = "drain-note";
-    // 站定却不回复时必须说清是哪一条挡住了，否则玩家会以为是 bug。
-    const blocker = this.simulation.getRestBlocker();
+    const blocker = player.resting ? null : this.simulation.getRestBlocker();
+    const worthSaying = blocker !== null || player.health < 70;
+    this.drainNote.classList.toggle("hidden", !worthSaying);
+    if (!worthSaying) return;
     this.drainNote.textContent = blocker
       ? `体力持续消耗 · ${blocker}`
       : "体力持续消耗 · 进食或站定 5 秒休息";
@@ -341,16 +343,13 @@ export class HudController {
   private updateHuntProgress(): void {
     const alpha = this.simulation.getAlpha();
     const progress = this.simulation.getAlphaProgress();
-    this.huntProgress.parentElement?.classList.toggle("alpha", Boolean(alpha));
-    if (alpha) {
-      this.huntProgress.textContent = `头狼 ${Math.max(0, Math.ceil(alpha.health))}/${alpha.maxHealth}`;
-      return;
-    }
-    if (progress.spawned) {
-      this.huntProgress.textContent = `猎杀 ${progress.kills} · 头狼已现身`;
-      return;
-    }
-    this.huntProgress.textContent = `猎杀 ${progress.kills}/${progress.required} 引出头狼`;
+    this.huntProgress.classList.toggle("alpha", Boolean(alpha));
+    // 头狼在场时血量由顶部 BOSS 条负责，这里只说进度，不重复报血。
+    this.huntProgress.textContent = alpha
+      ? "头狼已登场"
+      : progress.spawned
+        ? `猎杀 ${progress.kills}`
+        : `猎杀 ${progress.kills}/${progress.required}`;
   }
 
   handle(event: GameEvent): void {

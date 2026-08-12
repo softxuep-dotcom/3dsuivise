@@ -41,21 +41,47 @@ button { font: inherit; }
   pointer-events: none;
 }
 
-.objective-chip,
+.left-stack,
 .status-strip,
-.clock,
-#radar,
-.sound-button,
-.prompt,
-.toast {
+.top-stack,
+.prompt {
   position: absolute;
   z-index: 5;
 }
 
-.objective-chip {
+/*
+ * HUD 的三个角面板共用一条横向预算，加起来必须小于视口宽度，否则在矮横屏上会互相压。
+ * 左列和中列都用 vw 表达，右侧状态栏是固定 232px（五条状态轴需要稳定的列宽）：
+ *   30vw + 34vw + 232px，780px 宽时合计 731px，1280px 时 1012px —— 都有净空。
+ */
+.left-stack {
   top: max(18px, env(safe-area-inset-top));
   left: max(18px, env(safe-area-inset-left));
-  max-width: min(360px, 55vw);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: min(360px, 30vw);
+}
+
+/*
+ * 顶部中央栏：时钟 / 头狼血条 / 吐司 / 状态提示排成一列，靠 flex 自己让位。
+ * 宽度卡在 44vw 以内，两侧给左上目标条和右上状态栏留出通道 —— 屏幕中央那一块
+ * 是玩家真正在看的地方，任何常驻元素都不许落进去。
+ */
+.top-stack {
+  top: max(18px, env(safe-area-inset-top));
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  width: max-content;
+  max-width: min(34vw, 420px);
+  transform: translateX(-50%);
+}
+
+.objective-chip {
   padding: 11px 16px 13px;
   border: 1px solid var(--line);
   border-left: 3px solid var(--ember);
@@ -171,11 +197,10 @@ button { font: inherit; }
 }
 .record-break { color: #ffd98a; font-weight: 900; }
 
-.hunt-line { color: #d6c3a2; }
-.hunt-line.alpha { background: rgba(200, 60, 48, .2); color: #ff9d8c; }
-
+/* 攻/防/猎杀合并成一行 —— 原先是两行两个面板，纯粹在浪费右上角的垂直空间。 */
 .combat-line {
   display: flex;
+  gap: 8px;
   justify-content: space-between;
   margin: 1px 0 6px;
   padding: 5px 7px;
@@ -184,9 +209,12 @@ button { font: inherit; }
   color: #a9bdc4;
   font-size: 10px;
   font-weight: 800;
+  white-space: nowrap;
 }
 
 .combat-line b { color: #f2d29e; }
+#hunt-progress { color: #d6c3a2; }
+#hunt-progress.alpha { color: #ff9d8c; }
 
 .inventory-button {
   width: 100%;
@@ -216,12 +244,9 @@ button { font: inherit; }
 .inventory-button:disabled { opacity: .45; cursor: default; }
 
 .clock {
-  top: max(18px, env(safe-area-inset-top));
-  left: 50%;
   display: flex;
   gap: 10px;
   align-items: baseline;
-  transform: translateX(-50%);
   padding: 8px 13px;
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -233,30 +258,36 @@ button { font: inherit; }
 .clock b { min-width: 42px; color: #d8eef5; font-variant-numeric: tabular-nums; }
 .clock.night { border-color: rgba(118, 150, 211, .45); background: rgba(10, 15, 33, .86); }
 
-.enemy-chip {
-  position: absolute;
-  z-index: 5;
-  top: 66px;
-  left: 50%;
-  width: 176px;
-  padding: 7px 10px;
-  transform: translateX(-50%);
-  border: 1px solid rgba(224, 103, 85, .42);
+/*
+ * 头狼血条。普通狼的血量改成头顶跟随血条（见 GameRenderer），只有头狼保留 HUD 条 ——
+ * 它是通关目标，值一条常驻的 BOSS 血槽；而夜里地图上几十只小狼，
+ * 任何一只都能顶上来的"最近敌人"面板只会常年糊在屏幕中央。
+ */
+.boss-bar {
+  /* 宽度跟着中央栏的横向预算走，别自己长出容器 —— 长出去就会压到左上目标条。 */
+  width: 260px;
+  max-width: 100%;
+  padding: 7px 11px 8px;
+  border: 1px solid rgba(255, 138, 61, .5);
   border-radius: 10px;
-  background: rgba(30, 18, 21, .84);
+  background: rgba(34, 17, 14, .86);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, .3);
   backdrop-filter: blur(7px);
 }
 
-.enemy-chip > div { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 10px; }
-.enemy-chip strong { color: #ffd0c4; }
-.enemy-chip span { color: #c99e96; }
-.enemy-chip i { display: block; height: 5px; overflow: hidden; border-radius: 5px; background: rgba(255,255,255,.12); }
-.enemy-chip i b { display: block; width: 100%; height: 100%; background: linear-gradient(90deg, #a8302f, #ed6758); }
-.enemy-chip em { display: block; margin-top: 3px; color: #bba9a6; font-size: 9px; font-style: normal; text-align: right; }
+.boss-bar > div { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 5px; font-size: 10px; }
+.boss-bar strong { color: #ffcf9e; letter-spacing: .08em; }
+.boss-bar span { color: #c9a08c; font-variant-numeric: tabular-nums; }
+.boss-bar i { display: block; height: 6px; overflow: hidden; border-radius: 5px; background: rgba(255,255,255,.12); }
+.boss-bar i b {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, #c4431f, #ff9d43);
+  transition: width .18s ease;
+}
 
 #radar {
-  left: max(18px, env(safe-area-inset-left));
-  top: 100px;
   width: 126px;
   height: 126px;
   border: 1px solid var(--line);
@@ -266,17 +297,11 @@ button { font: inherit; }
   backdrop-filter: blur(5px);
 }
 
+/* 声音开关收进状态栏的按钮网格里，正好补上"背包"旁边那个空格，不额外占高度。 */
 .sound-button {
-  right: max(18px, env(safe-area-inset-right));
-  bottom: max(18px, env(safe-area-inset-bottom));
-  padding: 7px 11px;
-  color: #c9dbe1;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: rgba(13, 22, 29, .72);
-  font-size: 11px;
-  pointer-events: auto;
-  cursor: pointer;
+  color: #b9ccd4;
+  border-color: rgba(150, 178, 190, .3);
+  background: rgba(38, 52, 62, .5);
 }
 
 .prompt {
@@ -307,36 +332,31 @@ button { font: inherit; }
 }
 
 .toast {
-  top: 20%;
-  left: 50%;
-  padding: 12px 18px;
-  transform: translateX(-50%);
+  padding: 9px 15px;
   border-radius: 9px;
-  background: rgba(11, 18, 25, .86);
+  background: rgba(11, 18, 25, .88);
   box-shadow: 0 14px 35px rgba(0,0,0,.25);
-  font-size: 16px;
-  font-weight: 900;
-  letter-spacing: .04em;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: .03em;
+  line-height: 1.45;
+  text-align: center;
+  backdrop-filter: blur(7px);
 }
 
-.rest-indicator {
-  position: absolute;
-  z-index: 6;
-  top: 18%;
-  left: 50%;
-  padding: 9px 14px;
-  transform: translateX(-50%);
+.status-pill {
+  padding: 7px 13px;
   border: 1px solid rgba(151, 218, 191, .35);
   border-radius: 999px;
   background: rgba(22, 55, 50, .82);
   color: #c7f0df;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 800;
+  white-space: nowrap;
   backdrop-filter: blur(7px);
 }
 
 .gather-indicator {
-  top: 26%;
   border-color: rgba(140, 200, 235, .38);
   background: rgba(20, 44, 62, .84);
   color: #bfe2f5;
@@ -598,13 +618,15 @@ button { font: inherit; }
 #touch-controls { display: none; }
 
 @media (pointer: coarse), (max-width: 760px) {
-  .objective-chip {
+  .left-stack {
     top: max(10px, env(safe-area-inset-top));
     left: max(10px, env(safe-area-inset-left));
-    max-width: calc(100vw - 160px);
-    padding: 8px 10px;
+    gap: 8px;
+    /* 触屏档右侧状态栏收窄到 142px，左列的预算相应放宽。 */
+    max-width: min(300px, 38vw);
   }
 
+  .objective-chip { padding: 8px 10px; }
   .objective-chip strong { font-size: 12px; }
   .status-strip {
     top: max(10px, env(safe-area-inset-top));
@@ -618,11 +640,27 @@ button { font: inherit; }
   .combat-line { margin-bottom: 4px; padding: 3px 5px; font-size: 9px; }
   .inventory-button { padding: 4px 6px; font-size: 10px; }
   .hud-actions { gap: 4px; }
-  .clock { top: 84px; padding: 5px 10px; }
-  .enemy-chip { top: 116px; width: 154px; padding: 5px 8px; }
-  #radar { top: 80px; left: 10px; width: 90px; height: 90px; }
-  .sound-button { top: 181px; right: 10px; bottom: auto; padding: 5px 8px; }
-  .prompt { bottom: 135px; font-size: 11px; }
+  .top-stack { top: max(10px, env(safe-area-inset-top)); gap: 6px; }
+  .clock { padding: 5px 10px; }
+  .toast { padding: 7px 12px; font-size: 12px; }
+  .status-pill { padding: 5px 11px; font-size: 10px; }
+  #radar { width: 90px; height: 90px; }
+
+  /*
+   * 触屏上的行动提示挪到右下"行动"键的正上方、右对齐。
+   * 原先它吊在屏幕底部正中，在矮横屏上等于落进画面中央；而且提示里的按键标签
+   * 和下面那颗按钮说的是同一件事 —— 那份重复由 HudController 去掉，这里只留细节文案。
+   */
+  .prompt {
+    left: auto;
+    right: max(20px, env(safe-area-inset-right));
+    bottom: calc(max(24px, env(safe-area-inset-bottom)) + 88px);
+    max-width: min(58vw, 320px);
+    padding: 7px 12px;
+    transform: none;
+    font-size: 11px;
+    text-align: right;
+  }
 
   #touch-controls {
     position: absolute;
@@ -693,26 +731,53 @@ button { font: inherit; }
 
 /*
  * 竖屏。
- * 本作按横屏设计，但不阻断竖屏游玩，所以要把居中的时钟和敌人条挪开 ——
- * 375px 宽的屏幕上，居中元素的右边缘会压到右上角状态栏的左边缘。
- * 时钟改为左上纵向排列，敌人条挪到底部提示条上方。
+ * 本作按横屏设计，但不阻断竖屏游玩。竖屏没有横向余量：375px 宽的屏幕上，
+ * 顶部中央栏和右上状态栏必然抢同一段横向空间。所以整条中央栏改为**沉到两个角面板下面**
+ * 靠左排列 —— 它不再和任何东西争位置，也不用再为每个子元素各算一次偏移。
  */
 @media (pointer: coarse) and (orientation: portrait) {
-  .clock {
-    top: 76px;
+  /*
+   * 中央栏改为**吊在行动提示上方、向上生长**。
+   * 竖屏顶部两个角面板加起来占掉 10~309px，而它们的高度都随内容变（状态徽章、说明行、
+   * 目标文案换行），任何写死的 top 都只是在赌当下这一屏 —— 上一版赌输了，正好压在两者身上。
+   * 底部锚点则相反：往上生长的方向全是空地，最坏情况也够不到状态栏。
+   */
+  .top-stack {
+    top: auto;
+    bottom: calc(max(24px, env(safe-area-inset-bottom)) + 152px);
     left: max(10px, env(safe-area-inset-left));
+    align-items: flex-start;
+    max-width: calc(100vw - 20px);
     transform: none;
   }
-  #radar { top: 114px; }
-  /* 留够余量：底部提示条会因文案换行长到三行，敌人条不能贴着它。 */
-  .enemy-chip { top: auto; bottom: 224px; }
+  #radar { width: 76px; height: 76px; }
+}
+
+/*
+ * 小屏竖屏（≤660px 高，比如 320×568）。
+ * 紧凑档原先只挂在横屏上，可竖屏一样缺纵向余量：状态栏固有高度 299px，在 568px 的屏上
+ * 就是 53%，把中央栏挤得没处放。这里只收密度、不动定位（定位归上面那个竖屏块管）。
+ */
+@media (orientation: portrait) and (max-height: 660px) {
+  .status-strip { padding: 6px 7px; }
+  .meter { margin-bottom: 3px; }
+  .meter i { height: 5px; }
+  .condition-badge { margin-bottom: 4px; padding: 3px 6px; font-size: 9px; }
+  .drain-note { display: none; }
+  .combat-line { margin-bottom: 3px; padding: 2px 5px; font-size: 8px; }
+  .inventory-button { padding: 3px 6px; font-size: 9px; }
+  .hud-actions { gap: 3px; }
+  .top-stack { gap: 5px; }
+  .toast { padding: 6px 11px; font-size: 11px; }
+  .boss-bar { padding: 5px 9px 6px; }
 }
 
 @media (pointer: coarse) and (orientation: landscape) {
-  .objective-chip { max-width: 38vw; }
+  .left-stack { max-width: 32vw; }
   .status-strip { width: 190px; }
-  #radar { top: 76px; width: 84px; height: 84px; }
-  .prompt { bottom: 100px; }
+  #radar { width: 84px; height: 84px; }
+  .top-stack { max-width: 32vw; }
+  .prompt { bottom: calc(max(24px, env(safe-area-inset-bottom)) + 80px); }
   .joystick { width: 94px; height: 94px; }
   .joystick i { top: 28px; left: 28px; width: 38px; height: 38px; }
   .round-button.attack { width: 70px; height: 70px; }
@@ -736,18 +801,37 @@ button { font: inherit; }
   .combat-line { margin-bottom: 3px; padding: 2px 5px; font-size: 8px; }
   .inventory-button { padding: 3px 6px; font-size: 9px; }
   .hud-actions { gap: 3px; }
-  .clock { top: 68px; padding: 4px 8px; }
-  .enemy-chip { top: 96px; }
+  .top-stack { top: max(6px, env(safe-area-inset-top)); gap: 5px; }
+  .clock { padding: 4px 8px; }
+  .toast { padding: 6px 11px; font-size: 11px; }
+  .boss-bar { padding: 5px 9px 6px; }
 }
 
 /* 再矮一档：说明行是教学用的，最先让位。 */
 @media (orientation: landscape) and (max-height: 340px) {
-  .drain-note { display: none; }
+  .drain-note { display: none !important; }
   .meter { margin-bottom: 2px; font-size: 8px; }
   .round-button { width: 58px; height: 58px; }
   .round-button.attack { width: 64px; height: 64px; }
   .joystick { width: 82px; height: 82px; }
   .joystick i { top: 24px; left: 24px; width: 34px; height: 34px; }
+  .prompt { bottom: calc(max(24px, env(safe-area-inset-bottom)) + 72px); }
+}
+
+/*
+ * 极矮横屏（≤320px 高）。右侧状态栏此时几乎顶到屏幕底部，"动作键正上方"那块地方
+ * 已经被它占了 —— 行动提示改到底部中央那条空带（摇杆和动作键之间本来就是空的）。
+ * 那里贴着屏幕最下沿，不算侵占视野中央。
+ */
+@media (orientation: landscape) and (max-height: 320px) {
+  .prompt {
+    right: auto;
+    left: 50%;
+    bottom: max(8px, env(safe-area-inset-bottom));
+    max-width: 42vw;
+    transform: translateX(-50%);
+    text-align: center;
+  }
 }
 
 @media (max-height: 520px) {

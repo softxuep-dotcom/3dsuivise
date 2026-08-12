@@ -15,7 +15,42 @@ interface CampView {
 interface WolfView {
   group: THREE.Group;
   bodyMaterial: THREE.MeshStandardMaterial;
+  /** 头顶血条：受伤后短暂浮现，头狼常驻。挂在场景根上而不是狼身上，免得继承死亡侧翻。 */
+  bar: THREE.Group;
+  barFill: THREE.Sprite;
+  /** 血条剩余显示秒数。 */
+  barTimer: number;
+  /** 上一帧的血量，用来发现"这一刻挨打了"。 */
+  lastHealth: number;
 }
+
+/** 头顶血条：受伤后显示多久。够看清掉了多少，又不至于夜里几十条一直挂着。 */
+const WOLF_BAR_SECONDS = 2.6;
+const WOLF_BAR_WIDTH = 1.15;
+const WOLF_BAR_HEIGHT = 0.15;
+
+/**
+ * 每只狼一套血条材质，不共用 —— 淡出是逐条各自算的，共用材质会让全场血条一起闪。
+ * 精灵本来就不合批，两个精灵两次绘制，隐藏时直接跳过，所以这点开销是值的。
+ */
+const createWolfBar = (wolf: WolfState): { bar: THREE.Group; fill: THREE.Sprite } => {
+  const group = new THREE.Group();
+  const back = new THREE.Sprite(new THREE.SpriteMaterial({
+    color: 0x0a0f13, transparent: true, opacity: 0.72, depthWrite: false,
+  }));
+  const fill = new THREE.Sprite(new THREE.SpriteMaterial({
+    color: wolf.kind === "alpha" ? 0xff8a3d : 0xe2564a, transparent: true, depthWrite: false,
+  }));
+  const kindScale = wolfScale(wolf);
+  back.scale.set(WOLF_BAR_WIDTH * kindScale + 0.06, WOLF_BAR_HEIGHT * kindScale + 0.05, 1);
+  fill.scale.set(WOLF_BAR_WIDTH * kindScale, WOLF_BAR_HEIGHT * kindScale, 1);
+  // 填充画在底板之上；两者都不写深度，避免互相打架。
+  back.renderOrder = 8;
+  fill.renderOrder = 9;
+  group.add(back, fill);
+  group.visible = false;
+  return { bar: group, fill };
+};
 
 interface CritterView {
   group: THREE.Group;
@@ -1528,7 +1563,9 @@ export class GameRenderer {
         view = this.createWolfView(wolf);
         this.wolfViews.set(wolf.id, view);
         this.scene.add(view.group);
+        this.scene.add(view.bar);
       }
+      this.syncWolfBar(wolf, view, delta);
       view.group.position.set(wolf.x, this.worldHeight(wolf.x, wolf.z) + (wolf.mode === "dead" ? 0.2 : 0), wolf.z);
       view.group.rotation.y = -Math.atan2(wolf.facing.z, wolf.facing.x);
       const kindScale = wolfScale(wolf);
@@ -1550,9 +1587,45 @@ export class GameRenderer {
     for (const [id, view] of this.wolfViews) {
       if (liveIds.has(id)) continue;
       this.scene.remove(view.group);
+      this.scene.remove(view.bar);
       view.bodyMaterial.dispose();
+      for (const child of view.bar.children) (child as THREE.Sprite).material.dispose();
       this.wolfViews.delete(id);
     }
+  }
+
+  /**
+   * 头顶血条的显示规则。
+   *
+   * 不常驻：夜里地图上有几十只狼，全挂血条就是一片红。只在**这一刻挨了打**之后
+   * 亮 2.6 秒，够看清掉了多少血、够判断还要几刀。头狼例外，它是通关目标，
+   * 只要活着就一直显示。
+   */
+  private syncWolfBar(wolf: WolfState, view: WolfView, delta: number): void {
+    if (wolf.health < view.lastHealth) view.barTimer = WOLF_BAR_SECONDS;
+    view.lastHealth = wolf.health;
+    view.barTimer = Math.max(0, view.barTimer - delta);
+
+    const alphaAlive = wolf.kind === "alpha" && wolf.mode !== "dead";
+    const visible = wolf.mode !== "dead" && (alphaAlive || view.barTimer > 0);
+    view.bar.visible = visible;
+    if (!visible) return;
+
+    const kindScale = wolfScale(wolf);
+    const ratio = clamp(wolf.health / wolf.maxHealth, 0, 1);
+    // 精灵缩放以中心为基准，所以填充条要一边缩一边往左挪，左端才钉得住。
+    const width = WOLF_BAR_WIDTH * kindScale;
+    view.barFill.scale.set(width * ratio, WOLF_BAR_HEIGHT * kindScale, 1);
+    view.barFill.position.x = -width * (1 - ratio) * 0.5;
+    view.bar.position.set(
+      wolf.x,
+      this.worldHeight(wolf.x, wolf.z) + 2.05 * kindScale,
+      wolf.z,
+    );
+    // 最后 0.5 秒淡出，避免"啪"地消失。
+    const opacity = alphaAlive ? 1 : clamp(view.barTimer / 0.5, 0, 1);
+    view.barFill.material.opacity = opacity;
+    (view.bar.children[0] as THREE.Sprite).material.opacity = opacity * 0.72;
   }
 
   private syncDrops(): void {
@@ -1623,7 +1696,8 @@ export class GameRenderer {
     const eye = new THREE.Mesh(new THREE.SphereGeometry(0.055, 5, 4), eyeMaterial);
     eye.position.set(1.12, 0.98, 0.29);
     group.add(eye);
-    return { group, bodyMaterial };
+    const { bar, fill } = createWolfBar(wolf);
+    return { group, bodyMaterial, bar, barFill: fill, barTimer: 0, lastHealth: wolf.health };
   }
 
   private syncFires(): void {

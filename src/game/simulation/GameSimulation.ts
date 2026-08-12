@@ -1096,24 +1096,9 @@ export class GameSimulation {
     return camp ? CAMP_LABELS[camp.kind] : "无名沙海";
   }
 
-  getNearestThreat(): WolfState | null {
-    let nearest: WolfState | null = null;
-    let best = 24 * 24;
-    let bestPriority = -1;
-    for (const wolf of this.wolves) {
-      if (wolf.mode === "dead" || wolf.mode === "retreating") continue;
-      const value = distanceSquared(this.player, wolf);
-      if (value >= 24 * 24) continue;
-      // 头狼永远优先显示，其次才按距离取最近的。
-      const priority = wolf.kind === "alpha" ? 1 : 0;
-      if (priority < bestPriority) continue;
-      if (priority === bestPriority && value >= best) continue;
-      nearest = wolf;
-      best = value;
-      bestPriority = priority;
-    }
-    return nearest;
-  }
+  // getNearestThreat() 已删除：它服务的是那块常驻在屏幕中央的"最近敌人"面板。
+  // 夜里地图上几十只狼，24 米内永远有一只顶上来，那块面板等于常年糊在视野正中。
+  // 现在普通狼的血量走头顶跟随血条（受伤才亮 2.6 秒），头狼走顶部 BOSS 条。
 
   getAlpha(): WolfState | null {
     return this.wolves.find((wolf) => wolf.kind === "alpha" && wolf.mode !== "dead") ?? null;
