@@ -471,6 +471,9 @@ button { font: inherit; }
   font-size: 12px;
 }
 
+/* 数字和文案要分成两个节点，data-i18n 才能只重填文案而不擦掉数字。 */
+.verb-row i { font-style: normal; }
+
 .verb-row b {
   display: grid;
   width: 27px;

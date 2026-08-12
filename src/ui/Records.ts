@@ -9,6 +9,8 @@
  * 而"记录"只需要三个整数。
  */
 
+import { t } from "../i18n";
+
 const STORAGE_KEY = "desert-survivor.records.v1";
 
 export interface Records {
@@ -81,7 +83,7 @@ export function submitRun(result: RunResult): { records: Records; brokeDay: bool
 /** 开场页那一行；从没玩过时返回 null，不占版面。 */
 export function describeRecords(records: Records): string | null {
   if (records.runs <= 0) return null;
-  const parts = [`最好活到第 ${records.bestDay} 天`, `单局最多猎杀 ${records.bestKills}`];
-  if (records.victories > 0) parts.push(`通关 ${records.victories} 次`);
+  const parts = [t("records.bestDay", { day: records.bestDay }), t("records.bestKills", { kills: records.bestKills })];
+  if (records.victories > 0) parts.push(t("records.victories", { count: records.victories }));
   return parts.join(" · ");
 }

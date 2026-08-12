@@ -1,17 +1,12 @@
 import type { EquipTier, GameSimulation } from "../game/simulation/GameSimulation";
+import { t, tx } from "../i18n";
 import { clamp } from "../game/simulation/geometry";
 import { describeRecords, loadRecords, submitRun } from "./Records";
 import { STRUCTURE_SPECS } from "../game/simulation/types";
 import type {
   GameEvent,
-  InteractionHint,
   InventoryItemKind,
-  DeathCause,
-  SurvivalCondition,
-  WeaponKind,
-  ArmorKind,
   StructureKind,
-  WolfKind,
 } from "../game/simulation/types";
 
 const required = <T extends HTMLElement>(id: string): T => {
@@ -21,33 +16,19 @@ const required = <T extends HTMLElement>(id: string): T => {
 };
 
 /**
- * 装备标签统一用**绝对值**，和 EquipTier.attack / .defense 同口径。
- * 原先武器写累计增量（"攻击+34"）、配方表写单阶增量（"攻击+16"），
- * 同一件装备在两个地方是两个数字。
+ * 界面里所有靠"种类"取的文案都走 i18n 键。
+ *
+ * 装备与物品的名字**不再写死在 UI 层** —— 键跟着种类走（`equip.saber-2.name`、
+ * `item.hide.name`），文案落在语言表里。这样加一门语言不用碰这个文件。
+ *
+ * 装备标签统一用**绝对值**口径（攻击 46 而不是 攻击+18）：原先武器写累计增量、
+ * 配方表写单阶增量，同一件装备在两个地方是两个数字。
  */
-const WEAPON_LABELS: Record<WeaponKind, string> = {
-  "survival-knife": "求生匕首 · 攻击 30",
-  "saber-1": "铁片砍刀 · 攻击 34 · 扫 220°",
-  "saber-2": "锻铁阔刀 · 攻击 42 · 扫 250°",
-  "saber-3": "熔渣重刀 · 攻击 50 · 扫 280°",
-  "sword-1": "骨柄短剑 · 攻击 38 · 连击 ×3",
-  "sword-2": "兽牙细剑 · 攻击 45 · 连击 ×4",
-  "sword-3": "裂齿长剑 · 攻击 55 · 连击 ×4",
-};
-
-const ARMOR_LABELS: Record<ArmorKind, string> = {
-  none: "粗布衣 · 防御 2",
-  "scale-1": "铁鳞胸甲 · 防御 8 · 反伤 12%",
-  "scale-2": "镶铁重甲 · 防御 13 · 反伤 22%",
-  "scale-3": "熔渣板甲 · 防御 18 · 反伤 35%",
-  "hide-1": "游猎皮衣 · 防御 5 · 闪避 12%",
-  "hide-2": "风行皮甲 · 防御 6 · 闪避 24%",
-  "hide-3": "犬影斗篷 · 防御 7 · 闪避 38%",
-};
 
 /**
  * 每条线一个颜色，和 GameRenderer 的 WEAPON_VISUALS 取同一个色相。
  * 背包一开就知道自己走的哪条线，**而且和世界里那把刀是同一个颜色**。
+ * 颜色不进语言表 —— 它不是文案。
  */
 const LINE_COLORS: Record<string, string> = {
   none: "#8a8072",
@@ -57,60 +38,9 @@ const LINE_COLORS: Record<string, string> = {
   hide: "#c08a5a",
 };
 
-/**
- * 分叉卡最上面那两行。
- *
- * 先说**线的性格**再说具体那把武器 —— 玩家在这一刻要选的是一条路（接下来四天
- * 去挖矿还是去捡柴），不是一件装备。两条线的一句话必须互为反面，玩家才知道
- * 自己在权衡什么。
- */
-const LINE_TAGLINES: Record<string, { name: string; personality: string }> = {
-  saber: { name: "刀 · 阔刃", personality: "敌人越多越强<br>一刀扫过身周一大圈" },
-  sword: { name: "剑 · 细刃", personality: "敌人越少越强<br>咬住一个目标越打越疼" },
-  scale: { name: "铁甲", personality: "站着挨打也不倒<br>代价是跑得慢、回劳力慢" },
-  hide: { name: "皮甲", personality: "干脆别被打中<br>跑得快、回劳力也快" },
-};
-
-const ITEM_PRESENTATION: Record<InventoryItemKind, { glyph: string; name: string }> = {
-  "cactus-juice": { glyph: "汁", name: "仙人掌汁" },
-  "raw-meat": { glyph: "肉", name: "生肉" },
-  "cooked-meat": { glyph: "熟", name: "烤肉" },
-  hide: { glyph: "皮", name: "兽皮" },
-  "iron-ore": { glyph: "铁", name: "铁矿" },
-  "wash-water": { glyph: "洗", name: "洗脸水" },
-  "wolf-fang": { glyph: "牙", name: "犬牙" },
-  water: { glyph: "水", name: "水" },
-  wood: { glyph: "柴", name: "枯木" },
-};
-
-const ACTION_LABELS: Record<InteractionHint["action"], string> = {
-  pickup: "拿起",
-  drop: "放置",
-  feed: "添柴",
-  cactus: "取汁",
-  mine: "采矿",
-  well: "提水",
-  none: "行动",
-};
-
-const CONDITION_COPY: Record<Exclude<SurvivalCondition, "normal">, string> = {
-  heatstroke: "中暑 · 移速 −60% 攻速 −50%",
-  hypothermia: "失温 · 移速 −75% 攻速 −65%",
-};
-
-const DEATH_COPY: Record<DeathCause, string> = {
-  dehydrated: "水分见底，你倒在了滚烫的沙子上 —— 仙人掌就在几十步外，你没能走到。",
-  starved: "饥饿耗尽，你再没有力气站起来。",
-  killed: "野狗群撕碎了你的最后一道防线。",
-  // 体力恒定流失把血耗干 —— 可能全程一只狼都没碰到，文案必须说清是没吃饭。
-  exhausted: "没有一只野狗碰到你。是体力一点点流干的 —— 熟肉是唯一能大量回体力的东西。",
-};
-
-const WOLF_LABELS: Record<WolfKind, string> = {
-  small: "野狗",
-  large: "壮犬",
-  alpha: "头犬",
-};
+/** 物品格里的单字图标。字形本身也要翻译：英文用两个字母，中文用一个汉字。 */
+const itemGlyph = (kind: InventoryItemKind): string => t(`item.${kind}.glyph`);
+const itemName = (kind: InventoryItemKind): string => t(`item.${kind}.name`);
 
 export class HudController {
   private readonly simulation: GameSimulation;
@@ -157,7 +87,7 @@ export class HudController {
     const cold = warmth < 35;
     const cooldown = hot ? this.simulation.coolCooldown : this.simulation.warmCooldown;
     if (!hot && !cold) {
-      this.thermalState.textContent = "适宜";
+      this.thermalState.textContent = t("thermal.fine");
       this.thermalButton.disabled = true;
       return;
     }
@@ -166,7 +96,7 @@ export class HudController {
       this.thermalButton.disabled = true;
       return;
     }
-    this.thermalState.textContent = hot ? "降温" : "取暖";
+    this.thermalState.textContent = t(hot ? "thermal.cool" : "thermal.warm");
     this.thermalButton.disabled = false;
   }
   private readonly objective = required<HTMLElement>("objective");
@@ -297,9 +227,13 @@ export class HudController {
     }
     this.syncThermalButton(player.warmth);
     this.bagUsage.textContent = `${player.inventory.filter(Boolean).length}/8`;
-    this.objective.textContent = this.simulation.getObjective();
-    this.dayLabel.textContent = `第 ${this.simulation.day} 天 · ${this.simulation.getCurrentLocationLabel()} · 野狗 ${this.simulation.wolves.filter((wolf) => wolf.mode !== "dead").length}`;
-    this.phaseLabel.textContent = this.simulation.phase === "day" ? "白昼" : "黑夜";
+    this.objective.textContent = tx(this.simulation.getObjective());
+    this.dayLabel.textContent = t("hud.dayLine", {
+      day: this.simulation.day,
+      place: tx(this.simulation.getCurrentLocationLabel()),
+      dogs: this.simulation.wolves.filter((wolf) => wolf.mode !== "dead").length,
+    });
+    this.phaseLabel.textContent = t(this.simulation.phase === "day" ? "phase.day" : "phase.night");
     this.clock.classList.toggle("night", this.simulation.phase === "night");
     const seconds = Math.max(0, Math.ceil(this.simulation.phaseTime));
     this.timeLabel.textContent = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
@@ -309,29 +243,29 @@ export class HudController {
     const gathering = player.gatherTimer > 0;
     this.gatherIndicator.classList.toggle("hidden", !gathering);
     this.restIndicator.classList.toggle("hidden", gathering || !player.resting);
-    if (gathering) this.gatherIndicator.textContent = `取水中… ${player.gatherTimer.toFixed(1)}s`;
+    if (gathering) this.gatherIndicator.textContent = t("hud.gathering", { seconds: player.gatherTimer.toFixed(1) });
 
     // 只有头狼配得上一条常驻 BOSS 血槽；普通狼的血量走头顶跟随血条（见 GameRenderer）。
     const alpha = this.simulation.getAlpha();
     this.bossBar.classList.toggle("hidden", !alpha);
     if (alpha) {
       const ratio = clamp(alpha.health / alpha.maxHealth, 0, 1);
-      this.bossName.textContent = WOLF_LABELS[alpha.kind];
+      this.bossName.textContent = t(`dog.${alpha.kind}`);
       this.bossStats.textContent = `${Math.max(0, Math.ceil(alpha.health))} / ${alpha.maxHealth}`;
       this.bossHealthBar.style.width = `${ratio * 100}%`;
     }
 
     const hint = this.simulation.getInteractionHint();
     const touchLayout = matchMedia("(pointer: coarse)").matches || window.innerWidth <= 760;
-    this.actionButton.textContent = ACTION_LABELS[hint.action];
+    this.actionButton.textContent = t(`action.${hint.action}`);
     if (hint.action === "none") {
       this.prompt.classList.add("hidden");
     } else if (touchLayout) {
       // 提示就贴在"行动"键上方，键名由那颗按钮自己说 —— 这里再写一遍纯属重复。
-      this.prompt.textContent = hint.text;
+      this.prompt.textContent = tx(hint.text);
       this.prompt.classList.remove("hidden");
     } else {
-      this.prompt.innerHTML = `<kbd>E</kbd>${hint.text}`;
+      this.prompt.innerHTML = `<kbd>E</kbd>${tx(hint.text)}`;
       this.prompt.classList.remove("hidden");
     }
     if (this.inventoryOpen) this.updateInventory();
@@ -343,12 +277,12 @@ export class HudController {
     const condition = player.condition;
     if (condition !== "normal") {
       this.conditionBadge.className = `condition-badge ${condition}`;
-      this.conditionBadge.textContent = CONDITION_COPY[condition];
+      this.conditionBadge.textContent = t(`condition.${condition}`);
       return;
     }
     if (player.stamina < 12) {
       this.conditionBadge.className = "condition-badge exhausted";
-      this.conditionBadge.textContent = "脱力 · 站定回复劳力";
+      this.conditionBadge.textContent = t("condition.spent");
       return;
     }
     this.conditionBadge.className = "condition-badge hidden";
@@ -370,8 +304,8 @@ export class HudController {
     this.drainNote.classList.toggle("hidden", !worthSaying);
     if (!worthSaying) return;
     this.drainNote.textContent = blocker
-      ? `体力持续消耗 · ${blocker}`
-      : "体力持续消耗 · 进食或站定 5 秒休息";
+      ? t("hud.drain.blocked", { reason: tx(blocker) })
+      : t("hud.drain.hint");
   }
 
   private updateHuntProgress(): void {
@@ -380,26 +314,26 @@ export class HudController {
     this.huntProgress.classList.toggle("alpha", Boolean(alpha));
     // 头狼在场时血量由顶部 BOSS 条负责，这里只说进度，不重复报血。
     this.huntProgress.textContent = alpha
-      ? "头犬已登场"
+      ? t("hunt.alphaHere")
       : progress.spawned
-        ? `猎杀 ${progress.kills}`
-        : `猎杀 ${progress.kills}/${progress.required}`;
+        ? t("hunt.kills", { kills: progress.kills })
+        : t("hunt.progress", { kills: progress.kills, required: progress.required });
   }
 
   handle(event: GameEvent): void {
-    if (event.type === "message") this.showToast(event.text, 3.1);
+    if (event.type === "message") this.showToast(t(event.key, event.params), 3.1);
     if (event.type === "phase") {
-      this.showToast(event.phase === "night" ? `第 ${event.day} 夜 · 野狗群正在涌入` : `第 ${event.day} 天 · 野狗群正在撤离`, 3.4);
+      this.showToast(t(event.phase === "night" ? "toast.nightfall" : "toast.daybreak", { day: event.day }), 3.4);
     }
     if (event.type === "pickup" && (event.kind === "raw-meat" || event.kind === "hide" || event.kind === "water")) {
-      const label = event.kind === "raw-meat" ? "获得生肉" : event.kind === "hide" ? "获得兽皮" : "取到水";
+      const label = t(`loot.${event.kind}`);
       this.showToast(label, 1.4);
     }
     if (event.type === "critter-killed") {
       const label = this.simulation.getCritterLabel(event.kind);
-      this.showToast(event.kind === "oryx" ? `猎到${label} · 大量肉与水` : `猎到${label}`, 1.8);
+      this.showToast(t(event.kind === "oryx" ? "toast.huntBig" : "toast.hunt", { name: label }), 1.8);
     }
-    if (event.type === "alpha-spawned") this.showToast("头犬登场 · 击杀它即可获救", 4);
+    if (event.type === "alpha-spawned") this.showToast(t("toast.alphaSpawned"), 4);
     if (event.type === "victory") {
       this.closeInventory();
       this.showVictory();
@@ -424,20 +358,19 @@ export class HudController {
         slot.innerHTML = "";
         slot.classList.add("empty");
         slot.disabled = true;
-        slot.setAttribute("aria-label", `空格 ${index + 1}`);
+        slot.setAttribute("aria-label", t("pack.slot.empty", { index: index + 1 }));
         return;
       }
-      const presentation = ITEM_PRESENTATION[stack.kind];
       slot.classList.remove("empty");
       slot.disabled = false;
-      slot.innerHTML = `<span class="item-glyph">${presentation.glyph}</span><span class="item-name">${presentation.name}</span><b class="item-count">${stack.count}</b>`;
-      slot.setAttribute("aria-label", `${presentation.name} ${stack.count}个`);
+      slot.innerHTML = `<span class="item-glyph">${itemGlyph(stack.kind)}</span><span class="item-name">${itemName(stack.kind)}</span><b class="item-count">${stack.count}</b>`;
+      slot.setAttribute("aria-label", t("pack.slot.filled", { name: itemName(stack.kind), count: stack.count }));
     });
     this.handsStatus.textContent = player.carrying === "stone"
-      ? "大石"
-      : player.carrying === "stake" ? "树桩" : "空闲";
-    this.coatStatus.textContent = ARMOR_LABELS[player.armor];
-    this.weaponStatus.textContent = WEAPON_LABELS[player.weapon];
+      ? t("carry.stone")
+      : player.carrying === "stake" ? t("carry.stake") : t("carry.empty");
+    this.coatStatus.textContent = t(`equip.${player.armor}.hud`);
+    this.weaponStatus.textContent = t(`equip.${player.weapon}.hud`);
     this.statHealth.textContent = `${Math.round(player.health)}/${player.maxHealth}`;
     this.statStamina.textContent = `${Math.round(player.stamina)}/${player.maxStamina}`;
     this.statAttack.textContent = String(this.simulation.getAttackPower());
@@ -445,21 +378,21 @@ export class HudController {
     for (const [button, kind] of this.buildButtons) {
       const spec = STRUCTURE_SPECS[kind];
       const parts = spec.cost.map(([item, count]) =>
-        `${ITEM_PRESENTATION[item].name} ${this.simulation.getInventoryCount(item)}/${count}`);
-      button.textContent = `搭${spec.label} · ${parts.join(" + ")} · 劳力 ${spec.stamina}`;
+        `${itemName(item)} ${this.simulation.getInventoryCount(item)}/${count}`);
+      button.textContent = t("build.button", { name: t(`structure.${kind}.name`), parts: parts.join(" + "), stamina: spec.stamina });
       button.disabled = spec.cost.some(([item, count]) => this.simulation.getInventoryCount(item) < count);
     }
     this.renderUpgradeSlot("armor");
     this.renderUpgradeSlot("weapon");
     const raws = this.simulation.getInventoryCount("raw-meat");
     this.craftCookButton.textContent = raws > 0
-      ? `烤肉 · 生肉 ${raws} → 熟肉（回体力 ${14}）· 需燃烧篝火`
-      : "烤肉 · 没有生肉";
+      ? t("craft.cook", { raws, health: 14 })
+      : t("craft.cook.none");
     this.craftCookButton.disabled = raws < 1;
     const waters = this.simulation.getInventoryCount("water");
     this.craftWashButton.textContent = waters > 0
-      ? `兑洗脸水 · 水 ${waters} → 降温 25~50`
-      : "兑洗脸水 · 需要 1 份水";
+      ? t("craft.wash", { waters })
+      : t("craft.wash.none");
     this.craftWashButton.disabled = waters < 1;
   }
 
@@ -478,7 +411,7 @@ export class HudController {
     const host = slot === "weapon" ? this.weaponUpgradeSlot : this.armorUpgradeSlot;
     const options = this.simulation.getUpgradeOptions(slot);
     const equipped = this.simulation.getEquipped(slot);
-    const noun = slot === "weapon" ? "武器" : "护甲";
+    const noun = t(slot === "weapon" ? "slot.weapon" : "slot.armor");
 
     // 背包开着时这个方法每 0.08 秒被调一次。无脑重写 innerHTML 会让按钮一秒
     // 重建 12 次 —— 落在两次重建之间的点击会被整个吞掉。所以先算一个签名，
@@ -494,20 +427,29 @@ export class HudController {
     this.upgradeSignatures.set(slot, signature);
 
     const html = options.length >= 2
-      ? `<p class="upgrade-head">${noun} · 选一条线，四天内都跟着它走</p>
+      ? `<p class="upgrade-head">${t("upgrade.pickLine", { slot: noun })}</p>
          <div class="fork-card">${options.map((tier) => this.renderForkColumn(slot, tier)).join("")}</div>`
       : options.length === 1
         ? `<p class="upgrade-head">${noun} <span class="tier-pips">${this.renderPips(equipped.tier)}</span></p>
            ${this.renderUpgradeCard(equipped, options[0])}`
-        : `<p class="upgrade-head">${noun} <span class="tier-pips">${this.renderPips(3)}</span> 已满级</p>
+        : `<p class="upgrade-head">${noun} <span class="tier-pips">${this.renderPips(3)}</span> ${t("upgrade.maxed")}</p>
            <div class="upgrade-card maxed">
-             <b style="color:${LINE_COLORS[equipped.line]}">${equipped.label}</b>
-             <span>${equipped.blurb}</span>
+             <b style="color:${LINE_COLORS[equipped.line]}">${this.tierName(equipped)}</b>
+             <span>${this.tierBlurb(equipped)}</span>
            </div>`;
 
     const switches = this.simulation.getSwitchOptions(slot);
     host.innerHTML = html + (switches.length === 0 ? "" : this.renderSwitchRow(slot, switches));
     this.bindUpgradeSlot(host, slot);
+  }
+
+  /** 装备的名字与说明都落在语言表里，键跟着装备 id 走。 */
+  private tierName(tier: EquipTier): string {
+    return t(`equip.${tier.id}.name`);
+  }
+
+  private tierBlurb(tier: EquipTier): string {
+    return tier.tier === 0 ? "" : t(`equip.${tier.id}.blurb`);
   }
 
   private renderPips(tier: number): string {
@@ -518,24 +460,24 @@ export class HudController {
   private renderCost(tier: EquipTier): string {
     return tier.cost.map(([kind, count]) => {
       const have = this.simulation.getInventoryCount(kind);
-      return `<span class="${have >= count ? "ok" : "missing"}">${ITEM_PRESENTATION[kind].name} ${have}/${count}</span>`;
+      return `<span class="${have >= count ? "ok" : "missing"}">${itemName(kind)} ${have}/${count}</span>`;
     }).join("");
   }
 
   /** 缺不缺火要分状态说：「需要火」和「火就在旁边」是两条不同的信息。 */
   private renderFireNote(tier: EquipTier): string {
-    if (!tier.needsFire) return `<span class="ok">✓ 随身可造</span>`;
+    if (!tier.needsFire) return `<span class="ok">${t("fire.anywhere")}</span>`;
     return this.simulation.findNearestLitFire(10) !== null
-      ? `<span class="ok">✓ 篝火就在旁边</span>`
-      : `<span class="missing">⚠ 需燃烧篝火（当前不在火边）</span>`;
+      ? `<span class="ok">${t("fire.here")}</span>`
+      : `<span class="missing">${t("fire.needed")}</span>`;
   }
 
   private blockedReason(tier: EquipTier): string | null {
     const missing = tier.cost.filter(([kind, count]) => this.simulation.getInventoryCount(kind) < count);
     if (missing.length > 0) {
-      return `还差 ${missing.map(([kind, count]) => `${ITEM_PRESENTATION[kind].name}×${count - this.simulation.getInventoryCount(kind)}`).join(" ")}`;
+      return t("blocked.missing", { parts: missing.map(([kind, count]) => `${itemName(kind)}×${count - this.simulation.getInventoryCount(kind)}`).join(" ") });
     }
-    if (tier.needsFire && this.simulation.findNearestLitFire(10) === null) return "去篝火旁制作";
+    if (tier.needsFire && this.simulation.findNearestLitFire(10) === null) return t("blocked.needFire");
     return null;
   }
 
@@ -548,14 +490,14 @@ export class HudController {
     const finale = this.simulation.getLineFinale(slot, tier.line);
     return `
       <div class="fork-column" style="--line:${LINE_COLORS[tier.line]}">
-        <b class="fork-title">${LINE_TAGLINES[tier.line]?.name ?? tier.label}</b>
-        <span class="fork-personality">${LINE_TAGLINES[tier.line]?.personality ?? ""}</span>
-        <b class="fork-item">${tier.label}</b>
-        <span class="fork-blurb">${tier.blurb}</span>
+        <b class="fork-title">${t(`line.${tier.line}.name`)}</b>
+        <span class="fork-personality">${t(`line.${tier.line}.personality`)}</span>
+        <b class="fork-item">${this.tierName(tier)}</b>
+        <span class="fork-blurb">${this.tierBlurb(tier)}</span>
         <span class="fork-cost">${this.renderCost(tier)}</span>
         <span class="fork-fire">${this.renderFireNote(tier)}</span>
-        <span class="fork-finale">${this.renderPips(1)} 终点 ${finale?.label ?? "—"}</span>
-        <button type="button" data-craft="${tier.id}" ${blocked ? "disabled" : ""}>${blocked ?? `制作${tier.label}`}</button>
+        <span class="fork-finale">${this.renderPips(1)} ${t("upgrade.finale", { name: finale ? t(`equip.${finale.id}.name`) : "—" })}</span>
+        <button type="button" data-craft="${tier.id}" ${blocked ? "disabled" : ""}>${blocked ?? t("upgrade.craft", { name: this.tierName(tier) })}</button>
       </div>`;
   }
 
@@ -564,12 +506,12 @@ export class HudController {
     const blocked = this.blockedReason(next);
     return `
       <div class="upgrade-card" style="--line:${LINE_COLORS[next.line]}">
-        <div class="upgrade-row"><em>当前</em><b>${current.label}</b><span>${current.blurb || "起手装备"}</span></div>
+        <div class="upgrade-row"><em>${t("upgrade.current")}</em><b>${this.tierName(current)}</b><span>${this.tierBlurb(current) || t("equip.starter")}</span></div>
         <div class="upgrade-arrow">↓</div>
-        <div class="upgrade-row next"><em>下阶</em><b>${next.label}</b><span>${next.blurb}</span></div>
+        <div class="upgrade-row next"><em>${t("upgrade.next")}</em><b>${this.tierName(next)}</b><span>${this.tierBlurb(next)}</span></div>
         <span class="fork-cost">${this.renderCost(next)}</span>
         <span class="fork-fire">${this.renderFireNote(next)}</span>
-        <button type="button" data-craft="${next.id}" ${blocked ? "disabled" : ""}>${blocked ?? `制作${next.label}`}</button>
+        <button type="button" data-craft="${next.id}" ${blocked ? "disabled" : ""}>${blocked ?? t("upgrade.craft", { name: this.tierName(next) })}</button>
       </div>`;
   }
 
@@ -583,14 +525,14 @@ export class HudController {
       const target = switches.find((tier) => tier.id === pending.id);
       if (target) {
         return `<div class="confirm-bar">
-          <span>⚠ 丢弃${this.simulation.getEquipped(slot).label}，从${target.label}重来。材料不返还。</span>
-          <button type="button" data-craft="${target.id}">确认</button>
-          <button type="button" data-cancel="1">取消</button>
+          <span>${t("switch.warning", { current: this.tierName(this.simulation.getEquipped(slot)), next: this.tierName(target) })}</span>
+          <button type="button" data-craft="${target.id}">${t("switch.confirm")}</button>
+          <button type="button" data-cancel="1">${t("switch.cancel")}</button>
         </div>`;
       }
     }
     return `<div class="switch-row">${switches.map((tier) =>
-      `<button type="button" class="switch-button" data-switch="${tier.id}" style="--line:${LINE_COLORS[tier.line]}">⟲ 改走${LINE_TAGLINES[tier.line]?.name ?? tier.label}</button>`
+      `<button type="button" class="switch-button" data-switch="${tier.id}" style="--line:${LINE_COLORS[tier.line]}">${t("switch.to", { line: t(`line.${tier.line}.name`) })}</button>`
     ).join("")}</div>`;
   }
 
@@ -633,10 +575,10 @@ export class HudController {
       won,
     });
     this.refreshRecordsLine();
-    if (brokeDay && brokeKills) return `新纪录：第 ${records.bestDay} 天 · 猎杀 ${records.bestKills}。`;
-    if (brokeDay) return `新纪录：活到了第 ${records.bestDay} 天。`;
-    if (brokeKills) return `新纪录：单局猎杀 ${records.bestKills} 只。`;
-    return `历史最好：第 ${records.bestDay} 天 · 猎杀 ${records.bestKills}。`;
+    if (brokeDay && brokeKills) return t("records.bothNew", { day: records.bestDay, kills: records.bestKills });
+    if (brokeDay) return t("records.dayNew", { day: records.bestDay });
+    if (brokeKills) return t("records.killsNew", { kills: records.bestKills });
+    return t("records.best", { day: records.bestDay, kills: records.bestKills });
   }
 
   /** 开场页那一行；没玩过时整行隐藏，不占版面。 */
@@ -649,20 +591,20 @@ export class HudController {
   private showGameOver(): void {
     const wolfCount = this.simulation.wolves.filter((wolf) => wolf.mode !== "dead").length;
     const cause = this.simulation.deathCause;
-    const causeText = DEATH_COPY[cause ?? "killed"];
+    const causeText = t(`death.${cause ?? "killed"}`);
     // 体温越界本身不致死，但 -60%/-75% 的减速经常才是真凶。
     // 不点出来的话，玩家只会记住"被狼咬死了"，学不到该去烤火或降温。
     const condition = this.simulation.deathCondition;
     const conditionText = condition === "heatstroke"
-      ? "倒下时你正中暑，移速只剩四成 —— 白天该喝水或用洗脸水压住体温。"
+      ? t("death.note.heatstroke")
       : condition === "hypothermia"
-        ? "倒下时你正失温，几乎迈不开腿 —— 夜里该守着篝火，或者早点添柴。"
+        ? t("death.note.hypothermia")
         : "";
     this.resultCopy.textContent = [
-      `坚持到第 ${this.simulation.day} 天，猎杀 ${this.simulation.player.kills} 只野狗。`,
+      t("over.summary", { day: this.simulation.day, kills: this.simulation.player.kills }),
       causeText,
       conditionText,
-      `沙海上仍有 ${wolfCount} 只野狗在活动。`,
+      t("over.remaining", { count: wolfCount }),
       this.submitAndDescribe(false),
     ].filter(Boolean).join(" ");
     this.gameOver.classList.remove("hidden");
@@ -671,7 +613,7 @@ export class HudController {
   private showVictory(): void {
     const player = this.simulation.player;
     this.victoryCopy.textContent = [
-      `第 ${this.simulation.day} 天，你击倒了头犬，累计猎杀 ${player.kills} 只。野狗群散了，营地的火终于可以安心地烧到天亮。`,
+      t("win.summary", { day: this.simulation.day, kills: player.kills }),
       this.submitAndDescribe(true),
     ].filter(Boolean).join(" ");
     this.victory.classList.remove("hidden");

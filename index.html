@@ -1,46 +1,46 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
     <meta name="theme-color" content="#7a5f38" />
-    <meta name="description" content="《荒漠幸存者》3D 生存玩法原型" />
-    <title>荒漠幸存者 · 玩法原型</title>
+    <meta name="description" content="A 3D desert survival prototype" />
+    <title>Desert Survivor</title>
   </head>
   <body>
     <div id="game-root">
-      <div id="render-root" aria-label="3D 游戏画面"></div>
+      <div id="render-root" data-i18n-attr="aria-label:hud.render.aria"></div>
 
       <div id="hud" class="hidden" aria-live="polite">
         <div class="left-stack">
           <section class="objective-chip">
-            <span class="eyebrow" id="day-label">第 1 天</span>
-            <strong id="objective">收集枯木，选择今晚的营地</strong>
+            <span class="eyebrow" id="day-label"></span>
+            <strong id="objective"></strong>
             <!-- 通关进度贴着目标走：它就是"我为什么在打狼"的答案。 -->
-            <span class="objective-progress" id="hunt-progress">猎杀 0/40</span>
+            <span class="objective-progress" id="hunt-progress"></span>
           </section>
         </div>
 
-        <section class="status-strip" aria-label="生存状态">
+        <section class="status-strip" data-i18n-attr="aria-label:hud.status.aria">
           <div id="condition-badge" class="condition-badge hidden"></div>
-          <div class="meter health"><span>体力</span><i><b id="health-bar"></b></i><em id="health-value">100</em></div>
-          <div class="meter water"><span>水分</span><i><b id="water-bar"></b></i><em id="water-value">90</em></div>
-          <div class="meter hunger"><span>饱食</span><i><b id="hunger-bar"></b></i><em id="hunger-value">82</em></div>
-          <div class="meter warmth" id="warmth-meter"><span>体温</span><i><b id="warmth-bar"></b></i><em id="warmth-value">22</em></div>
-          <div class="meter stamina"><span>劳力</span><i><b id="stamina-bar"></b></i><em id="stamina-value">100</em></div>
+          <div class="meter health"><span data-i18n="meter.health">Health</span><i><b id="health-bar"></b></i><em id="health-value">100</em></div>
+          <div class="meter water"><span data-i18n="meter.water">Water</span><i><b id="water-bar"></b></i><em id="water-value">90</em></div>
+          <div class="meter hunger"><span data-i18n="meter.food">Food</span><i><b id="hunger-bar"></b></i><em id="hunger-value">82</em></div>
+          <div class="meter warmth" id="warmth-meter"><span data-i18n="meter.warmth">Warmth</span><i><b id="warmth-bar"></b></i><em id="warmth-value">22</em></div>
+          <div class="meter stamina"><span data-i18n="meter.stamina">Labour</span><i><b id="stamina-bar"></b></i><em id="stamina-value">100</em></div>
           <div class="drain-note hidden" id="drain-note"></div>
           <!--
             补给计数是**只读**的：消耗一律回背包操作，但"我还有没有水"是随时要瞄一眼的决策信息，
             不能只藏在背包里。位置固定不随有无变动，扫一眼就知道。
           -->
-          <div class="supply-line" aria-label="随身补给">
-            <span id="supply-water">水 <b>0</b></span>
-            <span id="supply-juice">汁 <b>0</b></span>
-            <span id="supply-wash">洗 <b>0</b></span>
-            <span id="supply-meat">熟 <b>0</b></span>
+          <div class="supply-line" data-i18n-attr="aria-label:hud.supply.aria">
+            <span id="supply-water"><i data-i18n="supply.water">Wtr</i> <b>0</b></span>
+            <span id="supply-juice"><i data-i18n="supply.juice">Sap</i> <b>0</b></span>
+            <span id="supply-wash"><i data-i18n="supply.wash">Wash</i> <b>0</b></span>
+            <span id="supply-meat"><i data-i18n="supply.meat">Meat</i> <b>0</b></span>
           </div>
           <div class="hud-actions">
-            <button id="sound-button" class="inventory-button sound-button" type="button" aria-label="切换声音" aria-pressed="true">声音 开</button>
+            <button id="sound-button" class="inventory-button sound-button" type="button" data-i18n-attr="aria-label:hud.sound.aria" aria-pressed="true"><span data-i18n="hud.sound.label">Sound</span> <b id="sound-state">on</b></button>
           </div>
         </section>
 
@@ -49,20 +49,20 @@
           原先每个元素各写一套 top 偏移，每加一档响应式断点就要重算一遍，迟早叠在一起。
         -->
         <div class="top-stack">
-          <div class="clock" id="clock"><span id="phase-label">白昼</span><b id="time-label">00:50</b></div>
-          <section id="boss-bar" class="boss-bar hidden" aria-label="头犬">
-            <div><strong id="boss-name">头犬</strong><span id="boss-stats">攻26 · 防9</span></div>
+          <div class="clock" id="clock"><span id="phase-label"></span><b id="time-label">00:50</b></div>
+          <section id="boss-bar" class="boss-bar hidden" data-i18n-attr="aria-label:hud.boss.aria">
+            <div><strong id="boss-name"></strong><span id="boss-stats"></span></div>
             <i><b id="boss-health-bar"></b></i>
           </section>
           <div id="toast" class="toast hidden"></div>
-          <div id="gather-indicator" class="status-pill gather-indicator hidden">取水中…</div>
-          <div id="rest-indicator" class="status-pill rest-indicator hidden">休息中 · 生命与劳力回复</div>
+          <div id="gather-indicator" class="status-pill gather-indicator hidden"></div>
+          <div id="rest-indicator" class="status-pill rest-indicator hidden"></div>
         </div>
 
         <div id="prompt" class="prompt hidden"></div>
 
         <div id="touch-controls">
-          <div id="joystick" class="joystick" aria-label="移动摇杆"><i></i></div>
+          <div id="joystick" class="joystick" data-i18n-attr="aria-label:hud.joystick.aria"><i></i></div>
         </div>
 
         <!--
@@ -72,40 +72,49 @@
         -->
         <div class="bottom-right">
           <div class="utility-buttons">
-            <button id="thermal-button" class="utility-button" type="button" aria-label="调节体温">体温 <b id="thermal-state">—</b></button>
-            <button id="backpack-button" class="utility-button" type="button" aria-label="打开背包">背包 <b id="bag-usage">0/8</b></button>
+            <button id="thermal-button" class="utility-button" type="button" data-i18n-attr="aria-label:hud.thermal.aria"><span data-i18n="hud.thermal.label">Warmth</span> <b id="thermal-state">—</b></button>
+            <button id="backpack-button" class="utility-button" type="button" data-i18n-attr="aria-label:hud.pack.aria"><span data-i18n="hud.pack.label">Pack</span> <b id="bag-usage">0/8</b></button>
           </div>
           <div class="action-buttons">
             <!-- 外圈那道弧是剑线的连击层数：打架时盯着狼看，用余光扫这一眼。 -->
-            <button id="attack-button" class="round-button attack" type="button"><i id="combo-arc" class="combo-arc"></i>攻击</button>
-            <button id="action-button" class="round-button action" type="button" aria-label="上下文行动">行动</button>
+            <button id="attack-button" class="round-button attack" type="button"><i id="combo-arc" class="combo-arc"></i><span data-i18n="hud.attack.label">Attack</span></button>
+            <button id="action-button" class="round-button action" type="button" data-i18n-attr="aria-label:hud.act.aria" data-i18n="hud.act.label">Act</button>
           </div>
         </div>
       </div>
 
+      <!--
+        开场页的静态文案在这里写死**英文**，主包到达后由 i18n 按检测到的语言重填
+        （data-i18n / data-i18n-html）。之所以不做内联字典：那 15 条会和主包的
+        语言表重复一份，而首屏英文对绝大多数玩家已经够用。
+      -->
       <div id="intro" class="overlay">
         <div class="intro-card">
-          <p class="eyebrow">可玩机制原型 · 参考魔兽RPG《荒漠幸存者》</p>
-          <h1>荒漠幸存者</h1>
-          <p class="tagline">一次坠机把你丢进了沙海。白天找水避暑，夜晚守火挡野狗。</p>
-          <div class="verb-row" aria-label="核心玩法">
-            <span><b>1</b>白天割仙人掌、走井边提水、猎野狗取皮</span>
-            <span><b>2</b>入夜前囤够枯木、添柴并封住入口</span>
-            <span><b>3</b>选一条武器线（刀或剑）升到三阶，猎杀 40 只引出头犬</span>
+          <p class="eyebrow" data-i18n="intro.eyebrow">Playable mechanics prototype</p>
+          <h1 data-i18n="intro.title">Desert Survivor</h1>
+          <p class="tagline" data-i18n="intro.tagline">A crash left you in the open sand. Find water and shade by day, hold the fire against the dogs by night.</p>
+          <div class="verb-row" data-i18n-attr="aria-label:intro.verbs.aria">
+            <span><b>1</b><i data-i18n="intro.verb1">Cut cactus, draw from wells, hunt dogs for hide</i></span>
+            <span><b>2</b><i data-i18n="intro.verb2">Stock deadwood before dusk, feed the fire, seal the gate</i></span>
+            <span><b>3</b><i data-i18n="intro.verb3">Take a weapon line — saber or sword — to tier 3, then draw out the alpha</i></span>
           </div>
-          <p class="axis-copy">
-            水分与饱食任一归零立即死亡。白天的日头会一路把体温推到中暑，夜里沙漠骤冷会让你失温 ——
-            两者都不致命，但会让你几乎动不了。采集与挥砍都要消耗劳力，站着不动才回得快。降温靠喝水、洗脸水，或就地取材（Q）。
+          <p class="axis-copy" data-i18n="intro.axes">
+            Thirst or hunger hitting zero kills you outright. The daytime sun drives your warmth up into heatstroke; the night cold drags it down into hypothermia — neither kills, but either leaves you barely able to move. Gathering and swinging both cost labour, and only standing still restores it quickly.
           </p>
           <p id="records-line" class="records-line hidden"></p>
-          <button id="start-button" class="primary-button" type="button">踏入沙海</button>
-          <div id="boot-progress" class="boot-progress hidden" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <!--
+            进度条不再等点击才出现：一进页面就开始跑。
+            按钮和进度条同时在场 —— 点击那一下仍然是必须的，AudioContext 和横屏锁
+            只能在用户手势里发起，但玩家不必先点一下才知道游戏在加载。
+          -->
+          <div id="boot-progress" class="boot-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
             <i><b id="boot-bar"></b></i>
-            <span id="boot-status">载入引擎…</span>
+            <span id="boot-status">Loading engine…</span>
           </div>
+          <button id="start-button" class="primary-button" type="button" data-i18n="intro.start">Step into the sand</button>
           <p class="controls-copy">
-            <span class="desktop-copy">键盘：WASD 移动 · E 捡柴/添柴/搬石/取汁/提水 · 空格攻击 · Q 调体温 · B/Tab 背包<br />鼠标：点击地面移动 · 吃喝在背包里点物品格（开背包会暂停）</span>
-            <span class="touch-copy">左侧摇杆移动 · 右下攻击/行动/体温/背包 · 吃喝在背包里点物品格</span>
+            <span class="desktop-copy" data-i18n-html="intro.controls.desktop">WASD to move · E to gather, feed, carry, draw · Space to attack · Q for warmth · B/Tab for pack<br />Click the ground to move · eat and drink from the pack (opening it pauses)</span>
+            <span class="touch-copy" data-i18n="intro.controls.touch">Left stick to move · attack / act / warmth / pack on the right · eat and drink from the pack</span>
           </p>
         </div>
       </div>
@@ -113,21 +122,21 @@
       <div id="inventory-overlay" class="overlay inventory-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="inventory-title">
         <div class="backpack-card">
           <header>
-            <div><span class="eyebrow">8格背包 · 游戏已暂停</span><h2 id="inventory-title">行囊</h2></div>
-            <button id="inventory-close" class="close-button" type="button" aria-label="关闭背包">关闭</button>
+            <div><span class="eyebrow" data-i18n="pack.eyebrow">8 slots · paused</span><h2 id="inventory-title" data-i18n="pack.title">Pack</h2></div>
+            <button id="inventory-close" class="close-button" type="button" data-i18n-attr="aria-label:pack.close.aria" data-i18n="pack.close">Close</button>
           </header>
           <div class="equipment-row">
-            <div><span>双手</span><strong id="hands-status">空闲</strong></div>
-            <div><span>衣物</span><strong id="coat-status">粗布衣</strong></div>
-            <div><span>武器</span><strong id="weapon-status">求生匕首</strong></div>
+            <div><span data-i18n="pack.slot.hands">Hands</span><strong id="hands-status">—</strong></div>
+            <div><span data-i18n="pack.slot.body">Body</span><strong id="coat-status">—</strong></div>
+            <div><span data-i18n="pack.slot.weapon">Weapon</span><strong id="weapon-status">—</strong></div>
           </div>
-          <div class="stat-row" aria-label="人物属性">
-            <span>生命 <b id="stat-health">100</b></span>
-            <span>劳力 <b id="stat-stamina">100</b></span>
-            <span>攻击 <b id="stat-attack">30</b></span>
-            <span>防御 <b id="stat-defense">2</b></span>
+          <div class="stat-row" data-i18n-attr="aria-label:pack.stats.aria">
+            <span><i data-i18n="pack.stat.health">Health</i> <b id="stat-health">100</b></span>
+            <span><i data-i18n="pack.stat.stamina">Labour</i> <b id="stat-stamina">100</b></span>
+            <span><i data-i18n="pack.stat.attack">Attack</i> <b id="stat-attack">30</b></span>
+            <span><i data-i18n="pack.stat.defense">Defence</i> <b id="stat-defense">2</b></span>
           </div>
-          <div id="inventory-grid" class="inventory-grid" aria-label="背包格子">
+          <div id="inventory-grid" class="inventory-grid" data-i18n-attr="aria-label:pack.grid.aria">
             <button class="inventory-slot" data-slot="0" type="button"></button>
             <button class="inventory-slot" data-slot="1" type="button"></button>
             <button class="inventory-slot" data-slot="2" type="button"></button>
@@ -142,37 +151,37 @@
             因为它有三种形态：阶 0 是两条线的分叉卡、中途是当前↓下阶的升级卡、
             满级是属性总览。写死按钮的话这三种都塞不进一行字。
           -->
-          <div id="weapon-upgrade-slot" class="upgrade-slot" aria-label="武器升级"></div>
-          <div id="armor-upgrade-slot" class="upgrade-slot" aria-label="护甲升级"></div>
-          <div class="craft-list" aria-label="制作配方">
-            <button id="build-stake-button" class="craft-button" type="button">搭树桩</button>
-            <button id="craft-cook-button" class="craft-button" type="button">烤肉 · 生肉1 · 需燃烧篝火</button>
-            <button id="craft-wash-button" class="craft-button" type="button">兑洗脸水 · 水1 · 降温25~50</button>
+          <div id="weapon-upgrade-slot" class="upgrade-slot" data-i18n-attr="aria-label:pack.weaponSlot.aria"></div>
+          <div id="armor-upgrade-slot" class="upgrade-slot" data-i18n-attr="aria-label:pack.armorSlot.aria"></div>
+          <div class="craft-list" data-i18n-attr="aria-label:pack.craft.aria">
+            <button id="build-stake-button" class="craft-button" type="button"></button>
+            <button id="craft-cook-button" class="craft-button" type="button"></button>
+            <button id="craft-wash-button" class="craft-button" type="button"></button>
           </div>
-          <p class="inventory-help">建造物放在你面前两米处 —— 先走到想建的位置再打开背包。树桩挡路，野狗会先拆它。火只在营地烧：取暖、烤肉、升级装备都要回到营地的篝火旁（10 米内都算）。配方材料满足后点击制作。生肉能直接吃但只顶饿，烤成熟肉才回体力 —— 体力每秒都在掉，这是唯一的大额补给。夜袭野狗什么都不掉 —— 肉和兽皮只能白天出门，从游荡野狗和长角羚身上取。仙人掌一刀出汁；水井在营地外，提水必出但会见底、回蓄很慢。洗脸水降温是直接喝水的四倍。</p>
+          <p class="inventory-help" data-i18n="pack.help"></p>
         </div>
       </div>
 
       <div id="game-over" class="overlay hidden">
         <div class="intro-card game-over-card">
-          <p class="eyebrow">沙海记住了你的足迹</p>
-          <h2>沙尘掩埋</h2>
+          <p class="eyebrow" data-i18n="over.eyebrow">The sands remember your tracks</p>
+          <h2 data-i18n="over.title">Buried by the sand</h2>
           <p id="result-copy"></p>
-          <button id="restart-button" class="primary-button" type="button">再守一夜</button>
+          <button id="restart-button" class="primary-button" type="button" data-i18n="over.restart">Hold one more night</button>
         </div>
       </div>
 
       <div id="victory" class="overlay hidden">
         <div class="intro-card victory-card">
-          <p class="eyebrow">头犬倒下了</p>
-          <h2>走出沙海</h2>
+          <p class="eyebrow" data-i18n="win.eyebrow">The alpha is down</p>
+          <h2 data-i18n="win.title">Out of the sands</h2>
           <p id="victory-copy"></p>
-          <button id="victory-restart-button" class="primary-button" type="button">再来一局</button>
+          <button id="victory-restart-button" class="primary-button" type="button" data-i18n="win.restart">Run it again</button>
         </div>
       </div>
 
       <div id="unsupported" class="overlay hidden">
-        <div class="intro-card"><h2>无法启动 3D 画面</h2><p>请启用 WebGL，或尝试更新后的浏览器。</p></div>
+        <div class="intro-card"><h2 data-i18n="unsupported.title">Cannot start 3D</h2><p data-i18n="unsupported.body">Enable WebGL, or try a newer browser.</p></div>
       </div>
     </div>
     <script>
@@ -216,11 +225,6 @@
         button.addEventListener("click", function () {
           if (boot.requested) return;
           boot.requested = true;
-          // 已经加载完就别闪一下进度条，直接把场面交给主包。
-          if (boot.ratio < 1) {
-            button.classList.add("hidden");
-            panel.classList.remove("hidden");
-          }
           try {
             var Ctor = window.AudioContext || window.webkitAudioContext;
             if (Ctor) boot.audioContext = new Ctor();
@@ -231,8 +235,15 @@
             }
           } catch (error) { /* 锁不上也照样能玩 */ }
           if (boot.onRequest) boot.onRequest();
-          creep();
         });
+
+        // 一进页面就开始跑，不等点击。
+        //
+        // 原先是"点了才开始显示进度"：手机上玩家盯着一个静止的开场页十几秒，
+        // 完全看不出后台在下载 900KB，只会以为页面坏了。现在进度条一上来就在动，
+        // 按钮始终在场 —— 点击那一下仍然必须有（AudioContext 与横屏锁只能在
+        // 用户手势里发起），但它不再是"开始加载"的开关，只是"我准备好了"。
+        creep();
 
         /*
          * 主包还没到时没有任何真实进度可报（<script type="module"> 不给下载进度），

@@ -1,4 +1,5 @@
 import "./styles.css";
+import { applyStaticText, detectLocale, setLocale, t } from "./i18n";
 import { SynthAudio } from "./audio/SynthAudio";
 import { createWorld } from "./game/content/createWorld";
 import { InputController } from "./game/input/InputController";
@@ -54,7 +55,12 @@ if (boot) {
 }
 
 async function bootstrap(): Promise<void> {
-  setProgress(0.5, "生成沙海…");
+  // 语言要在任何 UI 构建之前定下来：HudController 的构造函数里就会取文案。
+  // 开场页是 index.html 里写死的英文，这一步按检测结果把它重填成玩家的语言。
+  setLocale(detectLocale());
+  applyStaticText();
+
+  setProgress(0.5, "Generating the sands…");
   await nextPaint();
 
   const world = createWorld();
@@ -82,14 +88,14 @@ async function bootstrap(): Promise<void> {
     (window as unknown as { game: unknown }).game = { simulation, world, hud };
   }
 
-  setProgress(0.58, "堆起地形…");
+  setProgress(0.58, "Raising the terrain…");
   await nextPaint();
 
   let renderer: GameRenderer;
   try {
     // 人物资源占进度条最后的 25% —— 四个 GLB 加起来 646 KB，比其余所有东西都大。
     renderer = new GameRenderer(renderRoot!, world, simulation, (loaded, total) => {
-      setProgress(0.75 + (loaded / total) * 0.25, `载入人物 ${loaded}/${total}…`);
+      setProgress(0.75 + (loaded / total) * 0.25, `Loading the survivor ${loaded}/${total}…`);
     });
   } catch (error) {
     console.error(error);
@@ -97,13 +103,13 @@ async function bootstrap(): Promise<void> {
     throw error;
   }
 
-  setProgress(0.7, "点亮光照…");
+  setProgress(0.7, "Lighting the scene…");
   await nextPaint();
   // 着色器是第一次 render 时才编译的，手机上这一下能卡好几百毫秒。
   // 先在进度条后面把它跑掉，进场那一刻就不会再顿一次。
   renderer.render(0);
 
-  setProgress(0.75, "载入人物…");
+  setProgress(0.75, "Loading the survivor…");
   await nextPaint();
   await renderer.whenPlayerAssetReady();
 
@@ -137,10 +143,9 @@ async function bootstrap(): Promise<void> {
     await audio.unlock().catch(() => { /* 同上 */ });
     const enabled = audio.toggle();
     const button = document.getElementById("sound-button");
-    if (button) {
-      button.textContent = enabled ? "声音 开" : "声音 关";
-      button.setAttribute("aria-pressed", String(enabled));
-    }
+    const state = document.getElementById("sound-state");
+    if (state) state.textContent = t(enabled ? "sound.on" : "sound.off");
+    button?.setAttribute("aria-pressed", String(enabled));
   });
 
   document.addEventListener("visibilitychange", () => {
@@ -148,7 +153,7 @@ async function bootstrap(): Promise<void> {
       hiddenAt = performance.now();
     } else {
       previousTime = performance.now();
-      if (started && hiddenAt > 0) hud.showToast("游戏已继续", 1.5);
+      if (started && hiddenAt > 0) hud.showToast(t("hud.resumed"), 1.5);
     }
   });
 
@@ -176,7 +181,9 @@ async function bootstrap(): Promise<void> {
   };
   requestAnimationFrame(frame);
 
-  setProgress(1, "准备好了");
+  setProgress(1, "Ready");
+  // 加载完就把进度条收掉，开场页回到只剩一个按钮的干净状态。
+  document.getElementById("boot-progress")?.classList.add("hidden");
   // 加载期间点过"踏入沙海"就直接进场，不让玩家为同一件事点第二次；
   // 还没点过就把按钮接上，这时点下去是秒进。
   if (startRequested) enterGame();
@@ -184,4 +191,4 @@ async function bootstrap(): Promise<void> {
   else document.getElementById("start-button")?.addEventListener("click", enterGame);
 }
 
-void bootstrap().catch((error) => console.error("开场初始化失败", error));
+void bootstrap().catch((error) => console.error("Bootstrap failed", error));

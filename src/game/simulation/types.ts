@@ -4,6 +4,20 @@ export interface Vec2 {
 }
 
 export type Phase = "day" | "night";
+
+/**
+ * 一条待渲染的文案：**键 + 参数**，不是成品字符串。
+ *
+ * 模拟层一律产出这个而不是中文/英文原文。两个理由：
+ *   1. 模拟层是无头可测的核心（跑分器全靠它），塞进翻译就等于让它依赖语言状态；
+ *   2. 已经推送出去的成品串没法重译 —— 玩家中途切语言，历史消息就是花的。
+ *
+ * 参数可以再套一层 LocalizedText（"获得铁矿 · {下一阶提示}"），由 t() 递归渲染。
+ */
+export interface LocalizedText {
+  key: string;
+  params?: Record<string, string | number | LocalizedText>;
+}
 /** 双手搬运物：地图大石，以及玩家搭好后可以重新布置的树桩。 */
 export type CarryKind = "stone" | "stake";
 /** 地面上散落的可拾取物仍然有两种；木头进背包，大石上手。 */
@@ -93,7 +107,7 @@ export interface CritterState extends Vec2 {
 }
 
 export interface CritterSpec {
-  label: string;
+  /** 名字不在这里 —— 走 i18n 的 `critter.<kind>.name`。 */
   maxHealth: number;
   fleeSpeed: number;
   grazeSpeed: number;
@@ -244,20 +258,18 @@ export interface PlacedStructure extends Vec2 {
 }
 
 export interface StructureSpec {
-  label: string;
+  /** 名字与说明走 i18n 的 `structure.<kind>.name` / `.blurb`。 */
   /** 配方；只吃木头 —— 木头因此成为真正的核心资源。 */
   cost: Array<[InventoryItemKind, number]>;
   stamina: number;
   maxHp: number;
   /** 占地半径，同时用于碰撞与"离得太近不让放"的判定。 */
   radius: number;
-  blurb: string;
 }
 
 export const STRUCTURE_SPECS: Record<StructureKind, StructureSpec> = {
   stake: {
-    label: "树桩", cost: [["wood", 1]], stamina: 12, maxHp: 220, radius: 0.9,
-    blurb: "挡路的木桩，野狗会先拆它",
+    cost: [["wood", 1]], stamina: 12, maxHp: 220, radius: 0.9,
   },
 };
 
@@ -382,13 +394,13 @@ export type GameEvent =
   | { type: "build"; kind: StructureKind }
   | { type: "structure-destroyed"; kind: StructureKind }
   | { type: "phase"; phase: Phase; day: number }
-  | { type: "message"; text: string }
+  | { type: "message"; key: string; params?: LocalizedText["params"] }
   | { type: "victory" }
   | { type: "game-over" };
 
 export interface InteractionHint {
   action: "pickup" | "drop" | "feed" | "cactus" | "mine" | "well" | "none";
-  text: string;
+  text: LocalizedText;
 }
 
 /**
@@ -401,36 +413,36 @@ export interface InteractionHint {
  */
 export const CRITTER_SPECS: Record<CritterKind, CritterSpec> = {
   beetle: {
-    label: "铠甲虫", maxHealth: 8, fleeSpeed: 2.6, grazeSpeed: 0.7, alertRadius: 3.5,
+    maxHealth: 8, fleeSpeed: 2.6, grazeSpeed: 0.7, alertRadius: 3.5,
     sprintSeconds: 99, sprintRecovery: 1, meat: 1, hide: 0, water: 0, population: 9, scale: 0.5,
   },
   sandeel: {
     // 钻沙脱离用「极短的冲刺 + 极快的速度」近似：一眨眼就没影，但只跑得动 1.4 秒。
-    label: "沙鳗", maxHealth: 6, fleeSpeed: 7.4, grazeSpeed: 0.5, alertRadius: 5,
+    maxHealth: 6, fleeSpeed: 7.4, grazeSpeed: 0.5, alertRadius: 5,
     sprintSeconds: 1.4, sprintRecovery: 3, meat: 1, hide: 0, water: 0, population: 8, scale: 0.55,
   },
   gerbil: {
-    label: "穴鼠", maxHealth: 12, fleeSpeed: 7.6, grazeSpeed: 1.1, alertRadius: 7,
+    maxHealth: 12, fleeSpeed: 7.6, grazeSpeed: 1.1, alertRadius: 7,
     sprintSeconds: 2.4, sprintRecovery: 3.5, meat: 1, hide: 0, water: 0, population: 7, scale: 0.6,
   },
   rat: {
-    label: "灰背鼠", maxHealth: 14, fleeSpeed: 7, grazeSpeed: 1.1, alertRadius: 6.5,
+    maxHealth: 14, fleeSpeed: 7, grazeSpeed: 1.1, alertRadius: 6.5,
     sprintSeconds: 2.6, sprintRecovery: 3.5, meat: 1, hide: 0, water: 0, population: 6, scale: 0.65,
   },
   lizard: {
-    label: "岩蜥", maxHealth: 16, fleeSpeed: 6.2, grazeSpeed: 0.9, alertRadius: 6,
+    maxHealth: 16, fleeSpeed: 6.2, grazeSpeed: 0.9, alertRadius: 6,
     sprintSeconds: 3, sprintRecovery: 3, meat: 1, hide: 0, water: 0, population: 7, scale: 0.7,
   },
   jerboa: {
-    label: "跳鼠", maxHealth: 10, fleeSpeed: 9.6, grazeSpeed: 1.3, alertRadius: 9,
+    maxHealth: 10, fleeSpeed: 9.6, grazeSpeed: 1.3, alertRadius: 9,
     sprintSeconds: 2, sprintRecovery: 4, meat: 2, hide: 0, water: 0, population: 6, scale: 0.7,
   },
   corvid: {
-    label: "拾骨鸦", maxHealth: 10, fleeSpeed: 5.2, grazeSpeed: 0.8, alertRadius: 8,
+    maxHealth: 10, fleeSpeed: 5.2, grazeSpeed: 0.8, alertRadius: 8,
     sprintSeconds: 2.6, sprintRecovery: 3, meat: 2, hide: 0, water: 0, population: 5, scale: 0.85,
   },
   oryx: {
-    label: "长角羚", maxHealth: 90, fleeSpeed: 10.5, grazeSpeed: 1.4, alertRadius: 11,
+    maxHealth: 90, fleeSpeed: 10.5, grazeSpeed: 1.4, alertRadius: 11,
     sprintSeconds: 4.5, sprintRecovery: 6, meat: 4, hide: 2, water: 2, population: 4, scale: 1.5,
   },
 };

@@ -15,12 +15,12 @@ import type {
   CactusPatch,
   CritterKind,
   CritterState,
-  CampKind,
   CampDefinition,
   CampState,
   DeathCause,
   EquipLine,
   GameEvent,
+  LocalizedText,
   GroundItem,
   InteractionHint,
   ArmorKind,
@@ -42,6 +42,14 @@ import type {
 } from "./types";
 import { CRITTER_SPECS, INVENTORY_CAPACITY, INVENTORY_STACK_LIMITS, STRUCTURE_SPECS } from "./types";
 
+/**
+ * 造一条待渲染文案。模拟层所有面向玩家的字符串都经这里出去 ——
+ * 它不认识任何一门语言，只负责说清"这是哪一条、带什么参数"。
+ */
+const loc = (key: string, params?: LocalizedText["params"]): LocalizedText => (
+  params ? { key, params } : { key }
+);
+
 const PLAYER_RADIUS = 0.72;
 const WOLF_RADIUS = 0.68;
 const FIRST_DAY_DURATION = 90;
@@ -54,18 +62,6 @@ const MAX_WOLVES = 120;
 const MOVE_STEP_FALLBACKS = [1, 0.5, 0.25];
 /** 挨打后多少秒内不能休息（原本是"附近有狼"，夜里几乎恒为真）。 */
 const REST_COMBAT_LOCK = 6;
-
-const ITEM_LABELS: Record<InventoryItemKind, string> = {
-  "cactus-juice": "仙人掌汁",
-  "raw-meat": "生肉",
-  "cooked-meat": "熟肉",
-  hide: "兽皮",
-  "iron-ore": "铁矿",
-  water: "水",
-  "wash-water": "洗脸水",
-  "wolf-fang": "犬牙",
-  wood: "枯木",
-};
 
 /**
  * 一阶装备。
@@ -81,10 +77,8 @@ export interface EquipTier {
   line: EquipLine;
   /** 0~3。只能沿同一条线逐阶推进，跨线必须从一阶重来。 */
   tier: number;
-  label: string;
   cost: Array<[InventoryItemKind, number]>;
   needsFire: boolean;
-  blurb: string;
   /** 装备后的攻击力绝对值。武器线必填。 */
   attack?: number;
   /** 装备后的防御力绝对值。护甲线必填。 */
@@ -108,21 +102,21 @@ export interface EquipTier {
  * 不需要写任何天数判定。
  */
 const WEAPON_TIERS: EquipTier[] = [
-  { id: "survival-knife", line: "none", tier: 0, label: "求生匕首", cost: [], needsFire: false, blurb: "", attack: 30 },
+  { id: "survival-knife", line: "none", tier: 0, cost: [], needsFire: false, attack: 30 },
 
-  { id: "saber-1", line: "saber", tier: 1, label: "铁片砍刀", needsFire: true, attack: 34,
-    cost: [["iron-ore", 3], ["hide", 1]], blurb: "扫 220° · 破甲 2 · 命中击退" },
-  { id: "saber-2", line: "saber", tier: 2, label: "锻铁阔刀", needsFire: true, attack: 42,
-    cost: [["iron-ore", 4], ["hide", 2], ["wood", 2]], blurb: "扫 250° · 破甲 5 · 重创 12%" },
-  { id: "saber-3", line: "saber", tier: 3, label: "熔渣重刀", needsFire: true, attack: 50,
-    cost: [["iron-ore", 5], ["hide", 2], ["wolf-fang", 3]], blurb: "扫 280° · 破甲 8 · 重创 15%" },
+  { id: "saber-1", line: "saber", tier: 1, needsFire: true, attack: 34,
+    cost: [["iron-ore", 3], ["hide", 1]] },
+  { id: "saber-2", line: "saber", tier: 2, needsFire: true, attack: 42,
+    cost: [["iron-ore", 4], ["hide", 2], ["wood", 2]] },
+  { id: "saber-3", line: "saber", tier: 3, needsFire: true, attack: 50,
+    cost: [["iron-ore", 5], ["hide", 2], ["wolf-fang", 3]] },
 
-  { id: "sword-1", line: "sword", tier: 1, label: "骨柄短剑", needsFire: false, attack: 38,
-    cost: [["hide", 1], ["wood", 2]], blurb: "单体重击 · 连击 +10%×3 · 随身可造" },
-  { id: "sword-2", line: "sword", tier: 2, label: "兽牙细剑", needsFire: true, attack: 45,
-    cost: [["hide", 3], ["wood", 3]], blurb: "单体重击 · 连击 +12%×4 · 重创 30%" },
-  { id: "sword-3", line: "sword", tier: 3, label: "裂齿长剑", needsFire: true, attack: 55,
-    cost: [["hide", 4], ["wood", 3], ["wolf-fang", 3]], blurb: "单体重击 · 连击 +15%×4 · 重创 40%" },
+  { id: "sword-1", line: "sword", tier: 1, needsFire: false, attack: 38,
+    cost: [["hide", 1], ["wood", 2]] },
+  { id: "sword-2", line: "sword", tier: 2, needsFire: true, attack: 45,
+    cost: [["hide", 3], ["wood", 3]] },
+  { id: "sword-3", line: "sword", tier: 3, needsFire: true, attack: 55,
+    cost: [["hide", 4], ["wood", 3], ["wolf-fang", 3]] },
 ];
 
 /**
@@ -134,21 +128,21 @@ const WEAPON_TIERS: EquipTier[] = [
  * 所以**重甲是守夜的甲，皮甲是打头狼的甲**，这不是平衡说辞，是公式的形状。
  */
 const ARMOR_TIERS: EquipTier[] = [
-  { id: "none", line: "none", tier: 0, label: "粗布衣", cost: [], needsFire: false, blurb: "", defense: 2 },
+  { id: "none", line: "none", tier: 0, cost: [], needsFire: false, defense: 2 },
 
-  { id: "scale-1", line: "scale", tier: 1, label: "铁鳞胸甲", needsFire: true, defense: 8,
-    cost: [["iron-ore", 2], ["hide", 2]], blurb: "防御 8 · 反伤 12%" },
-  { id: "scale-2", line: "scale", tier: 2, label: "镶铁重甲", needsFire: true, defense: 13,
-    cost: [["iron-ore", 3], ["hide", 3]], blurb: "防御 13 · 反伤 22% · 移速 −7%" },
-  { id: "scale-3", line: "scale", tier: 3, label: "熔渣板甲", needsFire: true, defense: 18,
-    cost: [["iron-ore", 4], ["hide", 3], ["wolf-fang", 2]], blurb: "防御 18 · 反伤 35% · 移速 −12% · 劳力回复 −15%" },
+  { id: "scale-1", line: "scale", tier: 1, needsFire: true, defense: 8,
+    cost: [["iron-ore", 2], ["hide", 2]] },
+  { id: "scale-2", line: "scale", tier: 2, needsFire: true, defense: 13,
+    cost: [["iron-ore", 3], ["hide", 3]] },
+  { id: "scale-3", line: "scale", tier: 3, needsFire: true, defense: 18,
+    cost: [["iron-ore", 4], ["hide", 3], ["wolf-fang", 2]] },
 
-  { id: "hide-1", line: "hide", tier: 1, label: "游猎皮衣", needsFire: false, defense: 5,
-    cost: [["hide", 4]], blurb: "防御 5 · 闪避 12% · 劳力回复 +12% · 随身可造" },
-  { id: "hide-2", line: "hide", tier: 2, label: "风行皮甲", needsFire: true, defense: 6,
-    cost: [["hide", 4], ["wood", 2]], blurb: "防御 6 · 闪避 24% · 移速 +5% · 劳力回复 +22%" },
-  { id: "hide-3", line: "hide", tier: 3, label: "犬影斗篷", needsFire: true, defense: 7,
-    cost: [["hide", 4], ["wood", 3], ["wolf-fang", 3]], blurb: "防御 7 · 闪避 38% · 移速 +9% · 劳力回复 +35%" },
+  { id: "hide-1", line: "hide", tier: 1, needsFire: false, defense: 5,
+    cost: [["hide", 4]] },
+  { id: "hide-2", line: "hide", tier: 2, needsFire: true, defense: 6,
+    cost: [["hide", 4], ["wood", 2]] },
+  { id: "hide-3", line: "hide", tier: 3, needsFire: true, defense: 7,
+    cost: [["hide", 4], ["wood", 3], ["wolf-fang", 3]] },
 ];
 
 /**
@@ -409,12 +403,6 @@ const WATER_WARMTH_COST = 14;
 /** 累计击杀达标后头狼出场。（原图狼王需要 250 杀，按我们 3~4 夜的体量缩到 40） */
 const ALPHA_KILL_REQUIREMENT = 40;
 
-const CAMP_LABELS: Record<CampKind, string> = {
-  "windy-ridge": "风蚀台地",
-  "deep-cave": "岩壁洞窟",
-  "abandoned-camp": "废弃营地",
-};
-
 export class GameSimulation {
   readonly world: WorldDefinition;
   readonly camps: CampState[];
@@ -527,7 +515,7 @@ export class GameSimulation {
 
   start(): void {
     this.running = true;
-    this.events.push({ type: "message", text: "首次移动后开始计时 · 天黑前添柴并封住入口" });
+    this.events.push({ type: "message", key: "msg.1" });
   }
 
   update(deltaSeconds: number, movement: Vec2): void {
@@ -648,10 +636,10 @@ export class GameSimulation {
     const item = this.findNearestItem(2.5);
     if (item) {
       if (item.kind === "wood") {
-        if (!this.spendStamina(STAMINA_COST_WOOD, "捡枯木")) return;
+        if (!this.spendStamina(STAMINA_COST_WOOD, "labour.wood")) return;
         if (!this.addInventory("wood", 1)) {
           this.player.stamina = Math.min(this.player.maxStamina, this.player.stamina + STAMINA_COST_WOOD);
-          this.events.push({ type: "message", text: "背包已满 · 放不下枯木" });
+          this.events.push({ type: "message", key: "msg.2" });
           return;
         }
       } else {
@@ -679,14 +667,14 @@ export class GameSimulation {
 
     const ironNode = this.findNearestIron(2.8);
     if (ironNode) {
-      if (!this.spendStamina(STAMINA_COST_MINE, "挖矿")) return;
+      if (!this.spendStamina(STAMINA_COST_MINE, "labour.mine")) return;
       if (!this.addInventory("iron-ore", 1)) {
-        this.events.push({ type: "message", text: "背包已满" });
+        this.events.push({ type: "message", key: "msg.3" });
         return;
       }
       ironNode.ore -= 1;
       this.events.push({ type: "pickup", kind: "iron-ore" });
-      this.events.push({ type: "message", text: `获得铁矿 · ${this.describeNextUpgrade("weapon")}` });
+      this.events.push({ type: "message", key: "msg.4", params: { v0: this.describeNextUpgrade("weapon") } });
       return;
     }
 
@@ -734,10 +722,10 @@ export class GameSimulation {
    * 扣劳力；不足时给出提示并返回 false，调用方应中止该次采集。
    * 劳力是本作对"无限点击采集"的唯一约束，移植自原图砍木头 150 魔法的设计。
    */
-  private spendStamina(cost: number, label: string): boolean {
+  private spendStamina(cost: number, labelKey: string): boolean {
     if (this.player.stamina < cost) {
       this.events.push({ type: "exhausted" });
-      this.events.push({ type: "message", text: `劳力不足 · ${label}需要 ${cost} 点，站着不动可以恢复` });
+      this.events.push({ type: "message", key: "msg.5", params: { v0: loc(labelKey), v1: cost } });
       return false;
     }
     this.player.stamina -= cost;
@@ -746,9 +734,9 @@ export class GameSimulation {
 
   /** 割仙人掌取汁：一刀即得，代价是劳力和"你得先找到它"。 */
   private harvestCactus(patch: CactusPatch): void {
-    if (!this.spendStamina(STAMINA_COST_CACTUS, "割仙人掌")) return;
+    if (!this.spendStamina(STAMINA_COST_CACTUS, "labour.cactus")) return;
     if (!this.addInventory("cactus-juice", 1)) {
-      this.events.push({ type: "message", text: "背包已满" });
+      this.events.push({ type: "message", key: "msg.6" });
       return;
     }
     patch.juice -= 1;
@@ -760,10 +748,10 @@ export class GameSimulation {
   private beginWaterDraw(well: WellState): void {
     if (this.player.gatherTimer > 0) return;
     if (this.getInventoryCount("water") >= INVENTORY_STACK_LIMITS.water * 2) {
-      this.events.push({ type: "message", text: "水已经带够了" });
+      this.events.push({ type: "message", key: "msg.7" });
       return;
     }
-    if (!this.spendStamina(STAMINA_COST_DRAW, "提水")) return;
+    if (!this.spendStamina(STAMINA_COST_DRAW, "labour.draw")) return;
     this.player.gatherTimer = WELL_DRAW_SECONDS;
     this.drawingWellId = well.id;
     this.events.push({ type: "draw-water" });
@@ -781,11 +769,11 @@ export class GameSimulation {
     const well = this.wells.find((entry) => entry.id === this.drawingWellId);
     this.drawingWellId = -1;
     if (!well || well.charges <= 0) {
-      this.events.push({ type: "message", text: "这口井已经见底了" });
+      this.events.push({ type: "message", key: "msg.8" });
       return;
     }
     if (!this.addInventory("water", 1)) {
-      this.events.push({ type: "message", text: "背包已满 · 水又倒回井里了" });
+      this.events.push({ type: "message", key: "msg.9" });
       return;
     }
     well.charges -= 1;
@@ -877,7 +865,7 @@ export class GameSimulation {
         }
       }
     }
-    if (!hit && this.objectiveStage >= 3) this.events.push({ type: "message", text: "挥空会暴露位置" });
+    if (!hit && this.objectiveStage >= 3) this.events.push({ type: "message", key: "msg.10" });
   }
 
   /**
@@ -935,7 +923,7 @@ export class GameSimulation {
   /** 狼和猎物的 id 是两个独立的数字空间，连击要认人就得先把它们分开。 */
   private targetKey(target: Vec2): string | null {
     const wolf = this.wolves.find((candidate) => candidate === target);
-    if (wolf) return `w${wolf.id}`;
+    if (wolf) return `w${wolf.id}`;;
     const critter = this.critters.find((candidate) => candidate === target);
     return critter ? `c${critter.id}` : null;
   }
@@ -1007,7 +995,7 @@ export class GameSimulation {
     }
     if (stack.kind === "water") {
       if (this.player.water >= 99) {
-        this.events.push({ type: "message", text: "水分已满" });
+        this.events.push({ type: "message", key: "msg.11" });
         return;
       }
       this.removeFromSlot(index, 1);
@@ -1016,7 +1004,7 @@ export class GameSimulation {
       this.updateCondition();
       this.events.push({ type: "drink" });
       if (this.phase === "night" && this.player.warmth < 32) {
-        this.events.push({ type: "message", text: "夜里喝水会更冷 · 靠近篝火" });
+        this.events.push({ type: "message", key: "msg.12" });
       }
       return;
     }
@@ -1032,25 +1020,35 @@ export class GameSimulation {
       this.events.push({ type: "eat", kind: "cooked-meat" });
       // 火就在旁边却生吞 —— 这是提示烤肉最有说服力的一刻：机会正在被浪费。
       if (this.findNearestLitFire(FIRE_WARMTH_RADIUS)) {
-        this.events.push({ type: "message", text: `旁边就有火 · 烤了再吃能多回 ${COOKED_HEALTH} 点体力` });
+        this.events.push({ type: "message", key: "msg.13", params: { v0: COOKED_HEALTH } });
       } else if (!this.rawMeatHintSent) {
         this.rawMeatHintSent = true;
-        this.events.push({ type: "message", text: "生肉只顶饿不回体力 · 攒到篝火旁烤熟再吃" });
+        this.events.push({ type: "message", key: "msg.14" });
       }
       return;
     }
     // 材料格的提示按**当前线**动态生成。写死"3块铁矿可制作粗铁矛"的话，
     // 走剑线的玩家点开背包会被劝去造一件他这条线上根本没有的东西。
-    this.events.push({ type: "message", text: this.describeNextUpgrade(stack.kind === "iron-ore" ? "weapon" : "armor") });
+    this.events.push({ ...this.describeNextUpgrade(stack.kind === "iron-ore" ? "weapon" : "armor"), type: "message" });
+  }
+
+  /**
+   * 把配方清单摊成一条可渲染的文案。
+   * 参数占位只吃字符串/数字/单条 LocalizedText，所以数组必须在这里先合成一条。
+   */
+  private describeCost(cost: Array<[InventoryItemKind, number]>): LocalizedText {
+    return cost
+      .map(([kind, count]) => loc("sim.costPart", { name: loc(`item.${kind}.name`), count }))
+      .reduce((left, right) => loc("sim.costJoin", { left, right }));
   }
 
   /** 某个槽位接下来能做什么，一句话。分叉未定时列出两条线让玩家挑。 */
-  private describeNextUpgrade(slot: "weapon" | "armor"): string {
+  private describeNextUpgrade(slot: "weapon" | "armor"): LocalizedText {
     const options = this.getUpgradeOptions(slot);
-    const noun = slot === "weapon" ? "武器" : "护甲";
-    if (options.length === 0) return `${noun}已满级 · ${this.getEquipped(slot).label}`;
-    if (options.length === 1) return `下一阶：${options[0].label} · ${options[0].blurb}`;
-    return `开背包选一条${noun}线 · ${options.map((tier) => tier.label).join(" 或 ")}`;
+    const noun = loc(slot === "weapon" ? "slot.weapon" : "slot.armor");
+    if (options.length === 0) return loc("sim.1", { v0: noun, v1: loc(`equip.${this.getEquipped(slot).id}.name`) });
+    if (options.length === 1) return loc("sim.2", { v0: loc(`equip.${options[0].id}.name`), v1: loc(`equip.${options[0].id}.blurb`) });
+    return loc("sim.3", { v0: noun, v1: loc(options.length === 2 ? "sim.lineChoice" : "sim.lineChoiceOne", { a: loc(`equip.${options[0].id}.name`), b: loc(`equip.${options[options.length - 1].id}.name`) }) });
   }
 
   /** 闭区间随机整数，对应原图的 GetRandomInt。 */
@@ -1138,7 +1136,7 @@ export class GameSimulation {
     if (!next) return false;
     const allowed = [...this.getUpgradeOptions(slot), ...this.getSwitchOptions(slot)];
     if (!allowed.some((tier) => tier.id === id)) {
-      this.events.push({ type: "message", text: `${next.label}需要先装备同一条线的上一阶` });
+      this.events.push({ type: "message", key: "msg.15", params: { v0: loc(`equip.${next.id}.name`) } });
       return false;
     }
     return this.craftUpgrade(next, (tier) => {
@@ -1161,19 +1159,19 @@ export class GameSimulation {
     // 判定半径与取暖、烤肉统一走 FIRE_WARMTH_RADIUS：原先这里单独写死 5.2，
     // 于是"站在营地里就算烤着火"对升级装备这一条不成立。
     if (next.needsFire && !this.findNearestLitFire(FIRE_WARMTH_RADIUS)) {
-      this.events.push({ type: "message", text: `${next.label}必须在燃烧的篝火旁制作` });
+      this.events.push({ type: "message", key: "msg.16", params: { v0: loc(`equip.${next.id}.name`) } });
       return false;
     }
     const missing = next.cost.filter(([kind, count]) => this.getInventoryCount(kind) < count);
     if (missing.length > 0) {
-      const need = next.cost.map(([kind, count]) => `${ITEM_LABELS[kind]}×${count}`).join(" + ");
-      this.events.push({ type: "message", text: `${next.label}需要 ${need}` });
+      const need = this.describeCost(next.cost);
+      this.events.push({ type: "message", key: "msg.17", params: { v0: loc(`equip.${next.id}.name`), v1: need } });
       return false;
     }
     this.noteInPlaceAction();
     for (const [kind, count] of next.cost) this.removeInventory(kind, count);
     apply(next);
-    this.events.push({ type: "message", text: `${next.label}完成 · ${next.blurb}` });
+    this.events.push({ type: "message", key: "msg.18", params: { v0: loc(`equip.${next.id}.name`), v1: loc(`equip.${next.id}.blurb`) } });
     return true;
   }
 
@@ -1181,11 +1179,11 @@ export class GameSimulation {
   craftCookedMeat(): boolean {
     if (!this.running) return false;
     if (this.getInventoryCount("raw-meat") < 1) {
-      this.events.push({ type: "message", text: "没有生肉可烤" });
+      this.events.push({ type: "message", key: "msg.19" });
       return false;
     }
     if (!this.findNearestLitFire(FIRE_WARMTH_RADIUS)) {
-      this.events.push({ type: "message", text: "要在燃烧的篝火旁才能烤肉" });
+      this.events.push({ type: "message", key: "msg.20" });
       return false;
     }
     this.noteInPlaceAction();
@@ -1193,11 +1191,11 @@ export class GameSimulation {
     if (!this.addInventory("cooked-meat", 1)) {
       // 生肉必须放回去 —— 刚腾出来的位置一定装得下，否则这一步等于凭空烧掉一块肉。
       this.addInventory("raw-meat", 1);
-      this.events.push({ type: "message", text: "背包已满 · 烤好的肉没处放" });
+      this.events.push({ type: "message", key: "msg.21" });
       return false;
     }
     this.events.push({ type: "cook" });
-    this.events.push({ type: "message", text: "烤好了 · 熟肉是唯一能大量回体力的食物" });
+    this.events.push({ type: "message", key: "msg.22" });
     return true;
   }
 
@@ -1211,8 +1209,8 @@ export class GameSimulation {
     const spec = STRUCTURE_SPECS[kind];
     const missing = spec.cost.filter(([item, count]) => this.getInventoryCount(item) < count);
     if (missing.length > 0) {
-      const need = spec.cost.map(([item, count]) => `${ITEM_LABELS[item]}×${count}`).join(" + ");
-      this.events.push({ type: "message", text: `${spec.label}需要 ${need}` });
+      const need = this.describeCost(spec.cost);
+      this.events.push({ type: "message", key: "msg.23", params: { v0: loc(`structure.${kind}.name`), v1: need } });
       return false;
     }
     const spot = {
@@ -1221,10 +1219,10 @@ export class GameSimulation {
     };
     const reason = this.getBuildBlocker(kind, spot);
     if (reason) {
-      this.events.push({ type: "message", text: `这里放不下${spec.label} · ${reason}` });
+      this.events.push({ type: "message", key: "msg.24", params: { v0: loc(`structure.${kind}.name`), v1: reason } });
       return false;
     }
-    if (!this.spendStamina(spec.stamina, `搭${spec.label}`)) return false;
+    if (!this.spendStamina(spec.stamina, `structure.${kind}.build`)) return false;
 
     this.noteInPlaceAction();
     for (const [item, count] of spec.cost) this.removeInventory(item, count);
@@ -1239,21 +1237,21 @@ export class GameSimulation {
       active: true,
     });
     this.events.push({ type: "build", kind });
-    this.events.push({ type: "message", text: `${spec.label}搭好了 · ${spec.blurb}` });
+    this.events.push({ type: "message", key: "msg.25", params: { v0: loc(`structure.${kind}.name`), v1: loc(`structure.${kind}.blurb`) } });
     return true;
   }
 
   /** 放不下的原因；能放返回 null。 */
-  private getBuildBlocker(kind: StructureKind, spot: Vec2): string | null {
-    if (!isTerrainWalkable(this.world, spot)) return "地面太陡";
+  private getBuildBlocker(kind: StructureKind, spot: Vec2): LocalizedText | null {
+    if (!isTerrainWalkable(this.world, spot)) return loc("sim.4");
     const spec = STRUCTURE_SPECS[kind];
     for (const other of this.structures) {
       if (!other.active) continue;
       const gap = spec.radius + STRUCTURE_SPECS[other.kind].radius + 0.4;
-      if (distanceSquared(spot, other) < gap * gap) return `离已有的${STRUCTURE_SPECS[other.kind].label}太近`;
+      if (distanceSquared(spot, other) < gap * gap) return loc("sim.5", { v0: loc(`structure.${other.kind}.name`) });
     }
     for (const wall of this.world.walls) {
-      if (distanceSquared(spot, wall) < (wall.radius + spec.radius) ** 2) return "这里有东西挡着";
+      if (distanceSquared(spot, wall) < (wall.radius + spec.radius) ** 2) return loc("sim.6");
     }
     return null;
   }
@@ -1262,11 +1260,11 @@ export class GameSimulation {
   craftWashWater(): boolean {
     if (!this.running) return false;
     if (this.getInventoryCount("water") < 1) {
-      this.events.push({ type: "message", text: "兑洗脸水需要 1 份水" });
+      this.events.push({ type: "message", key: "msg.26" });
       return false;
     }
     if (this.getInventoryCount("wash-water") >= INVENTORY_STACK_LIMITS["wash-water"] * 2) {
-      this.events.push({ type: "message", text: "洗脸水带够了" });
+      this.events.push({ type: "message", key: "msg.27" });
       return false;
     }
     this.noteInPlaceAction();
@@ -1274,11 +1272,11 @@ export class GameSimulation {
     if (!this.addInventory("wash-water", 1)) {
       // 同烤肉：兑不出来就把那份水还回去，绝不能凭空蒸发。
       this.addInventory("water", 1);
-      this.events.push({ type: "message", text: "背包已满 · 洗脸水没处放" });
+      this.events.push({ type: "message", key: "msg.28" });
       return false;
     }
     this.events.push({ type: "craft-wash-water" });
-    this.events.push({ type: "message", text: "兑成洗脸水 · 降温 25~50，是直接喝的四倍" });
+    this.events.push({ type: "message", key: "msg.29" });
     return true;
   }
 
@@ -1287,38 +1285,38 @@ export class GameSimulation {
   }
 
   getInteractionHint(): InteractionHint {
-    if (this.player.gatherTimer > 0) return { action: "well", text: "正在提水…" };
+    if (this.player.gatherTimer > 0) return { action: "well", text: loc("hint.drawing") };
     // 与 requestInteraction 保持一致：水分告急时，仙人掌优先、其次找井。
     if (this.player.water < WATER_URGENT && !this.player.carrying) {
-      if (this.findNearestCactus(2.7)) return { action: "cactus", text: `水分告急 · 割仙人掌 · 劳力 ${STAMINA_COST_CACTUS}` };
+      if (this.findNearestCactus(2.7)) return { action: "cactus", text: loc("hint.urgentCactus", { cost: STAMINA_COST_CACTUS }) };
       const urgentWell = this.findNearestWell(WELL_REACH);
-      if (urgentWell) return { action: "well", text: `水分告急 · 提水 · 劳力 ${STAMINA_COST_DRAW}` };
+      if (urgentWell) return { action: "well", text: loc("hint.urgentWell", { cost: STAMINA_COST_DRAW }) };
     }
     if (this.player.carrying) {
       return this.player.carrying === "stake"
-        ? { action: "drop", text: "放下树桩" }
-        : { action: "drop", text: "放下大石 · 一块即可封住窄口" };
+        ? { action: "drop", text: loc("hint.dropStake") }
+        : { action: "drop", text: loc("hint.dropStone") };
     }
     // 与 requestInteraction 同一套优先级：火塘只在比脚边的东西更近时才占住 E。
     if (this.getInventoryCount("wood") > 0) {
       const hearth = this.findNearestHearth(FIRE_WARMTH_RADIUS);
       if (hearth && !this.hasNearerTarget(hearth.distance)) {
-        return { action: "feed", text: `添一根枯木 · 火焰延长 95 秒（余 ${this.getInventoryCount("wood")}）` };
+        return { action: "feed", text: loc("hint.feed", { left: this.getInventoryCount("wood") }) };
       }
     }
     const item = this.findNearestItem(2.5);
     if (item) {
       return item.kind === "wood"
-        ? { action: "pickup", text: `拾起枯木入包 · 劳力 ${STAMINA_COST_WOOD}` }
-        : { action: "pickup", text: "双手搬起大石" };
+        ? { action: "pickup", text: loc("hint.takeWood", { cost: STAMINA_COST_WOOD }) }
+        : { action: "pickup", text: loc("hint.liftStone") };
     }
     const structure = this.findNearestStructure(2.7);
-    if (structure) return { action: "pickup", text: "双手搬起树桩" };
-    if (this.findNearestCactus(2.7)) return { action: "cactus", text: `割仙人掌取汁 · 劳力 ${STAMINA_COST_CACTUS}` };
-    if (this.findNearestIron(2.8)) return { action: "mine", text: `敲取铁矿 · 劳力 ${STAMINA_COST_MINE}` };
+    if (structure) return { action: "pickup", text: loc("hint.liftStake") };
+    if (this.findNearestCactus(2.7)) return { action: "cactus", text: loc("hint.cactus", { cost: STAMINA_COST_CACTUS }) };
+    if (this.findNearestIron(2.8)) return { action: "mine", text: loc("hint.mine", { cost: STAMINA_COST_MINE }) };
     const well = this.findNearestWell(WELL_REACH);
-    if (well) return { action: "well", text: `从井里提水 · 劳力 ${STAMINA_COST_DRAW} · 井中余 ${well.charges}` };
-    return { action: "none", text: "" };
+    if (well) return { action: "well", text: loc("hint.well", { cost: STAMINA_COST_DRAW, left: well.charges }) };
+    return { action: "none", text: loc("hint.none") };
   }
 
   drainEvents(): GameEvent[] {
@@ -1389,9 +1387,9 @@ export class GameSimulation {
     return closest;
   }
 
-  getCurrentLocationLabel(): string {
+  getCurrentLocationLabel(): LocalizedText {
     const camp = this.findNearestCamp(14);
-    return camp ? CAMP_LABELS[camp.kind] : "无名沙海";
+    return loc(camp ? `camp.${camp.kind}` : "camp.unnamed");
   }
 
   // getNearestThreat() 已删除：它服务的是那块常驻在屏幕中央的"最近敌人"面板。
@@ -1417,57 +1415,57 @@ export class GameSimulation {
     return { stacks: this.comboStacks, max: WEAPON_STATS[this.player.weapon].comboMax };
   }
 
-  getObjective(): string {
-    if (!this.clockStarted) return "移动或拿起枯木，开始第一天";
-    if (this.player.gatherTimer > 0) return "取水中 · 别移动";
+  getObjective(): LocalizedText {
+    if (!this.clockStarted) return loc("sim.7");
+    if (this.player.gatherTimer > 0) return loc("sim.8");
 
     // 致命轴优先：水分和饥饿归零是立即死亡，必须压过其它所有提示。
-    if (this.player.water < 18) return "水分见底 · 立刻找水，归零即死";
-    if (this.player.hunger < 18) return "饥饿见底 · 立刻进食，归零即死";
+    if (this.player.water < 18) return loc("sim.9");
+    if (this.player.hunger < 18) return loc("sim.10");
     // 其次是瘫痪状态。
-    if (this.player.condition === "hypothermia") return "失温 · 移动几乎停滞，爬向篝火";
-    if (this.player.condition === "heatstroke") return "中暑 · 离开火边，喝水降温";
+    if (this.player.condition === "hypothermia") return loc("sim.11");
+    if (this.player.condition === "heatstroke") return loc("sim.12");
 
-    if (this.player.resting) return "休息中 · 生命与劳力都在回复";
+    if (this.player.resting) return loc("sim.13");
     // 枯木现在进背包，所以指引从"往哪搬"变成"够不够、去哪烧"。
     // 同样要让过 requestInteraction 的优先级：脚边有东西可捡时 E 不会去添柴，
     // 这里就不能喊"按互动键添柴"。
     if (this.getInventoryCount("wood") > 0) {
       const hearth = this.findNearestHearth(FIRE_WARMTH_RADIUS);
-      if (hearth && !this.hasNearerTarget(hearth.distance)) return "就在火边 · 按互动键添柴";
+      if (hearth && !this.hasNearerTarget(hearth.distance)) return loc("sim.14");
     }
     // 头狼死了但天还没亮 —— 这是全局最紧张的一段，目标行必须只说这一件事。
-    if (this.alphaSlain) return `头犬已死 · 撑过剩下的 ${Math.max(0, Math.ceil(this.phaseTime))} 秒就赢了`;
+    if (this.alphaSlain) return loc("sim.15", { v0: Math.max(0, Math.ceil(this.phaseTime)) });
     const alpha = this.getAlpha();
-    if (alpha) return `头犬 ${Math.max(0, Math.ceil(alpha.health))}/${alpha.maxHealth} · 杀死它并活到天亮`;
+    if (alpha) return loc("sim.16", { v0: Math.max(0, Math.ceil(alpha.health)), v1: alpha.maxHealth });
 
     if (this.phase === "night") {
-      if (this.player.warmth < 30) return "体温偏低 · 回篝火，或者靠不停跑动扛住";
+      if (this.player.warmth < 30) return loc("sim.17");
       const lit = this.getNearestLitCamp();
-      if (!lit) return "篝火熄灭 · 沙海上捡一根枯木，搬到营地火堆上点燃";
-      if (lit.fuel < 25) return `火只剩 ${Math.round(lit.fuel)} 秒 · 再捡一根枯木搬到火边`;
-      if (this.day === 1 && this.phaseTime > 60) return "守住火光 · 夜袭野狗只掉肉，不掉皮";
+      if (!lit) return loc("sim.18");
+      if (lit.fuel < 25) return loc("sim.19", { v0: Math.round(lit.fuel) });
+      if (this.day === 1 && this.phaseTime > 60) return loc("sim.20");
       // 击杀数攒满但天数没到时，目标行得说清在等什么 —— 否则玩家会以为卡住了。
       if (this.player.kills >= ALPHA_KILL_REQUIREMENT && this.day < ALPHA_MIN_DAY) {
-        return `猎杀已够 · 头犬要到第 ${ALPHA_MIN_DAY} 夜才现身，趁这几天把装备升上去`;
+        return loc("sim.21", { v0: ALPHA_MIN_DAY });
       }
-      return `守住火光 · 累计猎杀 ${this.player.kills}/${ALPHA_KILL_REQUIREMENT} 引出头犬`;
+      return loc("sim.22", { v0: this.player.kills, v1: ALPHA_KILL_REQUIREMENT });
     }
 
-    if (this.phase === "day" && this.day === 1 && this.phaseTime <= 14) return "天快黑了 · 用入口大石封住缺口";
-    if (this.player.warmth > 78) return "劳作让体温快爆了 · 喝水或停下来歇会儿";
+    if (this.phase === "day" && this.day === 1 && this.phaseTime <= 14) return loc("sim.23");
+    if (this.player.warmth > 78) return loc("sim.24");
     const retreatingWolves = this.wolves.filter((wolf) => wolf.mode === "retreating").length;
-    if (retreatingWolves > 0) return `天亮了 · ${retreatingWolves}只野狗正在撤离`;
-    if (this.objectiveStage === 0) return `捡起身边的枯木 · 劳力 ${STAMINA_COST_WOOD}/根`;
-    if (this.objectiveStage === 1) return "走到篝火旁，按互动键添柴";
-    if (this.objectiveStage === 2) return "找到入口旁的大石并搬到缺口中央";
-    if (this.getInventoryCount("water") === 0 && this.getInventoryCount("cactus-juice") === 0) return "先囤水 · 割仙人掌，或走一趟水井";
-    if (this.getEquipped("armor").line === "none" && this.getInventoryCount("hide") > 0) return "收集4张兽皮制作游猎皮衣 · 随身可造";
+    if (retreatingWolves > 0) return loc("sim.25", { v0: retreatingWolves });
+    if (this.objectiveStage === 0) return loc("sim.26", { v0: STAMINA_COST_WOOD });
+    if (this.objectiveStage === 1) return loc("sim.27");
+    if (this.objectiveStage === 2) return loc("sim.28");
+    if (this.getInventoryCount("water") === 0 && this.getInventoryCount("cactus-juice") === 0) return loc("sim.29");
+    if (this.getEquipped("armor").line === "none" && this.getInventoryCount("hide") > 0) return loc("sim.30");
     const wildWolves = this.wolves.filter((wolf) => wolf.role === "wild" && wolf.mode !== "dead").length;
-    if (this.getEquipped("armor").line === "none" && wildWolves > 0) return `沙海上有 ${wildWolves} 只野狗 · 只有它们掉兽皮`;
+    if (this.getEquipped("armor").line === "none" && wildWolves > 0) return loc("sim.31", { v0: wildWolves });
     // 三阶卡在狼牙上，而狼牙只有白天的大狼掉 —— 这条线索不给的话玩家找不到。
     if (this.getEquipped("weapon").tier === 2 && this.getInventoryCount("wolf-fang") < 3) {
-      return `三阶要 3 颗犬牙 · 只有白天的壮犬掉（现有 ${this.getInventoryCount("wolf-fang")} 颗）`;
+      return loc("sim.32", { v0: this.getInventoryCount("wolf-fang") });
     }
     // 体力是恒定流失的轴，而烤肉是唯一的大额补给。身上有生肉却在掉血时，
     // 目标行直接把这条路指出来 —— 比等玩家自己翻背包发现要快得多。
@@ -1475,15 +1473,15 @@ export class GameSimulation {
       && this.getInventoryCount("raw-meat") > 0) {
       const lit = this.getNearestLitCamp();
       return lit
-        ? `体力在掉 · 去 ${Math.round(lit.distance)} 米外的篝火把生肉烤了，一份回 ${COOKED_HEALTH} 点`
-        : `体力在掉 · 生肉烤熟才回体力，先找个篝火添柴`;
+        ? loc("sim.cookNearby", { meters: Math.round(lit.distance), health: COOKED_HEALTH })
+        : loc("sim.cookAnywhere");
     }
     if (this.getInventoryCount("raw-meat") === 0 && this.getInventoryCount("cooked-meat") === 0) {
       const oryx = this.critters.find((critter) => critter.kind === "oryx" && critter.mode !== "dead");
-      if (oryx) return "缺肉了 · 长角羚一头顶四块肉外加两份水，但它跑得比你快";
-      return "缺肉了 · 打点铠甲虫、岩蜥或跳鼠";
+      if (oryx) return loc("sim.33");
+      return loc("sim.34");
     }
-    return "白天备水备食，夜里守火";
+    return loc("sim.35");
   }
 
   private updatePlayerMovement(delta: number, rawMovement: Vec2, isMoving: boolean): void {
@@ -1491,7 +1489,7 @@ export class GameSimulation {
     // 移动会打断取水，劳力不退还 —— 让取水成为一个需要站定的承诺。
     if (this.player.gatherTimer > 0) {
       this.player.gatherTimer = 0;
-      this.events.push({ type: "message", text: "取水被打断" });
+      this.events.push({ type: "message", key: "msg.30" });
     }
     this.noteActivity();
     const movement = normalize(rawMovement);
@@ -1566,7 +1564,7 @@ export class GameSimulation {
     const warmth = this.player.warmth;
     if (warmth > THERMAL_COMFORT_HIGH) {
       if (this.coolCooldown > 0) {
-        this.events.push({ type: "message", text: `降温还需 ${Math.ceil(this.coolCooldown)} 秒` });
+        this.events.push({ type: "message", key: "msg.31", params: { v0: Math.ceil(this.coolCooldown) } });
         return;
       }
       this.noteActivity();
@@ -1574,12 +1572,12 @@ export class GameSimulation {
       this.player.warmth = clamp(warmth - COOL_ACTION_WARMTH, WARMTH_MIN, WARMTH_MAX);
       this.updateCondition();
       this.events.push({ type: "thermal", direction: "cool" });
-      this.events.push({ type: "message", text: `就地降温 · 体温 -${COOL_ACTION_WARMTH}` });
+      this.events.push({ type: "message", key: "msg.32", params: { v0: COOL_ACTION_WARMTH } });
       return;
     }
     if (warmth < THERMAL_COMFORT_LOW) {
       if (this.warmCooldown > 0) {
-        this.events.push({ type: "message", text: `取暖还需 ${Math.ceil(this.warmCooldown)} 秒` });
+        this.events.push({ type: "message", key: "msg.33", params: { v0: Math.ceil(this.warmCooldown) } });
         return;
       }
       this.noteActivity();
@@ -1587,10 +1585,10 @@ export class GameSimulation {
       this.player.warmth = clamp(warmth + WARM_ACTION_WARMTH, WARMTH_MIN, WARMTH_MAX);
       this.updateCondition();
       this.events.push({ type: "thermal", direction: "warm" });
-      this.events.push({ type: "message", text: `钻进沙里保温 · 体温 +${WARM_ACTION_WARMTH}` });
+      this.events.push({ type: "message", key: "msg.34", params: { v0: WARM_ACTION_WARMTH } });
       return;
     }
-    this.events.push({ type: "message", text: "体温还在舒适区 · 不用调节" });
+    this.events.push({ type: "message", key: "msg.35" });
   }
 
   /** 体温越界的进入/解除带迟滞，避免在阈值上反复横跳。 */
@@ -1609,9 +1607,9 @@ export class GameSimulation {
     if (next === this.player.condition) return;
     this.player.condition = next;
     this.events.push({ type: "condition", condition: next });
-    if (next === "heatstroke") this.events.push({ type: "message", text: "中暑 · 行动迟缓，立刻离开火边并喝水降温" });
-    else if (next === "hypothermia") this.events.push({ type: "message", text: "失温 · 几乎迈不开腿，爬向最近的篝火" });
-    else this.events.push({ type: "message", text: "体温回到安全区间" });
+    if (next === "heatstroke") this.events.push({ type: "message", key: "msg.36" });
+    else if (next === "hypothermia") this.events.push({ type: "message", key: "msg.37" });
+    else this.events.push({ type: "message", key: "msg.38" });
   }
 
   /**
@@ -1655,19 +1653,19 @@ export class GameSimulation {
    * 站定却不回复是玩家最容易误判为 bug 的情形，UI 必须能说清楚是哪一条挡住了。
    * 返回 null 表示可以休息。
    */
-  getRestBlocker(): string | null {
+  getRestBlocker(): LocalizedText | null {
     const player = this.player;
-    if (player.gatherTimer > 0) return "取水中";
-    if (player.condition === "heatstroke") return "中暑时无法休息 · 先喝水降温";
-    if (player.condition === "hypothermia") return "失温时无法休息 · 先回篝火";
-    if (player.hunger < 20) return "太饿睡不着 · 先吃东西";
-    if (player.water < 20) return "太渴睡不着 · 先喝水";
-    if (this.phase === "night" && player.warmth <= 30) return "冻得睡不着 · 靠近篝火再休息";
+    if (player.gatherTimer > 0) return loc("sim.36");
+    if (player.condition === "heatstroke") return loc("sim.37");
+    if (player.condition === "hypothermia") return loc("sim.38");
+    if (player.hunger < 20) return loc("sim.39");
+    if (player.water < 20) return loc("sim.40");
+    if (this.phase === "night" && player.warmth <= 30) return loc("sim.41");
     // 只有"刚挨过打"才禁止休息，而不是"附近有狼"。
     // 按距离判定会让夜里任何时候都休息不了 —— 夜间地图上本来就有几十只狼，
     // 20 米的追击半径几乎覆盖全图，玩家只会看到一句解释不了的"附近有狼"。
-    if (this.combatTimer > 0) return `刚受到攻击 · ${Math.ceil(this.combatTimer)} 秒后可休息`;
-    if (player.idleTime < 5) return `站定 ${Math.ceil(5 - player.idleTime)} 秒后开始休息`;
+    if (this.combatTimer > 0) return loc("sim.42", { v0: Math.ceil(this.combatTimer) });
+    if (player.idleTime < 5) return loc("sim.43", { v0: Math.ceil(5 - player.idleTime) });
     return null;
   }
 
@@ -1986,7 +1984,7 @@ export class GameSimulation {
       // 四五十只狼中间、劳力见底，后面还有一整段残局要打，三阶装备也才有用武之地。
       // 这同时和 docs/survival-systems.md §0.1 为生化篇写好的胜利条件对齐了。
       this.alphaSlain = true;
-      this.events.push({ type: "message", text: "头犬倒下了 · 撑到天亮，这片沙海就归你了" });
+      this.events.push({ type: "message", key: "msg.39" });
       return;
     }
 
@@ -2029,7 +2027,7 @@ export class GameSimulation {
     this.alphaSpawned = true;
     this.spawnWolf({ role: "raider", forceKind: "alpha" });
     this.events.push({ type: "alpha-spawned" });
-    this.events.push({ type: "message", text: "头犬出现了 · 杀死它，这片沙海就安静了" });
+    this.events.push({ type: "message", key: "msg.40" });
   }
 
   private createDrop(position: Vec2, kind: InventoryItemKind, angleOffset: number, count = 1): void {
@@ -2149,10 +2147,10 @@ export class GameSimulation {
       deathTimer: 0,
       dropsCreated: false,
     });
-    if (tutorialWolf) this.events.push({ type: "message", text: "侦察野狗正在逼近 · 面向它攻击" });
+    if (tutorialWolf) this.events.push({ type: "message", key: "msg.41" });
     if (kind === "large" && role === "raider" && !this.largeWolfAnnounced) {
       this.largeWolfAnnounced = true;
-      this.events.push({ type: "message", text: "发现壮犬 · 生命、防御和破坏力都更高" });
+      this.events.push({ type: "message", key: "msg.42" });
     }
   }
 
@@ -2294,8 +2292,8 @@ export class GameSimulation {
     this.events.push({ type: "critter-killed", critterId: critter.id, kind: critter.kind });
   }
 
-  getCritterLabel(kind: CritterKind): string {
-    return CRITTER_SPECS[kind].label;
+  getCritterLabel(kind: CritterKind): LocalizedText {
+    return loc(`critter.${kind}.name`);
   }
 
   /**
@@ -2434,9 +2432,7 @@ export class GameSimulation {
       const litAtDusk = this.getNearestLitCamp();
       this.events.push({
         type: "message",
-        text: litAtDusk && litAtDusk.fuel >= this.phaseTime
-          ? "野狗正从沙海边缘逐只进入 · 火能撑到天亮"
-          : "野狗正从沙海边缘逐只进入 · 火撑不到天亮，备好枯木",
+        key: litAtDusk && litAtDusk.fuel >= this.phaseTime ? "msg.duskFireOk" : "msg.duskFireShort",
       });
       // 白天打满击杀数的话，头狼会在入夜的这一刻登场。
       this.maybeSpawnAlpha();
@@ -2456,7 +2452,7 @@ export class GameSimulation {
     this.duskWarningSent = false;
     this.wildRespawnCountdown = 2;
     this.events.push({ type: "phase", phase: "day", day: this.day });
-    this.events.push({ type: "message", text: "天亮了 · 夜袭野狗正在分批撤离；白天的野狗可以猎取兽皮" });
+    this.events.push({ type: "message", key: "msg.43" });
   }
 
   /** 即将到来的那一夜有多长 —— 黄昏算燃料够不够用得上。 */
@@ -2476,16 +2472,13 @@ export class GameSimulation {
     const lit = this.getNearestLitCamp();
     const fuel = lit ? lit.fuel : 0;
     if (fuel >= night) {
-      this.events.push({ type: "message", text: `天色转暗 · 火够烧 ${Math.round(fuel)} 秒，撑得过今晚` });
+      this.events.push({ type: "message", key: "msg.44", params: { v0: Math.round(fuel) } });
       return;
     }
     const logs = Math.ceil((night - fuel) / 95);
-    this.events.push({
-      type: "message",
-      text: fuel <= 0
-        ? `天色转暗 · 营地没有火，今晚 ${night} 秒需要 ${logs} 根枯木`
-        : `天色转暗 · 火只够烧 ${Math.round(fuel)} 秒，今晚 ${night} 秒还差 ${logs} 根枯木`,
-    });
+    this.events.push(fuel <= 0
+      ? { type: "message", key: "msg.duskNoFire", params: { night, logs } }
+      : { type: "message", key: "msg.duskLowFire", params: { fuel: Math.round(fuel), night, logs } });
   }
 
   private updateObjectives(): void {
@@ -2494,20 +2487,20 @@ export class GameSimulation {
       this.duskWarningSent = true;
       this.warnDuskFuel();
       if (this.day === 1) {
-        this.events.push({ type: "message", text: "入口的大石一块就能封住窄口" });
+        this.events.push({ type: "message", key: "msg.45" });
       }
     }
     // 枯木改为进背包之后，这一阶不能再只看 carrying —— 否则捡了柴也不算数，
     // 玩家会永远卡在"拿起身边的枯木"。
     if (this.objectiveStage === 0 && (this.player.carrying || this.getInventoryCount("wood") > 0)) {
       this.objectiveStage = 1;
-      this.events.push({ type: "message", text: "枯木用于添火；入口旁的大石负责封路" });
+      this.events.push({ type: "message", key: "msg.46" });
     } else if (this.objectiveStage === 1 && this.camps.some((camp) => camp.fuel > 90)) {
       this.objectiveStage = 2;
-      this.events.push({ type: "message", text: "火已续上 · 把入口的大石搬到缺口中央" });
+      this.events.push({ type: "message", key: "msg.47" });
     } else if (this.objectiveStage === 2 && this.world.camps.some((camp) => this.isEntranceBlocked(camp))) {
       this.objectiveStage = 3;
-      this.events.push({ type: "message", text: "封口完成 · 石头会挡路并承受野狗的攻击" });
+      this.events.push({ type: "message", key: "msg.48" });
     }
   }
 
@@ -2658,7 +2651,7 @@ export class GameSimulation {
       }
       const reason = this.getBuildBlocker(structure.kind, dropPosition);
       if (reason) {
-        this.events.push({ type: "message", text: `这里放不下树桩 · ${reason}` });
+        this.events.push({ type: "message", key: "msg.49", params: { v0: reason } });
         return;
       }
       structure.x = dropPosition.x;
