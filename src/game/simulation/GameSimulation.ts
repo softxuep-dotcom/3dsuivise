@@ -19,6 +19,7 @@ import type {
   CampDefinition,
   CampState,
   DeathCause,
+  EquipLine,
   GameEvent,
   GroundItem,
   InteractionHint,
@@ -62,6 +63,7 @@ const ITEM_LABELS: Record<InventoryItemKind, string> = {
   "iron-ore": "铁矿",
   water: "水",
   "wash-water": "洗脸水",
+  "wolf-fang": "狼牙",
   wood: "枯木",
 };
 
@@ -75,6 +77,10 @@ const ITEM_LABELS: Record<InventoryItemKind, string> = {
  */
 export interface EquipTier {
   id: string;
+  /** 所属分线；阶 0 是 "none"，四条线各自三阶。 */
+  line: EquipLine;
+  /** 0~3。只能沿同一条线逐阶推进，跨线必须从一阶重来。 */
+  tier: number;
   label: string;
   cost: Array<[InventoryItemKind, number]>;
   needsFire: boolean;
@@ -85,17 +91,64 @@ export interface EquipTier {
   defense?: number;
 }
 
-/** 武器三阶。第 3 阶的兽皮开销刻意压得重 —— 兽皮只从狼身上掉。 */
+/**
+ * 武器：共用阶 0 + 两条各三阶的线，**从一阶就分叉**。
+ *
+ * 两条线抢的不是同一个资源池，这比数值上的强弱更能拉开差别：
+ *   刀线吃**铁矿** —— 全图 14 个矿点 × 2~3 块，不再生，且没有第二个用途。
+ *                     走满一条刀线要 12 块，配上铁甲就是 21 块，吃掉全图一半到四分之三。
+ *   剑线吃**枯木** —— 而枯木同时是唯一的燃料（1 根 = 篝火 +95 秒）。
+ *                     走满剑线要 8 根，等于拿今晚的火换明天的剑。
+ *
+ * 剑一阶是全部 12 件里仅有的两件 `needsFire: false` 之一 —— 轻线因此是唯一
+ * 能在远征途中变强的线，也是唯一第一天日落前就拿得到的线。
+ *
+ * 三阶统一卡在**狼牙**上：只有白天的大狼掉，而大狼占比是
+ * `min(0.58, 0.22 + (天数−1)×0.09)`，这把三阶自动锁到第 3 天以后，
+ * 不需要写任何天数判定。
+ */
 const WEAPON_TIERS: EquipTier[] = [
-  { id: "survival-knife", label: "求生匕首", cost: [], needsFire: false, blurb: "", attack: 28 },
-  { id: "iron-spear", label: "粗铁矛", cost: [["iron-ore", 3], ["hide", 1]], needsFire: true, blurb: "攻击 46，攻程更远", attack: 46 },
-  { id: "fang-spear", label: "狼牙重矛", cost: [["iron-ore", 5], ["hide", 3]], needsFire: true, blurb: "攻击 62，攻程再进一步", attack: 62 },
+  { id: "survival-knife", line: "none", tier: 0, label: "求生匕首", cost: [], needsFire: false, blurb: "", attack: 30 },
+
+  { id: "saber-1", line: "saber", tier: 1, label: "铁片砍刀", needsFire: true, attack: 34,
+    cost: [["iron-ore", 3], ["hide", 1]], blurb: "扫 220° · 破甲 2 · 命中击退" },
+  { id: "saber-2", line: "saber", tier: 2, label: "锻铁阔刀", needsFire: true, attack: 42,
+    cost: [["iron-ore", 4], ["hide", 2], ["wood", 2]], blurb: "扫 250° · 破甲 5 · 重创 12%" },
+  { id: "saber-3", line: "saber", tier: 3, label: "熔渣重刀", needsFire: true, attack: 50,
+    cost: [["iron-ore", 5], ["hide", 2], ["wolf-fang", 3]], blurb: "扫 280° · 破甲 8 · 重创 15%" },
+
+  { id: "sword-1", line: "sword", tier: 1, label: "骨柄短剑", needsFire: false, attack: 38,
+    cost: [["hide", 1], ["wood", 2]], blurb: "单体重击 · 连击 +10%×3 · 随身可造" },
+  { id: "sword-2", line: "sword", tier: 2, label: "兽牙细剑", needsFire: true, attack: 45,
+    cost: [["hide", 3], ["wood", 3]], blurb: "单体重击 · 连击 +12%×4 · 重创 30%" },
+  { id: "sword-3", line: "sword", tier: 3, label: "裂齿长剑", needsFire: true, attack: 55,
+    cost: [["hide", 4], ["wood", 3], ["wolf-fang", 3]], blurb: "单体重击 · 连击 +15%×4 · 重创 40%" },
 ];
 
+/**
+ * 护甲：共用阶 0 + 两条各三阶的线。
+ *
+ * 铁甲堆减法防御，皮甲堆百分比闪避。减法吃"多而弱"的咬伤，百分比吃"少而重"的，
+ * 两条曲线必然交叉 —— 解 `A − D铁 = (A − D皮)(1 − 闪避)` 得交叉点在原始攻击
+ * 30.0 / 35.2 / 35.9（逐阶）。第 5 夜头狼 38 攻击已经过线，大狼要到第 8 夜才过。
+ * 所以**重甲是守夜的甲，皮甲是打头狼的甲**，这不是平衡说辞，是公式的形状。
+ */
 const ARMOR_TIERS: EquipTier[] = [
-  { id: "none", label: "粗布衣", cost: [], needsFire: false, blurb: "", defense: 2 },
-  { id: "leather", label: "兽皮衣", cost: [["hide", 4]], needsFire: false, blurb: "防御 6", defense: 6 },
-  { id: "reinforced", label: "镶铁重甲", cost: [["hide", 6], ["iron-ore", 4]], needsFire: true, blurb: "防御 13，移速-5%", defense: 13 },
+  { id: "none", line: "none", tier: 0, label: "粗布衣", cost: [], needsFire: false, blurb: "", defense: 2 },
+
+  { id: "scale-1", line: "scale", tier: 1, label: "铁鳞胸甲", needsFire: true, defense: 8,
+    cost: [["iron-ore", 2], ["hide", 2]], blurb: "防御 8 · 反伤 12%" },
+  { id: "scale-2", line: "scale", tier: 2, label: "镶铁重甲", needsFire: true, defense: 13,
+    cost: [["iron-ore", 3], ["hide", 3]], blurb: "防御 13 · 反伤 22% · 移速 −7%" },
+  { id: "scale-3", line: "scale", tier: 3, label: "熔渣板甲", needsFire: true, defense: 18,
+    cost: [["iron-ore", 4], ["hide", 3], ["wolf-fang", 2]], blurb: "防御 18 · 反伤 35% · 移速 −12% · 劳力回复 −15%" },
+
+  { id: "hide-1", line: "hide", tier: 1, label: "游猎皮衣", needsFire: false, defense: 5,
+    cost: [["hide", 4]], blurb: "防御 5 · 闪避 12% · 劳力回复 +12% · 随身可造" },
+  { id: "hide-2", line: "hide", tier: 2, label: "风行皮甲", needsFire: true, defense: 6,
+    cost: [["hide", 4], ["wood", 2]], blurb: "防御 6 · 闪避 24% · 移速 +5% · 劳力回复 +22%" },
+  { id: "hide-3", line: "hide", tier: 3, label: "狼影斗篷", needsFire: true, defense: 7,
+    cost: [["hide", 4], ["wood", 3], ["wolf-fang", 3]], blurb: "防御 7 · 闪避 38% · 移速 +9% · 劳力回复 +35%" },
 ];
 
 /**
@@ -108,18 +161,88 @@ const ARMOR_TIERS: EquipTier[] = [
  */
 const ATTACK_COOLDOWN = 0.55;
 
+interface WeaponStat {
+  range: number;
+  /**
+   * 扇形的 `dot` 阈值 = cos(扇形角 / 2)。命中面积 = (扇形角/360) × π × 攻程²，
+   * 而命中数量**不设上限**（沿用现状）—— 所以面积就是群体能力本身，
+   * 不需要一个凭空的"最多打 N 个"。
+   *
+   *   100° → +0.643    110° → +0.574    160° → +0.174
+   *   197°（改造前写死的值）→ −0.148
+   *   220° → −0.342    250° → −0.574    280° → −0.766
+   */
+  arcDot: number;
+  /** 每次挥砍的劳力。夜里回不了劳力，这一列才是真正的战斗上限。 */
+  stamina: number;
+  /** 破甲：`有效护甲 = max(0, 目标护甲 − 破甲)`。只有刀线有。 */
+  pierce: number;
+  critChance: number;
+  critMult: number;
+  moveScale: number;
+  /** 刀线击退：推开的米数。头狼免疫。 */
+  knockback: number;
+  /** 刀线击退真正值钱的部分：把目标的咬击往后推多少秒。 */
+  knockbackStun: number;
+  /** 剑线连击：每段加多少伤害。0 表示这把武器吃不到连击。 */
+  comboStep: number;
+  comboMax: number;
+}
+
 /**
- * 武器手感表。原先用 `weapon === "iron-spear" ? a : b` 判断，第 3 阶加进来之后
- * 会掉进 else 分支拿到匕首的攻程（3.1，比 T2 的 3.8 还短）—— 换表消除这个隐患。
+ * 武器属性表。冷却全线统一（见 ATTACK_COOLDOWN），分化靠下面这些不依赖动画的轴。
+ *
+ * 刀线与剑线的关系不是强弱，是两个方向各自约两倍：
+ *   被围（6 只均匀分布）——  刀三扫到 77.8%，剑三只扫到 30.6%，刀线领先 1.75×
+ *   单体持久战          ——  剑三满层 228 DPS 对刀三 104.5，剑线领先 2.18×
+ *
+ * 早先的版本让刀线**同时**拥有大面积、低劳力、破甲与击退，剑线只有 +33% 单击，
+ * 而单击优势只在"面前恰好一个目标"时兑现 —— 全局只有头狼那一场。
+ * 于是刀线全面压制。修正有两处：劳力两线拉平（刀一次打好几个还收费更低等于白送），
+ * 以及给剑线一个**刀线结构上吃不到**的机制 —— 连击。刀每一刀都换目标，永远停在 0 段。
  */
-const WEAPON_STATS: Record<WeaponKind, { cooldown: number; range: number }> = {
-  "survival-knife": { cooldown: ATTACK_COOLDOWN, range: 3.1 },
-  "iron-spear": { cooldown: ATTACK_COOLDOWN, range: 3.8 },
-  "fang-spear": { cooldown: ATTACK_COOLDOWN, range: 4.2 },
+const WEAPON_STATS: Record<WeaponKind, WeaponStat> = {
+  "survival-knife": { range: 3.1, arcDot: 0.174, stamina: 4, pierce: 0, critChance: 0, critMult: 1, moveScale: 1.00, knockback: 0, knockbackStun: 0, comboStep: 0, comboMax: 0 },
+
+  "saber-1": { range: 3.4, arcDot: -0.342, stamina: 5, pierce: 2, critChance: 0, critMult: 1, moveScale: 0.98, knockback: 0.35, knockbackStun: 0.20, comboStep: 0, comboMax: 0 },
+  "saber-2": { range: 3.6, arcDot: -0.574, stamina: 6, pierce: 5, critChance: 0.12, critMult: 1.8, moveScale: 0.95, knockback: 0.50, knockbackStun: 0.30, comboStep: 0, comboMax: 0 },
+  "saber-3": { range: 3.8, arcDot: -0.766, stamina: 7, pierce: 8, critChance: 0.15, critMult: 2.0, moveScale: 0.92, knockback: 0.70, knockbackStun: 0.40, comboStep: 0, comboMax: 0 },
+
+  "sword-1": { range: 3.2, arcDot: 0.643, stamina: 5, pierce: 0, critChance: 0.20, critMult: 1.8, moveScale: 1.00, knockback: 0, knockbackStun: 0, comboStep: 0.10, comboMax: 3 },
+  "sword-2": { range: 3.3, arcDot: 0.643, stamina: 6, pierce: 0, critChance: 0.30, critMult: 2.0, moveScale: 1.03, knockback: 0, knockbackStun: 0, comboStep: 0.12, comboMax: 4 },
+  "sword-3": { range: 3.4, arcDot: 0.574, stamina: 7, pierce: 0, critChance: 0.40, critMult: 2.2, moveScale: 1.06, knockback: 0, knockbackStun: 0, comboStep: 0.15, comboMax: 4 },
 };
 
-/** 镶铁重甲的负重：换来 13 点防御（比粗布衣的 2 高出 11），代价是 5% 移速。 */
-const REINFORCED_ARMOR_SPEED = 0.95;
+interface ArmorStat {
+  /** 命中判定前掷骰，闪掉整次咬击。只有皮甲线有。 */
+  dodge: number;
+  /** 把狼**未经防御削减**的原始攻击力的这个比例弹回去。只有铁甲线有。 */
+  thorns: number;
+  moveScale: number;
+  /** 乘在三档劳力回复上。皮甲把防御换成产出，铁甲反过来。 */
+  staminaScale: number;
+}
+
+const ARMOR_STATS: Record<ArmorKind, ArmorStat> = {
+  none: { dodge: 0, thorns: 0, moveScale: 1.00, staminaScale: 1.00 },
+
+  "scale-1": { dodge: 0, thorns: 0.12, moveScale: 0.97, staminaScale: 1.00 },
+  "scale-2": { dodge: 0, thorns: 0.22, moveScale: 0.93, staminaScale: 0.92 },
+  "scale-3": { dodge: 0, thorns: 0.35, moveScale: 0.88, staminaScale: 0.85 },
+
+  "hide-1": { dodge: 0.12, thorns: 0, moveScale: 1.02, staminaScale: 1.12 },
+  "hide-2": { dodge: 0.24, thorns: 0, moveScale: 1.05, staminaScale: 1.22 },
+  "hide-3": { dodge: 0.38, thorns: 0, moveScale: 1.09, staminaScale: 1.35 },
+};
+
+/**
+ * 连击窗口：换目标、或这么久没有命中，层数清零。
+ * 冷却是 0.55 秒，正常连打够用；被打断走位一次就断 —— 这正是"咬住一个目标"的代价。
+ */
+const COMBO_WINDOW = 1.2;
+
+/** 头狼最早在第几天的夜里登场。见下方 maybeSpawnAlpha() 的注释。 */
+const ALPHA_MIN_DAY = 4;
 
 // 肉的两级。生肉顶饿不回体力，烤肉才回 —— 烤肉的价值全在体力那一条上。
 const RAW_HUNGER: readonly [number, number] = [12, 18];
@@ -249,9 +372,11 @@ const STAMINA_COST_WOOD = 30;
 const WOOD_ATTACK_BONUS = 2;
 const WOOD_ATTACK_CAP = 2;   // 20 → 15：两级武器共需 8 块铁 = 原先两整管劳力的站桩
 const STAMINA_COST_DRAW = 8;
-const STAMINA_COST_ATTACK = 4;
-/** 劳力低于此值时攻击仍可挥出，但伤害衰减到 EXHAUSTED_DAMAGE_SCALE。 */
-const STAMINA_EXHAUSTED = STAMINA_COST_ATTACK;
+/**
+ * 攻击的劳力开销已经**移进武器表**（WEAPON_STATS.stamina，刀剑两线都是 5/6/7）。
+ * 劳力低于当次开销时攻击仍可挥出，但伤害衰减到 EXHAUSTED_DAMAGE_SCALE ——
+ * "脱力"是可感知的惩罚，不是硬锁。
+ */
 const EXHAUSTED_DAMAGE_SCALE = 0.6;
 
 // --- 水源：两级结构 ---
@@ -322,6 +447,12 @@ export class GameSimulation {
   private spawnedThisNight = 0;
   private navigationCountdown = 0;
   private wildRespawnCountdown = 0;
+  /** 剑线连击：当前层数、锁定的目标、以及还剩多久清零。 */
+  private comboStacks = 0;
+  private comboTargetKey: string | null = null;
+  private comboTimer = 0;
+  /** 头狼是否已被击杀。杀掉不再直接通关 —— 还得撑到天亮。 */
+  private alphaSlain = false;
   /** 本帧玩家是否在移动 —— 劳作产热的输入。 */
   /** 挨打后的休息封锁倒计时，见 REST_COMBAT_LOCK。 */
   private combatTimer = 0;
@@ -544,7 +675,7 @@ export class GameSimulation {
       }
       ironNode.ore -= 1;
       this.events.push({ type: "pickup", kind: "iron-ore" });
-      this.events.push({ type: "message", text: "获得铁矿 · 可在燃烧的篝火旁制作粗铁矛" });
+      this.events.push({ type: "message", text: `获得铁矿 · ${this.describeNextUpgrade("weapon")}` });
       return;
     }
 
@@ -666,17 +797,17 @@ export class GameSimulation {
   requestAttack(): void {
     if (!this.running || this.player.attackCooldown > 0 || this.player.carrying) return;
     this.noteActivity();
+    const stats = WEAPON_STATS[this.player.weapon];
     // 劳力不足不会禁止挥砍，但伤害衰减到 60%，"脱力"是可感知的惩罚而不是硬锁。
-    const exhausted = this.player.stamina < STAMINA_EXHAUSTED;
+    const exhausted = this.player.stamina < stats.stamina;
     if (exhausted) this.events.push({ type: "exhausted" });
-    else this.player.stamina = Math.max(0, this.player.stamina - STAMINA_COST_ATTACK);
-    const baseCooldown = WEAPON_STATS[this.player.weapon].cooldown;
-    this.player.attackCooldown = baseCooldown * this.getConditionCooldownScale();
+    else this.player.stamina = Math.max(0, this.player.stamina - stats.stamina);
+    this.player.attackCooldown = ATTACK_COOLDOWN * this.getConditionCooldownScale();
     this.player.attackFlash = 0.22;
     this.events.push({ type: "attack" });
     let hit = false;
 
-    const attackRange = WEAPON_STATS[this.player.weapon].range;
+    const attackRange = stats.range;
     // 转向辅助优先锁狼：猎物不还手，被狼咬着还去追兔子才是真的要命。
     const inRange = <T extends Vec2>(list: T[], alive: (item: T) => boolean): T | undefined => list
       .filter((item) => alive(item) && distanceSquared(this.player, item) <= attackRange * attackRange)
@@ -684,14 +815,20 @@ export class GameSimulation {
     const assistedTarget = inRange(this.wolves, (wolf) => wolf.mode !== "dead")
       ?? inRange(this.critters, (critter) => critter.mode !== "dead");
     if (assistedTarget) this.player.facing = direction(this.player, assistedTarget);
+
+    // 连击在挥砍**之前**结算：本次的主目标（扇形里最近的那个）和上一次是不是同一个。
+    // 主目标而不是"全部目标"，是因为刀线一刀扫好几个，"同一个目标"对它没有定义 ——
+    // 而这正是设计要的：刀线结构上吃不到连击，永远停在 0 段。
+    const comboMultiplier = this.advanceCombo(stats, assistedTarget);
+
+    const inArc = (target: Vec2): boolean =>
+      distanceSquared(this.player, target) <= attackRange * attackRange
+      && dot(this.player.facing, direction(this.player, target)) >= stats.arcDot;
+
     for (const wolf of this.wolves) {
-      if (wolf.mode === "dead" || distanceSquared(this.player, wolf) > attackRange * attackRange) continue;
-      const towardWolf = direction(this.player, wolf);
-      if (dot(this.player.facing, towardWolf) < -0.15) continue;
+      if (wolf.mode === "dead" || !inArc(wolf)) continue;
       const wasRetreating = wolf.mode === "retreating";
-      const needsMultiplier = this.player.hunger < 15 || this.player.water < 15 ? 0.8 : 1;
-      const staminaMultiplier = exhausted ? EXHAUSTED_DAMAGE_SCALE : 1;
-      const damage = Math.max(1, Math.round(this.getAttackPower() * needsMultiplier * staminaMultiplier) - wolf.defense);
+      const { damage } = this.rollDamage(stats, comboMultiplier, exhausted, wolf.defense);
       wolf.health -= damage;
       wolf.hurtFlash = 0.18;
       wolf.provoked = true;
@@ -701,17 +838,15 @@ export class GameSimulation {
       hit = true;
       this.events.push({ type: "wolf-hit", wolfId: wolf.id });
       if (wolf.health <= 0) this.killWolf(wolf);
+      else this.applyKnockback(wolf, stats);
     }
 
     // 猎物：同一次挥砍也会打到，伤害算法和打狼一致（它们没有护甲）。
     for (const critter of this.critters) {
-      if (critter.mode === "dead" || distanceSquared(this.player, critter) > attackRange * attackRange) continue;
-      if (dot(this.player.facing, direction(this.player, critter)) < -0.15) continue;
-      const needsMultiplier = this.player.hunger < 15 || this.player.water < 15 ? 0.8 : 1;
-      const staminaMultiplier = exhausted ? EXHAUSTED_DAMAGE_SCALE : 1;
-      // 和打狼走同一个攻击力（含随身枯木加成）—— 否则 HUD 上显示的攻击力
+      if (critter.mode === "dead" || !inArc(critter)) continue;
+      // 和打狼走同一条伤害管线（含随身枯木加成与重创），否则 HUD 上显示的攻击力
       // 在砍猎物时对不上账。
-      critter.health -= Math.max(1, Math.round(this.getAttackPower() * needsMultiplier * staminaMultiplier));
+      critter.health -= this.rollDamage(stats, comboMultiplier, exhausted, 0).damage;
       critter.hurtFlash = 0.18;
       // 挨了一下必然受惊，冲刺条也回满 —— 第一刀没打死就得追。
       critter.mode = "flee";
@@ -730,6 +865,85 @@ export class GameSimulation {
       }
     }
     if (!hit && this.objectiveStage >= 3) this.events.push({ type: "message", text: "挥空会暴露位置" });
+  }
+
+  /**
+   * 一次命中的伤害。
+   *
+   * 顺序是刻意的：**重创与连击的倍率在减护甲之前结算**。
+   * 先乘后减，倍率就对"打有甲目标"格外划算，"重击能破甲"这个直觉才成立；
+   * 反过来先减后乘，重创会在小狼身上被放大、在头狼身上被稀释，正好是反的。
+   */
+  private rollDamage(
+    stats: WeaponStat,
+    comboMultiplier: number,
+    exhausted: boolean,
+    targetDefense: number,
+  ): { damage: number; crit: boolean } {
+    const crit = stats.critChance > 0 && this.random() < stats.critChance;
+    if (crit) this.events.push({ type: "crit" });
+    const needsMultiplier = this.player.hunger < 15 || this.player.water < 15 ? 0.8 : 1;
+    const staminaMultiplier = exhausted ? EXHAUSTED_DAMAGE_SCALE : 1;
+    const raw = this.getAttackPower()
+      * (crit ? stats.critMult : 1)
+      * comboMultiplier
+      * needsMultiplier
+      * staminaMultiplier;
+    const effectiveDefense = Math.max(0, targetDefense - stats.pierce);
+    return { damage: Math.max(1, Math.round(raw) - effectiveDefense), crit };
+  }
+
+  /**
+   * 剑线连击：连续命中同一个主目标，逐段加伤；换目标或超时清零。
+   * 返回本次挥砍的伤害倍率。
+   */
+  private advanceCombo(stats: WeaponStat, primary: Vec2 | undefined): number {
+    if (stats.comboMax <= 0) {
+      // 刀线：不参与连击，也不应该保留上一把剑留下的层数。
+      if (this.comboStacks !== 0) {
+        this.comboStacks = 0;
+        this.comboTargetKey = null;
+        this.events.push({ type: "combo", stacks: 0 });
+      }
+      return 1;
+    }
+    const key = primary ? this.targetKey(primary) : null;
+    if (key !== null && key === this.comboTargetKey) {
+      this.comboStacks = Math.min(stats.comboMax, this.comboStacks + 1);
+    } else {
+      this.comboStacks = 0;
+      this.comboTargetKey = key;
+    }
+    this.comboTimer = COMBO_WINDOW;
+    this.events.push({ type: "combo", stacks: this.comboStacks });
+    return 1 + this.comboStacks * stats.comboStep;
+  }
+
+  /** 狼和猎物的 id 是两个独立的数字空间，连击要认人就得先把它们分开。 */
+  private targetKey(target: Vec2): string | null {
+    const wolf = this.wolves.find((candidate) => candidate === target);
+    if (wolf) return `w${wolf.id}`;
+    const critter = this.critters.find((candidate) => candidate === target);
+    return critter ? `c${critter.id}` : null;
+  }
+
+  /**
+   * 刀线击退。
+   *
+   * 真正值钱的是 `knockbackStun` 那一项，不是推开的距离 —— 狼移速 3~5 m/s，
+   * 0.7 米两百毫秒就走回来了；但狼的咬击间隔是 1.15 秒，你每 0.55 秒给它
+   * +0.4 秒，等于把它的输出压掉七成。乘上"同时打五六只"，这就是刀线守夜能力
+   * 的真正来源 —— 不在伤害上，在减伤上。
+   *
+   * 头狼免疫，否则 BOSS 战会变成推箱子。
+   */
+  private applyKnockback(wolf: WolfState, stats: WeaponStat): void {
+    if (stats.knockback <= 0 || wolf.kind === "alpha") return;
+    wolf.attackCooldown += stats.knockbackStun;
+    const away = direction(this.player, wolf);
+    // 走正常的碰撞与地形回退：直接改坐标会把狼推进崖壁里卡住抽搐。
+    this.moveEntity(wolf, away.x * stats.knockback, away.z * stats.knockback, WOLF_RADIUS, false);
+    this.events.push({ type: "knockback", wolfId: wolf.id });
   }
 
   // consumeJuice / consumeWater / consumeWashWater 已删除：它们只服务于 HUD 上那三颗
@@ -812,12 +1026,18 @@ export class GameSimulation {
       }
       return;
     }
-    if (stack.kind === "iron-ore") {
-      this.events.push({ type: "message", text: this.player.weapon === "iron-spear" ? "已经装备粗铁矛" : "3块铁矿和1张兽皮可制作粗铁矛" });
-      return;
-    }
-    const nextArmor = this.getNextTier("armor");
-    this.events.push({ type: "message", text: nextArmor ? `下一阶：${nextArmor.label} · ${nextArmor.blurb}` : "护甲已满级" });
+    // 材料格的提示按**当前线**动态生成。写死"3块铁矿可制作粗铁矛"的话，
+    // 走剑线的玩家点开背包会被劝去造一件他这条线上根本没有的东西。
+    this.events.push({ type: "message", text: this.describeNextUpgrade(stack.kind === "iron-ore" ? "weapon" : "armor") });
+  }
+
+  /** 某个槽位接下来能做什么，一句话。分叉未定时列出两条线让玩家挑。 */
+  private describeNextUpgrade(slot: "weapon" | "armor"): string {
+    const options = this.getUpgradeOptions(slot);
+    const noun = slot === "weapon" ? "武器" : "护甲";
+    if (options.length === 0) return `${noun}已满级 · ${this.getEquipped(slot).label}`;
+    if (options.length === 1) return `下一阶：${options[0].label} · ${options[0].blurb}`;
+    return `开背包选一条${noun}线 · ${options.map((tier) => tier.label).join(" 或 ")}`;
   }
 
   /** 闭区间随机整数，对应原图的 GetRandomInt。 */
@@ -834,39 +1054,97 @@ export class GameSimulation {
   }
 
   /**
-   * 装备升级：每个槽位一条线，一次推进一阶，配方读自 WEAPON_TIERS / ARMOR_TIERS。
+   * 装备升级：四条线（刀 / 剑 / 铁甲 / 皮甲），每条三阶，**从一阶就分叉**。
    *
    * 三阶而不是两阶，是因为狼群数量按 40+(d-1)×15 一路涨到 90，而旧的两件装备
    * 第 2 天就拿全了 —— 威胁曲线继续爬、玩家曲线却平掉，后期就变成一堵墙而不是高潮。
-   * 第 3 阶刻意吃兽皮大头：兽皮只从狼身上来，于是"打狼"自己喂养"打狼的能力"。
+   *
+   * 分叉而不是直线，是因为直线升级不产生决策，只产生待办事项：材料够了就点。
+   * 分叉之后每个槽位的第一次升级都是一次承诺 —— 它决定接下来四天你去挖矿还是去捡柴。
+   *
+   * 这两个无参方法保留给键盘快捷键与旧调用点：默认走**当前线**的下一阶；
+   * 还在阶 0 时无从选择，直接返回 false，由 UI 的分叉卡负责让玩家挑。
    */
   craftWeapon(): boolean {
-    return this.craftUpgrade(WEAPON_TIERS, this.player.weapon, (next) => {
-      this.player.weapon = next.id as WeaponKind;
-      this.events.push({ type: "craft-weapon" });
-    });
+    const options = this.getUpgradeOptions("weapon");
+    if (options.length !== 1) return false;
+    return this.craftEquip("weapon", options[0].id);
   }
 
   craftArmor(): boolean {
-    return this.craftUpgrade(ARMOR_TIERS, this.player.armor, (next) => {
-      this.player.armor = next.id as ArmorKind;
-      this.events.push({ type: "craft-coat" });
+    const options = this.getUpgradeOptions("armor");
+    if (options.length !== 1) return false;
+    return this.craftEquip("armor", options[0].id);
+  }
+
+  /** 当前装着的那一件。 */
+  getEquipped(slot: "weapon" | "armor"): EquipTier {
+    const tiers = slot === "weapon" ? WEAPON_TIERS : ARMOR_TIERS;
+    const current = slot === "weapon" ? this.player.weapon : this.player.armor;
+    return tiers.find((tier) => tier.id === current) ?? tiers[0];
+  }
+
+  /**
+   * 某个槽位现在能造哪些东西。**这是升级 UI 的唯一接口** —— 三种界面状态都能
+   * 从返回值的长度推出来：
+   *
+   *   长度 2  阶 0，两条线的一阶同时可造 → 渲染分叉卡
+   *   长度 1  已分叉未满级，只能升同线的下一阶 → 渲染升级卡
+   *   长度 0  已满级 → 渲染属性总览
+   *
+   * 换线不在这里 —— 它走 craftEquip(id) 直接指定另一条线的一阶，材料不返还。
+   * 之所以是软锁而不是硬锁：单局最长 5 天，硬锁会让第一次玩的玩家在信息不足时
+   * 做出不可逆的错误选择。真正的硬约束在材料池里 —— 双铁线要吃掉全图一半到
+   * 四分之三的铁矿，你根本没有余量在同一局里再爬一遍另一条铁线。
+   */
+  getUpgradeOptions(slot: "weapon" | "armor"): EquipTier[] {
+    const tiers = slot === "weapon" ? WEAPON_TIERS : ARMOR_TIERS;
+    const current = this.getEquipped(slot);
+    if (current.line === "none") return tiers.filter((tier) => tier.tier === 1);
+    return tiers.filter((tier) => tier.line === current.line && tier.tier === current.tier + 1);
+  }
+
+  /** 某条线的三阶终点。分叉卡用它告诉玩家"这条路通向哪"。 */
+  getLineFinale(slot: "weapon" | "armor", line: EquipLine): EquipTier | null {
+    const tiers = slot === "weapon" ? WEAPON_TIERS : ARMOR_TIERS;
+    return tiers.find((tier) => tier.line === line && tier.tier === 3) ?? null;
+  }
+
+  /** 另一条线的一阶。已经在某条线上时用于渲染"改走另一条线"的入口。 */
+  getSwitchOptions(slot: "weapon" | "armor"): EquipTier[] {
+    const tiers = slot === "weapon" ? WEAPON_TIERS : ARMOR_TIERS;
+    const current = this.getEquipped(slot);
+    if (current.line === "none") return [];
+    return tiers.filter((tier) => tier.tier === 1 && tier.line !== current.line);
+  }
+
+  /** 按 id 制作某件装备。UI 从 getUpgradeOptions / getSwitchOptions 里取 id。 */
+  craftEquip(slot: "weapon" | "armor", id: string): boolean {
+    const tiers = slot === "weapon" ? WEAPON_TIERS : ARMOR_TIERS;
+    const next = tiers.find((tier) => tier.id === id);
+    if (!next) return false;
+    const allowed = [...this.getUpgradeOptions(slot), ...this.getSwitchOptions(slot)];
+    if (!allowed.some((tier) => tier.id === id)) {
+      this.events.push({ type: "message", text: `${next.label}需要先装备同一条线的上一阶` });
+      return false;
+    }
+    return this.craftUpgrade(next, (tier) => {
+      if (slot === "weapon") {
+        this.player.weapon = tier.id as WeaponKind;
+        // 换了武器，上一把剑攒的连击层数不该跟着走。
+        this.comboStacks = 0;
+        this.comboTargetKey = null;
+        this.events.push({ type: "combo", stacks: 0 });
+        this.events.push({ type: "craft-weapon" });
+      } else {
+        this.player.armor = tier.id as ArmorKind;
+        this.events.push({ type: "craft-coat" });
+      }
     });
   }
 
-  /** 返回某条装备线的下一阶；已满级返回 null。供 HUD 渲染按钮文案。 */
-  getNextTier(line: "weapon" | "armor"): EquipTier | null {
-    const tiers = line === "weapon" ? WEAPON_TIERS : ARMOR_TIERS;
-    const current = line === "weapon" ? this.player.weapon : this.player.armor;
-    const index = tiers.findIndex((tier) => tier.id === current);
-    return tiers[index + 1] ?? null;
-  }
-
-  private craftUpgrade(tiers: EquipTier[], current: string, apply: (tier: EquipTier) => void): boolean {
+  private craftUpgrade(next: EquipTier, apply: (tier: EquipTier) => void): boolean {
     if (!this.running) return false;
-    const index = tiers.findIndex((tier) => tier.id === current);
-    const next = tiers[index + 1];
-    if (!next) return false;
     // 判定半径与取暖、烤肉统一走 FIRE_WARMTH_RADIUS：原先这里单独写死 5.2，
     // 于是"站在营地里就算烤着火"对升级装备这一条不成立。
     if (next.needsFire && !this.findNearestLitFire(FIRE_WARMTH_RADIUS)) {
@@ -1107,8 +1385,19 @@ export class GameSimulation {
     return this.wolves.find((wolf) => wolf.kind === "alpha" && wolf.mode !== "dead") ?? null;
   }
 
-  getAlphaProgress(): { kills: number; required: number; spawned: boolean } {
-    return { kills: this.player.kills, required: ALPHA_KILL_REQUIREMENT, spawned: this.alphaSpawned };
+  getAlphaProgress(): { kills: number; required: number; spawned: boolean; slain: boolean; minDay: number } {
+    return {
+      kills: this.player.kills,
+      required: ALPHA_KILL_REQUIREMENT,
+      spawned: this.alphaSpawned,
+      slain: this.alphaSlain,
+      minDay: ALPHA_MIN_DAY,
+    };
+  }
+
+  /** 剑线连击的当前层数与上限，供 HUD 在攻击按钮上画进度弧。 */
+  getComboState(): { stacks: number; max: number } {
+    return { stacks: this.comboStacks, max: WEAPON_STATS[this.player.weapon].comboMax };
   }
 
   getObjective(): string {
@@ -1130,8 +1419,10 @@ export class GameSimulation {
       const hearth = this.findNearestHearth(FIRE_WARMTH_RADIUS);
       if (hearth && !this.hasNearerTarget(hearth.distance)) return "就在火边 · 按互动键添柴";
     }
+    // 头狼死了但天还没亮 —— 这是全局最紧张的一段，目标行必须只说这一件事。
+    if (this.alphaSlain) return `头狼已死 · 撑过剩下的 ${Math.max(0, Math.ceil(this.phaseTime))} 秒就赢了`;
     const alpha = this.getAlpha();
-    if (alpha) return `头狼 ${Math.max(0, Math.ceil(alpha.health))}/${alpha.maxHealth} · 杀死它即可获救`;
+    if (alpha) return `头狼 ${Math.max(0, Math.ceil(alpha.health))}/${alpha.maxHealth} · 杀死它并活到天亮`;
 
     if (this.phase === "night") {
       if (this.player.warmth < 30) return "体温偏低 · 回篝火，或者靠不停跑动扛住";
@@ -1139,6 +1430,10 @@ export class GameSimulation {
       if (!lit) return "篝火熄灭 · 沙海上捡一根枯木，搬到营地火堆上点燃";
       if (lit.fuel < 25) return `火只剩 ${Math.round(lit.fuel)} 秒 · 再捡一根枯木搬到火边`;
       if (this.day === 1 && this.phaseTime > 60) return "守住火光 · 夜袭狼只掉肉，不掉皮";
+      // 击杀数攒满但天数没到时，目标行得说清在等什么 —— 否则玩家会以为卡住了。
+      if (this.player.kills >= ALPHA_KILL_REQUIREMENT && this.day < ALPHA_MIN_DAY) {
+        return `猎杀已够 · 头狼要到第 ${ALPHA_MIN_DAY} 夜才现身，趁这几天把装备升上去`;
+      }
       return `守住火光 · 累计猎杀 ${this.player.kills}/${ALPHA_KILL_REQUIREMENT} 引出头狼`;
     }
 
@@ -1150,9 +1445,13 @@ export class GameSimulation {
     if (this.objectiveStage === 1) return "走到篝火旁，按互动键添柴";
     if (this.objectiveStage === 2) return "找到入口旁的大石并搬到缺口中央";
     if (this.getInventoryCount("water") === 0 && this.getInventoryCount("cactus-juice") === 0) return "先囤水 · 割仙人掌，或走一趟水井";
-    if (this.player.armor === "none" && this.getInventoryCount("hide") > 0) return "收集4张兽皮制作兽皮衣";
+    if (this.getEquipped("armor").line === "none" && this.getInventoryCount("hide") > 0) return "收集4张兽皮制作游猎皮衣 · 随身可造";
     const wildWolves = this.wolves.filter((wolf) => wolf.role === "wild" && wolf.mode !== "dead").length;
-    if (this.player.armor === "none" && wildWolves > 0) return `沙海上有 ${wildWolves} 只野狼 · 只有它们掉兽皮`;
+    if (this.getEquipped("armor").line === "none" && wildWolves > 0) return `沙海上有 ${wildWolves} 只野狼 · 只有它们掉兽皮`;
+    // 三阶卡在狼牙上，而狼牙只有白天的大狼掉 —— 这条线索不给的话玩家找不到。
+    if (this.getEquipped("weapon").tier === 2 && this.getInventoryCount("wolf-fang") < 3) {
+      return `三阶要 3 颗狼牙 · 只有白天的大狼掉（现有 ${this.getInventoryCount("wolf-fang")} 颗）`;
+    }
     // 体力是恒定流失的轴，而烤肉是唯一的大额补给。身上有生肉却在掉血时，
     // 目标行直接把这条路指出来 —— 比等玩家自己翻背包发现要快得多。
     if (this.player.health < 62 && this.getInventoryCount("cooked-meat") === 0
@@ -1182,8 +1481,11 @@ export class GameSimulation {
     this.player.facing = movement;
     const carryingPenalty = this.player.carrying === "stone" ? 0.54 : this.player.carrying ? 0.82 : 1;
     const needsPenalty = this.player.hunger < 12 || this.player.water < 12 ? 0.84 : 1;
-    const armorPenalty = this.player.armor === "reinforced" ? REINFORCED_ARMOR_SPEED : 1;
-    const speed = 8.2 * carryingPenalty * needsPenalty * armorPenalty * this.getConditionSpeedScale();
+    // 武器与护甲的移速系数相乘。全重装（熔渣重刀 + 熔渣板甲）是 0.92 × 0.88 = 0.810
+    // → 6.64，全轻装是 1.06 × 1.09 = 1.155 → 9.47，差 43%。
+    // 但 6.64 依然跑得过第 8 夜最快的狼（5.63）—— 慢是税，不是死刑。
+    const gearScale = WEAPON_STATS[this.player.weapon].moveScale * ARMOR_STATS[this.player.armor].moveScale;
+    const speed = 8.2 * carryingPenalty * needsPenalty * gearScale * this.getConditionSpeedScale();
     this.moveEntity(this.player, movement.x * speed * delta, movement.z * speed * delta, PLAYER_RADIUS, true);
   }
 
@@ -1196,12 +1498,24 @@ export class GameSimulation {
     this.player.health -= delta * HEALTH_DECAY;
 
     // --- 劳力回复：休息最快，静止其次，移动最慢 ---
-    const staminaRegen = this.player.resting
+    // 护甲整体缩放这三档：皮甲把防御换成产出（×1.35 时一个白天多回 99 点劳力
+    // ≈ 6.6 次挖矿），铁甲反过来收税。
+    const staminaRegen = (this.player.resting
       ? STAMINA_REST_REGEN
       : this.player.idleTime > 0.4
         ? STAMINA_IDLE_REGEN
-        : STAMINA_ACTIVE_REGEN;
+        : STAMINA_ACTIVE_REGEN) * ARMOR_STATS[this.player.armor].staminaScale;
     this.player.stamina = clamp(this.player.stamina + delta * staminaRegen, 0, this.player.maxStamina);
+
+    // --- 连击窗口：手停下来层数就掉 ---
+    if (this.comboTimer > 0) {
+      this.comboTimer = Math.max(0, this.comboTimer - delta);
+      if (this.comboTimer === 0 && this.comboStacks > 0) {
+        this.comboStacks = 0;
+        this.comboTargetKey = null;
+        this.events.push({ type: "combo", stacks: 0 });
+      }
+    }
 
     // === 体温 ===
     // 四个独立分量相加：篝火、昼/夜基线、劳作产热。
@@ -1487,12 +1801,32 @@ export class GameSimulation {
     if (wolf.mode === "chase" && playerDistance < 1.75) {
       if (wolf.attackCooldown <= 0) {
         wolf.attackCooldown = 1.15;
+        const armor = ARMOR_STATS[this.player.armor];
+        this.combatTimer = REST_COMBAT_LOCK;
+        this.noteActivity();
+        // 闪避在减防御**之前**判定，闪掉的是整次咬击。
+        // 但"挨打后 6 秒不能休息"的锁照常上 —— 闪开了也还是在战斗里。
+        if (armor.dodge > 0 && this.random() < armor.dodge) {
+          this.events.push({ type: "dodge" });
+          return;
+        }
         const damage = Math.max(1, wolf.attack - this.getDefense());
         this.player.health -= damage;
         this.player.hurtFlash = 0.3;
-        this.combatTimer = REST_COMBAT_LOCK;
-        this.noteActivity();
         this.events.push({ type: "player-hit", amount: damage });
+        // 反伤按狼**未经防御削减**的原始攻击力算 —— 它咬的是一身铁，
+        // 崩到几颗牙跟你穿得多厚没关系。
+        if (armor.thorns > 0) {
+          const reflected = Math.max(1, Math.round(wolf.attack * armor.thorns));
+          wolf.health -= reflected;
+          wolf.hurtFlash = 0.18;
+          wolf.provoked = true;
+          this.events.push({ type: "thorns", wolfId: wolf.id, amount: reflected });
+          if (wolf.health <= 0) {
+            wolf.mode = "dead";
+            this.killWolf(wolf);
+          }
+        }
       }
       return;
     }
@@ -1627,7 +1961,15 @@ export class GameSimulation {
       this.createDrop(wolf, "raw-meat", -0.65, 3);
       this.createDrop(wolf, "hide", 0.65, 4);
       this.events.push({ type: "wolf-killed", wolfId: wolf.id });
-      this.endGameWithVictory();
+      // 杀死头狼**不再直接通关** —— 还得撑到天亮。
+      //
+      // 原先它一倒下就结算胜利，于是整局游戏的终点是一次 DPS 检查：走过去按住攻击。
+      // 而剑三阶满层 220 DPS 打 836 血只要 3.8 秒，这个终点会短到不存在。
+      // 改成"击杀 + 活到天亮"之后，头狼从终点变成高潮 —— 它倒下时你正站在
+      // 四五十只狼中间、劳力见底，后面还有一整段残局要打，三阶装备也才有用武之地。
+      // 这同时和 docs/survival-systems.md §0.1 为生化篇写好的胜利条件对齐了。
+      this.alphaSlain = true;
+      this.events.push({ type: "message", text: "头狼倒下了 · 撑到天亮，这片沙海就归你了" });
       return;
     }
 
@@ -1641,15 +1983,31 @@ export class GameSimulation {
       const bulk = wolf.kind === "large" ? 2 : 1;
       this.createDrop(wolf, "raw-meat", -0.65, bulk);
       this.createDrop(wolf, "hide", 0.65, bulk);
+      // 狼牙：三阶装备的共同门槛，**只有白天的大狼**掉。
+      //
+      // 大狼占比是 min(0.58, 0.22 + (天数−1)×0.09)，第 1 天只有 22%、第 5 天才 58%，
+      // 这把三阶自动锁到第 3 天以后 —— 不需要写任何天数判定。而大狼（血 95 /
+      // 护甲 5 / 攻击 13）拿一阶装备去打是有风险的：三阶的门票是"你得敢主动
+      // 找大狼打"，这比"再挖十块矿"有意思得多。
+      if (wolf.kind === "large") this.createDrop(wolf, "wolf-fang", 0, 1);
     }
     this.events.push({ type: "wolf-killed", wolfId: wolf.id });
     this.maybeSpawnAlpha();
   }
 
   /** 累计击杀达标后，头狼在夜晚从地图边缘登场；白天达标则等到入夜。 */
+  /**
+   * 头狼登场。
+   *
+   * 除了累计击杀，还加了一道**时间闸** `day >= ALPHA_MIN_DAY`。
+   * 原因：三阶装备卡在狼牙上，而狼牙只从白天的大狼掉、大狼占比要到第 3 天才爬上来；
+   * 光靠击杀数当门槛的话，头狼可能在玩家还穿着一阶装备时就登场，
+   * 二阶三阶整条阶梯没有使用场景 —— 十二件装备里有八件成了装饰品。
+   */
   private maybeSpawnAlpha(): void {
     if (this.alphaSpawned || this.victorySent) return;
     if (this.player.kills < ALPHA_KILL_REQUIREMENT) return;
+    if (this.day < ALPHA_MIN_DAY) return;
     if (this.phase !== "night") return;
     this.alphaSpawned = true;
     this.spawnWolf({ role: "raider", forceKind: "alpha" });
@@ -2065,6 +2423,11 @@ export class GameSimulation {
       });
       // 白天打满击杀数的话，头狼会在入夜的这一刻登场。
       this.maybeSpawnAlpha();
+      return;
+    }
+    // 头狼死了、而你撑到了天亮 —— 这才是通关。
+    if (this.alphaSlain) {
+      this.endGameWithVictory();
       return;
     }
     this.phase = "day";

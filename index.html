@@ -76,7 +76,8 @@
             <button id="backpack-button" class="utility-button" type="button" aria-label="打开背包">背包 <b id="bag-usage">0/8</b></button>
           </div>
           <div class="action-buttons">
-            <button id="attack-button" class="round-button attack" type="button">攻击</button>
+            <!-- 外圈那道弧是剑线的连击层数：打架时盯着狼看，用余光扫这一眼。 -->
+            <button id="attack-button" class="round-button attack" type="button"><i id="combo-arc" class="combo-arc"></i>攻击</button>
             <button id="action-button" class="round-button action" type="button" aria-label="上下文行动">行动</button>
           </div>
         </div>
@@ -136,9 +137,14 @@
             <button class="inventory-slot" data-slot="6" type="button"></button>
             <button class="inventory-slot" data-slot="7" type="button"></button>
           </div>
+          <!--
+            装备升级区。内容全部由 HudController.renderUpgradeSlot() 生成，
+            因为它有三种形态：阶 0 是两条线的分叉卡、中途是当前↓下阶的升级卡、
+            满级是属性总览。写死按钮的话这三种都塞不进一行字。
+          -->
+          <div id="weapon-upgrade-slot" class="upgrade-slot" aria-label="武器升级"></div>
+          <div id="armor-upgrade-slot" class="upgrade-slot" aria-label="护甲升级"></div>
           <div class="craft-list" aria-label="制作配方">
-            <button id="craft-coat-button" class="craft-button" type="button">护甲升级</button>
-            <button id="craft-spear-button" class="craft-button" type="button">武器升级</button>
             <button id="build-stake-button" class="craft-button" type="button">搭树桩</button>
             <button id="craft-cook-button" class="craft-button" type="button">烤肉 · 生肉1 · 需燃烧篝火</button>
             <button id="craft-wash-button" class="craft-button" type="button">兑洗脸水 · 水1 · 降温25~50</button>

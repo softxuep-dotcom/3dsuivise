@@ -667,6 +667,75 @@ button { font: inherit; }
 
 .craft-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 
+/* === 装备升级区 ===
+   三种形态共用同一个容器：分叉卡（两栏）、升级卡（当前↓下阶）、满级总览。 */
+.upgrade-slot { margin-top: 10px; }
+.upgrade-head { margin: 0 0 5px; color: #91a9b1; font-size: 11px; letter-spacing: .04em; }
+.tier-pips { color: #d7c08a; letter-spacing: .12em; }
+
+.fork-card { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.fork-column {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 9px 10px; border-radius: 8px;
+  background: rgba(18, 26, 30, .58);
+  /* 左边这道色条和世界里那把刀是同一个颜色 —— 一眼对得上。 */
+  border-left: 3px solid var(--line, #8a8072);
+}
+.fork-title { color: var(--line, #f1e7d1); font-size: 13px; }
+.fork-personality { color: #b9c9ce; font-size: 11px; line-height: 1.5; }
+.fork-item { color: #f1e7d1; font-size: 12px; margin-top: 3px; }
+.fork-blurb, .fork-finale { color: #849ba5; font-size: 10px; line-height: 1.45; }
+.fork-cost { display: flex; flex-wrap: wrap; gap: 6px; font-size: 10px; }
+.fork-cost .ok, .fork-fire .ok { color: #8fbf86; }
+.fork-cost .missing, .fork-fire .missing { color: #d08b6a; }
+.fork-fire { font-size: 10px; }
+.fork-finale { margin-top: 2px; }
+
+.upgrade-card {
+  display: flex; flex-direction: column; gap: 5px;
+  padding: 9px 10px; border-radius: 8px;
+  background: rgba(18, 26, 30, .58);
+  border-left: 3px solid var(--line, #8a8072);
+}
+.upgrade-row { display: flex; align-items: baseline; gap: 7px; font-size: 11px; }
+.upgrade-row em { color: #6f858c; font-style: normal; font-size: 10px; min-width: 24px; }
+.upgrade-row b { color: #d6cbb2; }
+.upgrade-row span { color: #849ba5; font-size: 10px; }
+.upgrade-row.next b { color: var(--line, #f1e7d1); }
+.upgrade-arrow { color: #4f6068; font-size: 10px; margin-left: 26px; line-height: 1; }
+.upgrade-card.maxed span { color: #849ba5; font-size: 10px; }
+
+.upgrade-slot button {
+  margin-top: 4px; padding: 7px; border: 0; border-radius: 6px;
+  background: rgba(122, 95, 56, .82); color: #f6ecd8;
+  font: inherit; font-size: 11px; cursor: pointer;
+}
+.upgrade-slot button:disabled { opacity: .4; cursor: default; }
+.switch-row { display: flex; gap: 8px; margin-top: 6px; }
+.switch-button {
+  flex: 1; background: rgba(30, 40, 45, .8) !important;
+  color: var(--line, #b9c9ce) !important; font-size: 10px !important;
+}
+.confirm-bar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-top: 6px; padding: 8px 10px; border-radius: 7px;
+  background: rgba(96, 40, 28, .55); border-left: 3px solid #c2603c;
+}
+.confirm-bar span { flex: 1 1 100%; color: #f0cdb8; font-size: 10px; line-height: 1.5; }
+.confirm-bar button { flex: 1; margin-top: 0; }
+
+/* 攻击按钮外圈的连击弧。conic-gradient 直接按层数扫出扇形，不需要 SVG。 */
+.combo-arc {
+  position: absolute; inset: -4px; border-radius: 50%; pointer-events: none;
+  opacity: 0; transition: opacity .12s linear;
+  background: conic-gradient(var(--combo-color, #ffe6b0) calc(var(--combo, 0) * 360deg), transparent 0);
+  -webkit-mask: radial-gradient(circle, transparent 0 calc(100% - 3px), #000 calc(100% - 3px));
+  mask: radial-gradient(circle, transparent 0 calc(100% - 3px), #000 calc(100% - 3px));
+}
+.combo-arc.active { opacity: 1; }
+.combo-arc.full { animation: combo-breathe 1.1s ease-in-out infinite; }
+@keyframes combo-breathe { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+
 .craft-button:disabled { opacity: .4; cursor: default; }
 .inventory-help { margin: 12px 4px 0; color: #849ba5; font-size: 10px; line-height: 1.6; text-align: center; }
 
@@ -760,6 +829,7 @@ button { font: inherit; }
   .utility-button b { font-size: 11px; }
 
   .round-button {
+    position: relative;
     width: 68px;
     height: 68px;
     border: 1px solid rgba(255,255,255,.25);

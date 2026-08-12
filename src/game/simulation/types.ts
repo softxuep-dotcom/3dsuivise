@@ -21,10 +21,43 @@ export type InventoryItemKind =
   | "iron-ore"
   | "water"
   | "wash-water"
+  | "wolf-fang"
   | "wood";
-export type WeaponKind = "survival-knife" | "iron-spear" | "fang-spear";
-/** 护甲三阶：无 → 兽皮衣 → 镶铁重甲。 */
-export type ArmorKind = "none" | "leather" | "reinforced";
+
+/** 装备分线。阶 0 的求生匕首与粗布衣不属于任何线。 */
+export type EquipLine = "none" | "saber" | "sword" | "scale" | "hide";
+
+/**
+ * 武器：共用的阶 0，加两条各三阶的线。**全部是刀与剑，没有长柄武器** ——
+ * 可用的攻击动画只有一个单手劈砍，拿着矛做劈砍是错的。
+ *
+ *   刀线 saber —— 阔刃（铁片砍刀 / 锻铁阔刀 / 熔渣重刀）。
+ *                 扇形 220°→280°，一刀扫过身周一大圈，破甲，命中击退。
+ *   剑线 sword —— 细刃（骨柄短剑 / 兽牙细剑 / 裂齿长剑）。
+ *                 扇形只有 100°，但咬住同一个目标会越打越疼（连击）。
+ *
+ * 两条线的分化**完全不依赖攻速**：一个动画意味着冷却必须全线统一，
+ * 所以群体能力由扇形面积承担、单体能力由每击伤害与连击承担。
+ */
+export type WeaponKind =
+  | "survival-knife"
+  | "saber-1" | "saber-2" | "saber-3"
+  | "sword-1" | "sword-2" | "sword-3";
+
+/**
+ * 护甲：共用的阶 0，加两条各三阶的线。
+ *
+ *   铁甲线 scale —— 高防御 + 近战反伤，代价是移速与劳力回复双惩罚。
+ *   皮甲线 hide  —— 低防御 + 闪避，移速与劳力回复双加成。
+ *
+ * 减法防御吃"多而弱"的咬伤，百分比闪避吃"少而重"的咬伤，两条曲线必然交叉 ——
+ * 交叉点解出来是原始攻击 30.0 / 35.2 / 35.9（逐阶）。所以重甲是守夜的甲，
+ * 皮甲是打头狼的甲。
+ */
+export type ArmorKind =
+  | "none"
+  | "scale-1" | "scale-2" | "scale-3"
+  | "hide-1" | "hide-2" | "hide-3";
 export type WolfKind = "small" | "large" | "alpha";
 export type WolfMode = "entering" | "patrol" | "chase" | "raid" | "retreating" | "dead";
 /** 野狼白天在地图上游荡且只在被激怒后反击；夜袭狼由边缘涌入且不掉狼皮。 */
@@ -336,6 +369,16 @@ export type GameEvent =
   | { type: "condition"; condition: SurvivalCondition }
   | { type: "wolf-hit"; wolfId: number }
   | { type: "wolf-killed"; wolfId: number }
+  /** 重创触发。剑三阶 40% 的触发率，没有独立音效玩家就感知不到这个机制。 */
+  | { type: "crit" }
+  /** 剑线连击层数变化（含清零）。 */
+  | { type: "combo"; stacks: number }
+  /** 刀线击退：把狼推开并延后它的咬击。 */
+  | { type: "knockback"; wolfId: number }
+  /** 皮甲线闪避掉一次咬击。 */
+  | { type: "dodge" }
+  /** 铁甲线把伤害弹回给狼。 */
+  | { type: "thorns"; wolfId: number; amount: number }
   | { type: "critter-hit"; critterId: number }
   | { type: "critter-killed"; critterId: number; kind: CritterKind }
   | { type: "alpha-spawned" }
@@ -407,5 +450,7 @@ export const INVENTORY_STACK_LIMITS: Record<InventoryItemKind, number> = {
   "iron-ore": 6,
   water: 4,
   "wash-water": 3,
+  /** 狼牙只用于四条线的三阶，单个配方最多要 3 颗 —— 上限 4 刚好一格装得下。 */
+  "wolf-fang": 4,
   wood: 4,
 };

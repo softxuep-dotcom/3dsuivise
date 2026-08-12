@@ -3,7 +3,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import type { GameSimulation } from "../game/simulation/GameSimulation";
 import { clamp, lerp, mulberry32 } from "../game/simulation/geometry";
-import type { CampDefinition, CritterKind, CritterState, GroundItem, Vec2, WolfState, WorldDefinition, WorldDrop } from "../game/simulation/types";
+import type { CampDefinition, CritterKind, CritterState, GroundItem, Vec2, WeaponKind, WolfState, WorldDefinition, WorldDrop } from "../game/simulation/types";
 import { CRITTER_SPECS } from "../game/simulation/types";
 import { distanceToCampApproach, terrainHeightAt, terrainMoistureAt, terrainSaltAt, terrainSlopeAt } from "../game/terrain/TerrainModel";
 
@@ -60,6 +60,75 @@ interface CritterView {
 const makeMaterial = (color: THREE.ColorRepresentation, roughness = 0.9): THREE.MeshStandardMaterial => (
   new THREE.MeshStandardMaterial({ color, roughness, flatShading: true })
 );
+
+interface BladeVisual {
+  name: string;
+  /** 刃宽倍率，基准是求生匕首的 0.25。 */
+  width: number;
+  /** 刃长倍率，基准是求生匕首的 0.95。 */
+  length: number;
+  /** 剑是双刃对称，刀是单刃（背侧拉直）。 */
+  doubleEdged: boolean;
+  color: number;
+  roughness: number;
+  metalness: number;
+  gripColor: number;
+  emissive?: number;
+  emissiveIntensity?: number;
+  /** 三阶长剑的独立刃口 mesh 颜色。 */
+  edgeColor?: number;
+  /** 剑线连击时刃身发什么光。 */
+  comboGlow?: number;
+}
+
+/**
+ * 七把武器的外观。
+ *
+ * 只有一个劈砍动画，七把武器挥起来是同一个动作 —— 所以**区分全靠剪影与颜色**。
+ * 规则是色相分线、明度与自发光分阶：
+ *
+ *   刀线走冷色，越往上越"热"（铁被反复锻打）：生铁灰 → 淬蓝钢 → 暗铁 + 赤热纹
+ *   剑线走暖色，越往上越"黑"（骨 → 牙 → 淬过的齿）：骨白 → 琥珀牙黄 → 墨黑 + 白刃口
+ *
+ * 刀越往上越宽越长（最宽 ×1.85），剑越往上越窄越长（最窄 ×0.70）。
+ * 宽刀砍下去像斧，窄剑砍下去像削。
+ */
+const WEAPON_VISUALS: Record<WeaponKind, BladeVisual> = {
+  "survival-knife": {
+    name: "SurvivalKnife", width: 1.00, length: 1.00, doubleEdged: false,
+    color: 0xb8c1bd, roughness: 0.42, metalness: 0.52, gripColor: 0x4b3023,
+  },
+
+  "saber-1": {
+    name: "IronCleaver", width: 1.35, length: 1.10, doubleEdged: false,
+    color: 0x8a9299, roughness: 0.62, metalness: 0.35, gripColor: 0x4b3023,
+  },
+  "saber-2": {
+    name: "ForgedBroadsaber", width: 1.55, length: 1.20, doubleEdged: false,
+    color: 0x6f8ba8, roughness: 0.34, metalness: 0.72, gripColor: 0x3e2a1c,
+  },
+  "saber-3": {
+    name: "SlagHeavysaber", width: 1.85, length: 1.30, doubleEdged: false,
+    color: 0x4a4f57, roughness: 0.30, metalness: 0.80, gripColor: 0x2f2119,
+    emissive: 0x8c2a10, emissiveIntensity: 0.55,
+  },
+
+  "sword-1": {
+    name: "BoneShortsword", width: 0.85, length: 1.05, doubleEdged: true,
+    color: 0xe4dcc4, roughness: 0.75, metalness: 0.05, gripColor: 0x5a4632,
+    comboGlow: 0xfff0d0,
+  },
+  "sword-2": {
+    name: "FangRapier", width: 0.75, length: 1.15, doubleEdged: true,
+    color: 0xd9a441, roughness: 0.55, metalness: 0.15, gripColor: 0x4e3a24,
+    comboGlow: 0xffc861,
+  },
+  "sword-3": {
+    name: "SplitToothLongsword", width: 0.70, length: 1.28, doubleEdged: true,
+    color: 0x2b2622, roughness: 0.45, metalness: 0.25, gripColor: 0x2a2119,
+    edgeColor: 0xf2ece0, comboGlow: 0xf2ece0,
+  },
+};
 
 const smoothTerrainBlend = (edge0: number, edge1: number, value: number): number => {
   const t = clamp((value - edge0) / Math.max(0.0001, edge1 - edge0), 0, 1);
@@ -282,8 +351,7 @@ export class GameRenderer {
   private readonly carriedWood: THREE.Object3D;
   private readonly carriedStone: THREE.Object3D;
   private readonly weaponMount: THREE.Group;
-  private readonly knife: THREE.Group;
-  private readonly spear: THREE.Group;
+  private readonly blades: Map<WeaponKind, THREE.Group>;
   private readonly playerCoat: THREE.Group;
   private readonly previousPlayerPosition = new THREE.Vector2();
   private readonly playerActions = new Map<string, THREE.AnimationAction>();
@@ -369,8 +437,7 @@ export class GameRenderer {
     this.carriedWood = player.carriedWood;
     this.carriedStone = player.carriedStone;
     this.weaponMount = player.weaponMount;
-    this.knife = player.knife;
-    this.spear = player.spear;
+    this.blades = player.blades;
     this.playerCoat = player.coat;
     this.scene.add(this.playerGroup);
     this.previousPlayerPosition.set(simulation.player.x, simulation.player.z);
@@ -1036,8 +1103,7 @@ export class GameRenderer {
     carriedWood: THREE.Object3D;
     carriedStone: THREE.Object3D;
     weaponMount: THREE.Group;
-    knife: THREE.Group;
-    spear: THREE.Group;
+    blades: Map<WeaponKind, THREE.Group>;
     coat: THREE.Group;
   } {
     const group = new THREE.Group();
@@ -1086,11 +1152,16 @@ export class GameRenderer {
     weaponMount.rotation.z = -0.35;
     group.add(weaponMount);
 
-    const knife = this.createKnifeView();
-    weaponMount.add(knife);
-    const spear = this.createSpearView();
-    spear.visible = false;
-    weaponMount.add(spear);
+    // 七把武器各建一个 view 挂在同一个 mount 上，靠 visible 切换。
+    // 全部是程序化的低面数几何（一个柄 + 一个挤出的刃），一次性建完比按需创建简单，
+    // 也避免换武器时出现一帧空手。
+    const blades = new Map<WeaponKind, THREE.Group>();
+    for (const [kind, spec] of Object.entries(WEAPON_VISUALS) as Array<[WeaponKind, BladeVisual]>) {
+      const view = this.createBladeView(spec);
+      view.visible = kind === "survival-knife";
+      weaponMount.add(view);
+      blades.set(kind, view);
+    }
 
     const carriedWood = this.createItemView({ kind: "wood" } as GroundItem);
     carriedWood.position.set(-0.1, 1.6, 0.75);
@@ -1102,56 +1173,75 @@ export class GameRenderer {
     carriedStone.scale.setScalar(0.85);
     carriedStone.visible = false;
     group.add(carriedStone);
-    return { group, fallback, carriedWood, carriedStone, weaponMount, knife, spear, coat };
+    return { group, fallback, carriedWood, carriedStone, weaponMount, blades, coat };
   }
 
-  /** Default one-handed weapon. Its origin is the grip point used by handslot.r. */
-  private createKnifeView(): THREE.Group {
-    const knife = new THREE.Group();
-    knife.name = "SurvivalKnife";
+  /**
+   * 七把刀剑共用一个生成函数。
+   *
+   * 刃身本来就是程序化的（一个五点 Shape 挤出来），所以"换武器"只是换几个数字：
+   * 宽窄、长短、单刃还是双刃、什么颜色。零美术成本，也正因如此**区分只能靠
+   * 剪影与颜色** —— 可用的攻击动画只有一个劈砍，七把武器挥起来是同一个动作。
+   *
+   * 规则：色相分线（刀线冷、剑线暖），明度与自发光分阶。
+   * 宽刀砍下去像斧、窄剑砍下去像削 —— 手感差异靠剪影就出来了。
+   */
+  private createBladeView(spec: BladeVisual): THREE.Group {
+    const group = new THREE.Group();
+    group.name = spec.name;
 
     const handle = new THREE.Mesh(
       new THREE.CylinderGeometry(0.085, 0.105, 0.42, 7),
-      makeMaterial(0x4b3023, 0.92),
+      makeMaterial(spec.gripColor, 0.92),
     );
     handle.position.y = -0.08;
     const pommel = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.08, 7), makeMaterial(0x8a6842, 0.72));
     pommel.position.y = -0.32;
-    const guard = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.07, 0.1), makeMaterial(0x75644f, 0.58));
+    const guard = new THREE.Mesh(new THREE.BoxGeometry(0.38 * spec.width, 0.07, 0.1), makeMaterial(0x75644f, 0.58));
     guard.position.y = 0.15;
 
-    const bladeShape = new THREE.Shape();
-    bladeShape.moveTo(-0.11, 0);
-    bladeShape.lineTo(0.14, 0);
-    bladeShape.lineTo(0.09, 0.78);
-    bladeShape.lineTo(0, 0.95);
-    bladeShape.lineTo(-0.07, 0.77);
-    bladeShape.closePath();
+    // 单刃（刀）把背侧拉直，双刃（剑）左右对称 —— 这是刀与剑最省事也最有效的区分。
+    const back = spec.doubleEdged ? -0.11 * spec.width : -0.07 * spec.width;
+    const buildShape = (scale: number): THREE.Shape => {
+      const shape = new THREE.Shape();
+      shape.moveTo(back * scale, 0);
+      shape.lineTo(0.14 * spec.width * scale, 0);
+      shape.lineTo(0.09 * spec.width * scale, 0.78 * spec.length);
+      shape.lineTo(0, 0.95 * spec.length);
+      shape.lineTo(-0.07 * spec.width * scale, 0.77 * spec.length);
+      shape.closePath();
+      return shape;
+    };
+
+    const bladeMaterial = new THREE.MeshStandardMaterial({
+      color: spec.color,
+      roughness: spec.roughness,
+      metalness: spec.metalness,
+      flatShading: true,
+      ...(spec.emissive === undefined ? {} : { emissive: spec.emissive, emissiveIntensity: spec.emissiveIntensity ?? 0.5 }),
+    });
     const blade = new THREE.Mesh(
-      new THREE.ExtrudeGeometry(bladeShape, { depth: 0.055, bevelEnabled: false }),
-      new THREE.MeshStandardMaterial({ color: 0xb8c1bd, roughness: 0.42, metalness: 0.52, flatShading: true }),
+      new THREE.ExtrudeGeometry(buildShape(1), { depth: 0.055, bevelEnabled: false }),
+      bladeMaterial,
     );
     blade.position.set(0, 0.17, -0.0275);
+    group.add(handle, pommel, guard, blade);
 
-    knife.add(handle, pommel, guard, blade);
-    knife.traverse((object) => {
+    // 三阶长剑的墨黑刃身上再叠一层亮白刃口。两段材质是它一眼可辨的特征，
+    // 对应刀线三阶的赤热纹 —— 每条线的终点都要有一个远处也认得出的记号。
+    if (spec.edgeColor !== undefined) {
+      const edge = new THREE.Mesh(
+        new THREE.ExtrudeGeometry(buildShape(0.45), { depth: 0.062, bevelEnabled: false }),
+        new THREE.MeshStandardMaterial({ color: spec.edgeColor, roughness: 0.25, metalness: 0.4, flatShading: true }),
+      );
+      edge.position.set(0, 0.17, -0.031);
+      group.add(edge);
+    }
+
+    group.traverse((object) => {
       if (object instanceof THREE.Mesh) object.castShadow = true;
     });
-    return knife;
-  }
-
-  /** Upgraded two-handed weapon; shares the same grip-space origin as the knife. */
-  private createSpearView(): THREE.Group {
-    const spear = new THREE.Group();
-    spear.name = "IronSpear";
-    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.075, 2.45, 6), makeMaterial(0x60442d, 1));
-    shaft.position.y = 0.72;
-    shaft.castShadow = true;
-    const point = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.55, 5), makeMaterial(0x8b9693, 0.65));
-    point.position.y = 2.22;
-    point.castShadow = true;
-    spear.add(shaft, point);
-    return spear;
+    return group;
   }
 
   /**
@@ -1336,8 +1426,20 @@ export class GameRenderer {
     const angle = -Math.atan2(player.facing.z, player.facing.x);
     this.playerGroup.rotation.y = angle;
     const attackProgress = player.attackFlash > 0 ? 1 - player.attackFlash / 0.22 : 0;
-    this.knife.visible = player.weapon === "survival-knife";
-    this.spear.visible = player.weapon === "iron-spear";
+    for (const [kind, view] of this.blades) view.visible = kind === player.weapon;
+    // 剑线的连击层数写在刃身的自发光上。玩家打架时盯的是狼不是 HUD，
+    // 所以最重要的战斗状态必须出现在世界里 —— HUD 上那道弧只是用来确认。
+    const combo = this.simulation.getComboState();
+    const activeBlade = this.blades.get(player.weapon);
+    if (activeBlade && combo.max > 0) {
+      const glow = combo.max > 0 ? (combo.stacks / combo.max) * 0.6 : 0;
+      activeBlade.traverse((object) => {
+        if (object instanceof THREE.Mesh && object.material instanceof THREE.MeshStandardMaterial) {
+          object.material.emissive.setHex(WEAPON_VISUALS[player.weapon].comboGlow ?? 0xffffff);
+          object.material.emissiveIntensity = glow;
+        }
+      });
+    }
     if (!this.playerModel) {
       this.weaponMount.rotation.z = -0.35 - Math.sin(attackProgress * Math.PI) * 1.7;
     }

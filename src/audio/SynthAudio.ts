@@ -96,6 +96,28 @@ export class SynthAudio {
       case "wolf-hit":
         this.tone(110, 0.12, "sawtooth", 0.65, 0.55);
         break;
+      // 重创、连击、闪避、反伤、击退各有独立的声音。
+      // 剑三阶 40% 的重创率、四段连击 —— 听不出区别就等于没有这些机制。
+      case "crit":
+        this.tone(880, 0.09, "square", 0.5, 2.4);
+        window.setTimeout(() => this.tone(1320, 0.11, "triangle", 0.34, 1.9), 45);
+        break;
+      case "combo":
+        // 音高随层数往上爬，玩家不用看 HUD 也知道自己攒到第几段了。
+        if (event.stacks > 0) this.tone(420 + event.stacks * 110, 0.07, "sine", 0.26, 1.5);
+        break;
+      case "knockback":
+        this.noise(0.07, 0.3);
+        this.tone(90, 0.1, "sine", 0.4, 0.6);
+        break;
+      case "dodge":
+        // 闪避是"什么都没发生"，所以声音要轻、要往上走 —— 和挨打的下沉音相反。
+        this.noise(0.06, 0.22);
+        this.tone(640, 0.09, "sine", 0.22, 1.8);
+        break;
+      case "thorns":
+        this.tone(1180, 0.06, "square", 0.24, 0.7);
+        break;
       case "wolf-killed":
         this.tone(170, 0.28, "triangle", 0.8, 0.45);
         break;
