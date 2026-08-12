@@ -125,9 +125,14 @@ button { font: inherit; }
   backdrop-filter: blur(8px);
 }
 
+/*
+ * 标签轨道 38px → 48px。中文四个字在 11px 下是 22px，英文 "Warmth" 是 45px ——
+ * 原先的 38px 是照着中文定的，一换语言就压到血条上。
+ * 状态栏内容宽 208px，扣掉 48 + 28 + 两道 7px 间距，血条还剩 118px。
+ */
 .meter {
   display: grid;
-  grid-template-columns: 38px 1fr 28px;
+  grid-template-columns: 48px 1fr 28px;
   align-items: center;
   gap: 7px;
   margin-bottom: 7px;
@@ -762,9 +767,18 @@ button { font: inherit; }
     padding: 8px;
   }
 
-  .meter { grid-template-columns: 28px 1fr; gap: 5px; margin-bottom: 5px; font-size: 9px; }
+  /*
+   * 标签轨道 28px → 40px：英文的 "Warmth" 在 9px/700 下是 37.1px，
+   * 原先直接压到血条上；中文四字只有 18px，当初根本没留余量。
+   * 多占的 12px 从进度条的 1fr 里出，它还剩 79px，依然读得出刻度。
+   */
+  .meter { grid-template-columns: 40px 1fr; gap: 5px; margin-bottom: 5px; font-size: 9px; }
   .meter em { display: none; }
-  .supply-line { margin-bottom: 4px; padding: 3px 5px; font-size: 9px; }
+  /*
+   * gap 6 → 4：justify-content: space-between 把 gap 当硬下限，
+   * 英文四个标签在 6px 间距下会冲出 142px 面板。
+   */
+  .supply-line { gap: 4px; margin-bottom: 4px; padding: 3px 5px; font-size: 9px; }
   .inventory-button { padding: 4px 6px; font-size: 10px; }
   .hud-actions { gap: 4px; }
   .top-stack { top: max(10px, env(safe-area-inset-top)); gap: 6px; }
