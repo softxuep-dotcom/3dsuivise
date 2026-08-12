@@ -262,7 +262,7 @@ export interface StructureSpec {
 export const STRUCTURE_SPECS: Record<StructureKind, StructureSpec> = {
   stake: {
     label: "树桩", cost: [["wood", 1]], stamina: 12, maxHp: 220, radius: 0.9,
-    blurb: "挡路的木桩，狼会先拆它",
+    blurb: "挡路的木桩，野狗会先拆它",
   },
 };
 

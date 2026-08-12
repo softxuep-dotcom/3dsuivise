@@ -63,7 +63,7 @@ const ITEM_LABELS: Record<InventoryItemKind, string> = {
   "iron-ore": "铁矿",
   water: "水",
   "wash-water": "洗脸水",
-  "wolf-fang": "狼牙",
+  "wolf-fang": "犬牙",
   wood: "枯木",
 };
 
@@ -147,7 +147,7 @@ const ARMOR_TIERS: EquipTier[] = [
     cost: [["hide", 4]], blurb: "防御 5 · 闪避 12% · 劳力回复 +12% · 随身可造" },
   { id: "hide-2", line: "hide", tier: 2, label: "风行皮甲", needsFire: true, defense: 6,
     cost: [["hide", 4], ["wood", 2]], blurb: "防御 6 · 闪避 24% · 移速 +5% · 劳力回复 +22%" },
-  { id: "hide-3", line: "hide", tier: 3, label: "狼影斗篷", needsFire: true, defense: 7,
+  { id: "hide-3", line: "hide", tier: 3, label: "犬影斗篷", needsFire: true, defense: 7,
     cost: [["hide", 4], ["wood", 3], ["wolf-fang", 3]], blurb: "防御 7 · 闪避 38% · 移速 +9% · 劳力回复 +35%" },
 ];
 
@@ -490,7 +490,7 @@ export class GameSimulation {
       return navigation;
     });
     const startCamp = world.camps[world.startCampId];
-    this.camps = world.camps.map((camp) => ({ id: camp.id, fuel: camp.id === world.startCampId ? 42 : 0 }));
+    this.camps = world.camps.map((camp) => ({ id: camp.id, fuel: 0 }));
     this.items = world.initialItems.map((item) => ({ ...item }));
     this.cacti = world.initialCacti.map((patch) => ({ ...patch }));
     this.ironNodes = world.ironNodes.map((node) => ({ ...node }));
@@ -1420,37 +1420,37 @@ export class GameSimulation {
       if (hearth && !this.hasNearerTarget(hearth.distance)) return "就在火边 · 按互动键添柴";
     }
     // 头狼死了但天还没亮 —— 这是全局最紧张的一段，目标行必须只说这一件事。
-    if (this.alphaSlain) return `头狼已死 · 撑过剩下的 ${Math.max(0, Math.ceil(this.phaseTime))} 秒就赢了`;
+    if (this.alphaSlain) return `头犬已死 · 撑过剩下的 ${Math.max(0, Math.ceil(this.phaseTime))} 秒就赢了`;
     const alpha = this.getAlpha();
-    if (alpha) return `头狼 ${Math.max(0, Math.ceil(alpha.health))}/${alpha.maxHealth} · 杀死它并活到天亮`;
+    if (alpha) return `头犬 ${Math.max(0, Math.ceil(alpha.health))}/${alpha.maxHealth} · 杀死它并活到天亮`;
 
     if (this.phase === "night") {
       if (this.player.warmth < 30) return "体温偏低 · 回篝火，或者靠不停跑动扛住";
       const lit = this.getNearestLitCamp();
       if (!lit) return "篝火熄灭 · 沙海上捡一根枯木，搬到营地火堆上点燃";
       if (lit.fuel < 25) return `火只剩 ${Math.round(lit.fuel)} 秒 · 再捡一根枯木搬到火边`;
-      if (this.day === 1 && this.phaseTime > 60) return "守住火光 · 夜袭狼只掉肉，不掉皮";
+      if (this.day === 1 && this.phaseTime > 60) return "守住火光 · 夜袭野狗只掉肉，不掉皮";
       // 击杀数攒满但天数没到时，目标行得说清在等什么 —— 否则玩家会以为卡住了。
       if (this.player.kills >= ALPHA_KILL_REQUIREMENT && this.day < ALPHA_MIN_DAY) {
-        return `猎杀已够 · 头狼要到第 ${ALPHA_MIN_DAY} 夜才现身，趁这几天把装备升上去`;
+        return `猎杀已够 · 头犬要到第 ${ALPHA_MIN_DAY} 夜才现身，趁这几天把装备升上去`;
       }
-      return `守住火光 · 累计猎杀 ${this.player.kills}/${ALPHA_KILL_REQUIREMENT} 引出头狼`;
+      return `守住火光 · 累计猎杀 ${this.player.kills}/${ALPHA_KILL_REQUIREMENT} 引出头犬`;
     }
 
     if (this.phase === "day" && this.day === 1 && this.phaseTime <= 14) return "天快黑了 · 用入口大石封住缺口";
     if (this.player.warmth > 78) return "劳作让体温快爆了 · 喝水或停下来歇会儿";
     const retreatingWolves = this.wolves.filter((wolf) => wolf.mode === "retreating").length;
-    if (retreatingWolves > 0) return `天亮了 · ${retreatingWolves}只狼正在撤离`;
+    if (retreatingWolves > 0) return `天亮了 · ${retreatingWolves}只野狗正在撤离`;
     if (this.objectiveStage === 0) return `捡起身边的枯木 · 劳力 ${STAMINA_COST_WOOD}/根`;
     if (this.objectiveStage === 1) return "走到篝火旁，按互动键添柴";
     if (this.objectiveStage === 2) return "找到入口旁的大石并搬到缺口中央";
     if (this.getInventoryCount("water") === 0 && this.getInventoryCount("cactus-juice") === 0) return "先囤水 · 割仙人掌，或走一趟水井";
     if (this.getEquipped("armor").line === "none" && this.getInventoryCount("hide") > 0) return "收集4张兽皮制作游猎皮衣 · 随身可造";
     const wildWolves = this.wolves.filter((wolf) => wolf.role === "wild" && wolf.mode !== "dead").length;
-    if (this.getEquipped("armor").line === "none" && wildWolves > 0) return `沙海上有 ${wildWolves} 只野狼 · 只有它们掉兽皮`;
+    if (this.getEquipped("armor").line === "none" && wildWolves > 0) return `沙海上有 ${wildWolves} 只野狗 · 只有它们掉兽皮`;
     // 三阶卡在狼牙上，而狼牙只有白天的大狼掉 —— 这条线索不给的话玩家找不到。
     if (this.getEquipped("weapon").tier === 2 && this.getInventoryCount("wolf-fang") < 3) {
-      return `三阶要 3 颗狼牙 · 只有白天的大狼掉（现有 ${this.getInventoryCount("wolf-fang")} 颗）`;
+      return `三阶要 3 颗犬牙 · 只有白天的壮犬掉（现有 ${this.getInventoryCount("wolf-fang")} 颗）`;
     }
     // 体力是恒定流失的轴，而烤肉是唯一的大额补给。身上有生肉却在掉血时，
     // 目标行直接把这条路指出来 —— 比等玩家自己翻背包发现要快得多。
@@ -1969,7 +1969,7 @@ export class GameSimulation {
       // 四五十只狼中间、劳力见底，后面还有一整段残局要打，三阶装备也才有用武之地。
       // 这同时和 docs/survival-systems.md §0.1 为生化篇写好的胜利条件对齐了。
       this.alphaSlain = true;
-      this.events.push({ type: "message", text: "头狼倒下了 · 撑到天亮，这片沙海就归你了" });
+      this.events.push({ type: "message", text: "头犬倒下了 · 撑到天亮，这片沙海就归你了" });
       return;
     }
 
@@ -2012,7 +2012,7 @@ export class GameSimulation {
     this.alphaSpawned = true;
     this.spawnWolf({ role: "raider", forceKind: "alpha" });
     this.events.push({ type: "alpha-spawned" });
-    this.events.push({ type: "message", text: "头狼出现了 · 杀死它，这片沙海就安静了" });
+    this.events.push({ type: "message", text: "头犬出现了 · 杀死它，这片沙海就安静了" });
   }
 
   private createDrop(position: Vec2, kind: InventoryItemKind, angleOffset: number, count = 1): void {
@@ -2132,10 +2132,10 @@ export class GameSimulation {
       deathTimer: 0,
       dropsCreated: false,
     });
-    if (tutorialWolf) this.events.push({ type: "message", text: "侦察小狼正在逼近 · 面向它攻击" });
+    if (tutorialWolf) this.events.push({ type: "message", text: "侦察野狗正在逼近 · 面向它攻击" });
     if (kind === "large" && role === "raider" && !this.largeWolfAnnounced) {
       this.largeWolfAnnounced = true;
-      this.events.push({ type: "message", text: "发现大狼 · 生命、防御和破坏力都更高" });
+      this.events.push({ type: "message", text: "发现壮犬 · 生命、防御和破坏力都更高" });
     }
   }
 
@@ -2418,8 +2418,8 @@ export class GameSimulation {
       this.events.push({
         type: "message",
         text: litAtDusk && litAtDusk.fuel >= this.phaseTime
-          ? "狼正从沙海边缘逐只进入 · 火能撑到天亮"
-          : "狼正从沙海边缘逐只进入 · 火撑不到天亮，备好枯木",
+          ? "野狗正从沙海边缘逐只进入 · 火能撑到天亮"
+          : "野狗正从沙海边缘逐只进入 · 火撑不到天亮，备好枯木",
       });
       // 白天打满击杀数的话，头狼会在入夜的这一刻登场。
       this.maybeSpawnAlpha();
@@ -2439,7 +2439,7 @@ export class GameSimulation {
     this.duskWarningSent = false;
     this.wildRespawnCountdown = 2;
     this.events.push({ type: "phase", phase: "day", day: this.day });
-    this.events.push({ type: "message", text: "天亮了 · 夜袭狼正在分批撤离；白天的野狼可以猎取兽皮" });
+    this.events.push({ type: "message", text: "天亮了 · 夜袭野狗正在分批撤离；白天的野狗可以猎取兽皮" });
   }
 
   /** 即将到来的那一夜有多长 —— 黄昏算燃料够不够用得上。 */
@@ -2490,7 +2490,7 @@ export class GameSimulation {
       this.events.push({ type: "message", text: "火已续上 · 把入口的大石搬到缺口中央" });
     } else if (this.objectiveStage === 2 && this.world.camps.some((camp) => this.isEntranceBlocked(camp))) {
       this.objectiveStage = 3;
-      this.events.push({ type: "message", text: "封口完成 · 石头会挡路并承受狼的攻击" });
+      this.events.push({ type: "message", text: "封口完成 · 石头会挡路并承受野狗的攻击" });
     }
   }
 

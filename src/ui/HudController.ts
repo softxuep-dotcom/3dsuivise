@@ -42,7 +42,7 @@ const ARMOR_LABELS: Record<ArmorKind, string> = {
   "scale-3": "熔渣板甲 · 防御 18 · 反伤 35%",
   "hide-1": "游猎皮衣 · 防御 5 · 闪避 12%",
   "hide-2": "风行皮甲 · 防御 6 · 闪避 24%",
-  "hide-3": "狼影斗篷 · 防御 7 · 闪避 38%",
+  "hide-3": "犬影斗篷 · 防御 7 · 闪避 38%",
 };
 
 /**
@@ -78,7 +78,7 @@ const ITEM_PRESENTATION: Record<InventoryItemKind, { glyph: string; name: string
   hide: { glyph: "皮", name: "兽皮" },
   "iron-ore": { glyph: "铁", name: "铁矿" },
   "wash-water": { glyph: "洗", name: "洗脸水" },
-  "wolf-fang": { glyph: "牙", name: "狼牙" },
+  "wolf-fang": { glyph: "牙", name: "犬牙" },
   water: { glyph: "水", name: "水" },
   wood: { glyph: "柴", name: "枯木" },
 };
@@ -101,15 +101,15 @@ const CONDITION_COPY: Record<Exclude<SurvivalCondition, "normal">, string> = {
 const DEATH_COPY: Record<DeathCause, string> = {
   dehydrated: "水分见底，你倒在了滚烫的沙子上 —— 仙人掌就在几十步外，你没能走到。",
   starved: "饥饿耗尽，你再没有力气站起来。",
-  killed: "狼群撕碎了你的最后一道防线。",
+  killed: "野狗群撕碎了你的最后一道防线。",
   // 体力恒定流失把血耗干 —— 可能全程一只狼都没碰到，文案必须说清是没吃饭。
-  exhausted: "没有一只狼碰到你。是体力一点点流干的 —— 熟肉是唯一能大量回体力的东西。",
+  exhausted: "没有一只野狗碰到你。是体力一点点流干的 —— 熟肉是唯一能大量回体力的东西。",
 };
 
 const WOLF_LABELS: Record<WolfKind, string> = {
-  small: "小狼",
-  large: "大狼",
-  alpha: "头狼",
+  small: "野狗",
+  large: "壮犬",
+  alpha: "头犬",
 };
 
 export class HudController {
@@ -298,7 +298,7 @@ export class HudController {
     this.syncThermalButton(player.warmth);
     this.bagUsage.textContent = `${player.inventory.filter(Boolean).length}/8`;
     this.objective.textContent = this.simulation.getObjective();
-    this.dayLabel.textContent = `第 ${this.simulation.day} 天 · ${this.simulation.getCurrentLocationLabel()} · 狼 ${this.simulation.wolves.filter((wolf) => wolf.mode !== "dead").length}`;
+    this.dayLabel.textContent = `第 ${this.simulation.day} 天 · ${this.simulation.getCurrentLocationLabel()} · 野狗 ${this.simulation.wolves.filter((wolf) => wolf.mode !== "dead").length}`;
     this.phaseLabel.textContent = this.simulation.phase === "day" ? "白昼" : "黑夜";
     this.clock.classList.toggle("night", this.simulation.phase === "night");
     const seconds = Math.max(0, Math.ceil(this.simulation.phaseTime));
@@ -380,7 +380,7 @@ export class HudController {
     this.huntProgress.classList.toggle("alpha", Boolean(alpha));
     // 头狼在场时血量由顶部 BOSS 条负责，这里只说进度，不重复报血。
     this.huntProgress.textContent = alpha
-      ? "头狼已登场"
+      ? "头犬已登场"
       : progress.spawned
         ? `猎杀 ${progress.kills}`
         : `猎杀 ${progress.kills}/${progress.required}`;
@@ -389,7 +389,7 @@ export class HudController {
   handle(event: GameEvent): void {
     if (event.type === "message") this.showToast(event.text, 3.1);
     if (event.type === "phase") {
-      this.showToast(event.phase === "night" ? `第 ${event.day} 夜 · 狼群正在涌入` : `第 ${event.day} 天 · 狼群正在撤离`, 3.4);
+      this.showToast(event.phase === "night" ? `第 ${event.day} 夜 · 野狗群正在涌入` : `第 ${event.day} 天 · 野狗群正在撤离`, 3.4);
     }
     if (event.type === "pickup" && (event.kind === "raw-meat" || event.kind === "hide" || event.kind === "water")) {
       const label = event.kind === "raw-meat" ? "获得生肉" : event.kind === "hide" ? "获得兽皮" : "取到水";
@@ -399,7 +399,7 @@ export class HudController {
       const label = this.simulation.getCritterLabel(event.kind);
       this.showToast(event.kind === "camel" ? `猎到${label} · 大量肉与水` : `猎到${label}`, 1.8);
     }
-    if (event.type === "alpha-spawned") this.showToast("头狼登场 · 击杀它即可获救", 4);
+    if (event.type === "alpha-spawned") this.showToast("头犬登场 · 击杀它即可获救", 4);
     if (event.type === "victory") {
       this.closeInventory();
       this.showVictory();
@@ -657,10 +657,10 @@ export class HudController {
         ? "倒下时你正失温，几乎迈不开腿 —— 夜里该守着篝火，或者早点添柴。"
         : "";
     this.resultCopy.textContent = [
-      `坚持到第 ${this.simulation.day} 天，猎杀 ${this.simulation.player.kills} 只狼。`,
+      `坚持到第 ${this.simulation.day} 天，猎杀 ${this.simulation.player.kills} 只野狗。`,
       causeText,
       conditionText,
-      `沙海上仍有 ${wolfCount} 只狼在活动。`,
+      `沙海上仍有 ${wolfCount} 只野狗在活动。`,
       this.submitAndDescribe(false),
     ].filter(Boolean).join(" ");
     this.gameOver.classList.remove("hidden");
@@ -669,7 +669,7 @@ export class HudController {
   private showVictory(): void {
     const player = this.simulation.player;
     this.victoryCopy.textContent = [
-      `第 ${this.simulation.day} 天，你击倒了头狼，累计猎杀 ${player.kills} 只。狼群散了，营地的火终于可以安心地烧到天亮。`,
+      `第 ${this.simulation.day} 天，你击倒了头犬，累计猎杀 ${player.kills} 只。野狗群散了，营地的火终于可以安心地烧到天亮。`,
       this.submitAndDescribe(true),
     ].filter(Boolean).join(" ");
     this.victory.classList.remove("hidden");

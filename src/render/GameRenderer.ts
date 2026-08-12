@@ -6,6 +6,7 @@ import { clamp, lerp, mulberry32 } from "../game/simulation/geometry";
 import type { CampDefinition, CritterKind, CritterState, GroundItem, Vec2, WeaponKind, WolfState, WorldDefinition, WorldDrop } from "../game/simulation/types";
 import { CRITTER_SPECS } from "../game/simulation/types";
 import { distanceToCampApproach, terrainHeightAt, terrainMoistureAt, terrainSaltAt, terrainSlopeAt } from "../game/terrain/TerrainModel";
+import { createWildDogRig, type WildDogRig } from "./WildDogModel";
 
 interface CampView {
   flame: THREE.Group;
@@ -15,6 +16,7 @@ interface CampView {
 interface WolfView {
   group: THREE.Group;
   bodyMaterial: THREE.MeshStandardMaterial;
+  rig: WildDogRig;
   /** 头顶血条：受伤后短暂浮现，头狼常驻。挂在场景根上而不是狼身上，免得继承死亡侧翻。 */
   bar: THREE.Group;
   barFill: THREE.Sprite;
@@ -135,16 +137,16 @@ const smoothTerrainBlend = (edge0: number, edge1: number, value: number): number
   return t * t * (3 - 2 * t);
 };
 
-// 头狼是全场唯一的巨型剪影；白天的野狼用浅沙色，和夜袭狼的暗褐区分开。
+// 头犬是全场唯一的巨型剪影；白天野狗偏沙黄，夜袭犬偏赤褐。
 const wolfScale = (wolf: WolfState): number => (
   wolf.kind === "alpha" ? 1.85 : wolf.kind === "large" ? 1.22 : 0.84
 );
 
 const wolfBodyColor = (wolf: WolfState): number => {
-  if (wolf.kind === "alpha") return 0x2a211a;
-  if (wolf.role === "wild") return 0xb59a6d;
-  if (wolf.kind === "large") return 0x4a3a29;
-  return wolf.raider ? 0x604a34 : 0x7d6449;
+  if (wolf.kind === "alpha") return 0x7a4b2b;
+  if (wolf.role === "wild") return 0xd6a055;
+  if (wolf.kind === "large") return 0xb66a32;
+  return wolf.raider ? 0xc9823c : 0xd09a56;
 };
 
 /** 猎物配色：整体压在沙色系里，靠明度和一点点色相区分，不抢狼的戏。 */
@@ -322,13 +324,6 @@ function buildSandworm(group: THREE.Group, body: THREE.Material): void {
     group.add(seg);
   }
 }
-
-const wolfEyeColor = (wolf: WolfState): number => {
-  if (wolf.kind === "alpha") return 0xff2b1f;
-  if (wolf.role === "wild") return 0xe8d9a8;
-  if (wolf.kind === "large") return 0xff4938;
-  return wolf.raider ? 0xff784d : 0xf3c668;
-};
 
 export class GameRenderer {
   readonly canvas: HTMLCanvasElement;
@@ -1676,14 +1671,38 @@ export class GameRenderer {
       view.group.rotation.y = -Math.atan2(wolf.facing.z, wolf.facing.x);
       const kindScale = wolfScale(wolf);
       if (wolf.mode === "dead") {
+        const death = 1 - clamp(wolf.deathTimer / 0.8, 0, 1);
         view.group.rotation.z = lerp(view.group.rotation.z, Math.PI / 2, delta * 8);
-        view.group.scale.setScalar(clamp(wolf.deathTimer / 0.8, 0, 1) * kindScale);
+        view.group.scale.setScalar(kindScale);
+        view.rig.root.position.y = -death * 0.13;
+        view.rig.head.rotation.z = -death * 0.42;
+        view.rig.jaw.rotation.z = 0.24;
       } else {
         view.group.rotation.z = 0;
         view.group.scale.setScalar(kindScale);
-        // 只在地形高度之上叠加步态。直接赋成 0~0.04 会把狼埋到地形内部。
-        const stride = (1 - Math.cos(this.time * 8 + wolf.id * 0.83)) * 0.5;
-        view.group.position.y += stride * 0.04;
+        const phase = this.time * (wolf.mode === "chase" || wolf.mode === "retreating" ? 12 : 8) + wolf.id * 0.83;
+        const moving = wolf.mode !== "patrol" || Math.sin(phase * 0.25) > -0.35;
+        const stride = moving ? Math.sin(phase) : 0;
+        const strideAmount = moving ? (wolf.mode === "chase" ? 0.72 : 0.48) : 0;
+        view.rig.legs[0].rotation.z = stride * strideAmount;
+        view.rig.legs[1].rotation.z = -stride * strideAmount;
+        view.rig.legs[2].rotation.z = -stride * strideAmount;
+        view.rig.legs[3].rotation.z = stride * strideAmount;
+        view.rig.root.position.y = Math.abs(stride) * 0.035;
+        view.rig.root.rotation.z = wolf.mode === "chase" ? -0.08 : 0;
+        view.rig.head.rotation.z = wolf.mode === "chase" ? -0.14 : Math.sin(phase * 0.28) * 0.035;
+        view.rig.tail.rotation.x = Math.sin(phase * 0.65) * (wolf.mode === "retreating" ? 0.08 : 0.32);
+        view.rig.tail.rotation.z = wolf.mode === "retreating" ? -0.35 : 0.15;
+        // AI 在一次攻击后会把冷却重置到 1.15 秒；前 0.24 秒表现为探头扑咬。
+        const attack = wolf.mode === "chase" ? clamp((wolf.attackCooldown - 0.91) / 0.24, 0, 1) : 0;
+        const bite = Math.sin(attack * Math.PI);
+        view.rig.head.rotation.z -= bite * 0.38;
+        view.rig.jaw.rotation.z = bite * 0.52;
+        view.rig.root.position.x = bite * 0.16;
+        const hurt = clamp(wolf.hurtFlash / 0.18, 0, 1);
+        view.rig.head.rotation.z += hurt * 0.26;
+        view.rig.root.position.x -= hurt * 0.09;
+        view.group.position.y += Math.abs(stride) * 0.035;
       }
       view.bodyMaterial.color.setHex(
         wolf.hurtFlash > 0 ? 0xe04a46 : wolf.mode === "retreating" ? 0x7d9094 : wolfBodyColor(wolf),
@@ -1782,28 +1801,10 @@ export class GameRenderer {
 
   private createWolfView(wolf: WolfState): WolfView {
     const group = new THREE.Group();
-    const bodyMaterial = makeMaterial(wolfBodyColor(wolf), 0.95);
-    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.36, 1.05, 3, 5), bodyMaterial);
-    body.rotation.z = Math.PI / 2;
-    body.position.set(0, 0.75, 0);
-    body.scale.set(1, 1, 0.82);
-    body.castShadow = true;
-    group.add(body);
-    const head = new THREE.Mesh(new THREE.ConeGeometry(0.42, 0.85, 5), bodyMaterial);
-    head.rotation.z = -Math.PI / 2;
-    head.position.set(0.95, 0.88, 0);
-    head.castShadow = true;
-    group.add(head);
-    const tail = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.85, 5), bodyMaterial);
-    tail.rotation.z = Math.PI / 2.35;
-    tail.position.set(-0.85, 0.88, 0);
-    group.add(tail);
-    const eyeMaterial = new THREE.MeshBasicMaterial({ color: wolfEyeColor(wolf) });
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.055, 5, 4), eyeMaterial);
-    eye.position.set(1.12, 0.98, 0.29);
-    group.add(eye);
+    const rig = createWildDogRig(wolfBodyColor(wolf));
+    group.add(rig.mesh);
     const { bar, fill } = createWolfBar(wolf);
-    return { group, bodyMaterial, bar, barFill: fill, barTimer: 0, lastHealth: wolf.health };
+    return { group, rig, bodyMaterial: rig.mesh.material, bar, barFill: fill, barTimer: 0, lastHealth: wolf.health };
   }
 
   private syncFires(): void {
