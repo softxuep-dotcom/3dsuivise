@@ -99,14 +99,23 @@ const ARMOR_TIERS: EquipTier[] = [
 ];
 
 /**
+ * 全线统一的攻击冷却。
+ *
+ * 只有一个攻击动画可用（`Melee_1H_Attack_Chop`），而动画的播放速度是按
+ * `clip.duration / 0.22` 缩放到攻击闪光时长的。冷却一旦逐阶不同，同一个动作
+ * 在不同武器上就会以不同倍率被拉伸 —— 那看起来不像"重武器挥得慢"，
+ * 看起来像 bug。攻速这条轴因此让位给攻程、扇形、劳力等不依赖动画的轴。
+ */
+const ATTACK_COOLDOWN = 0.55;
+
+/**
  * 武器手感表。原先用 `weapon === "iron-spear" ? a : b` 判断，第 3 阶加进来之后
  * 会掉进 else 分支拿到匕首的攻程（3.1，比 T2 的 3.8 还短）—— 换表消除这个隐患。
- * 攻程随阶数变长，冷却也变长：重矛打得狠、够得远，但挥得慢。
  */
 const WEAPON_STATS: Record<WeaponKind, { cooldown: number; range: number }> = {
-  "survival-knife": { cooldown: 0.50, range: 3.1 },
-  "iron-spear": { cooldown: 0.58, range: 3.8 },
-  "fang-spear": { cooldown: 0.62, range: 4.2 },
+  "survival-knife": { cooldown: ATTACK_COOLDOWN, range: 3.1 },
+  "iron-spear": { cooldown: ATTACK_COOLDOWN, range: 3.8 },
+  "fang-spear": { cooldown: ATTACK_COOLDOWN, range: 4.2 },
 };
 
 /** 镶铁重甲的负重：换来 13 点防御（比粗布衣的 2 高出 11），代价是 5% 移速。 */

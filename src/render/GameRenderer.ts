@@ -1282,7 +1282,11 @@ export class GameRenderer {
     const player = this.simulation.player;
 
     if (player.attackFlash > 0) {
-      const attackName = player.weapon === "iron-spear" ? "Melee_2H_Attack_Stab" : "Melee_1H_Attack_Chop";
+      // 全线共用劈砍：武器已经统一成刀与剑，没有长柄了，突刺无处可用。
+      // 原先是 `weapon === "iron-spear" ? Stab : Chop`，第 3 阶的 fang-spear
+      // 会掉进 else 分支，拿着重矛播匕首的动作 —— 和 WEAPON_STATS 那处
+      // 已经修过的三元判断是同一类漏网。恒定之后这个分支问题不复存在。
+      const attackName = "Melee_1H_Attack_Chop";
       const attack = this.playerActions.get(attackName);
       const speed = attack ? attack.getClip().duration / 0.22 : 1;
       this.playPlayerAnimation(attackName, true, speed);

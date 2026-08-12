@@ -21,7 +21,9 @@ await MeshoptEncoder.ready;
 const animationFiles = new Map([
   ["Rig_Medium_MovementBasic.glb", new Set(["Running_A"])],
   ["Rig_Medium_General.glb", new Set(["Idle_A", "Idle_B", "Hit_A"])],
-  ["Rig_Medium_CombatMelee.glb", new Set(["Melee_1H_Attack_Chop", "Melee_2H_Attack_Stab"])],
+  // 突刺（Melee_2H_Attack_Stab）已弃用：武器统一成刀与剑之后没有长柄武器，
+  // 全线共用劈砍。下次拿原始素材重跑本脚本时它就会被剔出产物。
+  ["Rig_Medium_CombatMelee.glb", new Set(["Melee_1H_Attack_Chop"])],
 ]);
 
 await mkdir(outputDirectory, { recursive: true });
