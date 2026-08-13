@@ -132,7 +132,6 @@ export const en: Record<string, string> = {
   "intro.controls.desktop": "WASD to move · E to gather, feed, carry, draw · Space to attack · Q for warmth · B/Tab for pack<br />Click the ground to move · eat and drink from the pack (opening it pauses)",
   "intro.controls.touch": "Left stick to move · attack / act / warmth / pack on the right · eat and drink from the pack",
   "intro.eyebrow": "Playable mechanics prototype",
-  "intro.start": "Step into the sand",
   "intro.tagline": "A crash left you in the open sand. Find water and shade by day, hold the fire against the dogs by night.",
   "intro.title": "Desert Survivor",
   "intro.verb1": "Cut cactus, draw from wells, hunt dogs for hide",

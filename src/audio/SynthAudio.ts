@@ -6,12 +6,20 @@ export class SynthAudio {
   private master: GainNode | null = null;
 
   /**
-   * "踏入沙海"的点击可能发生在主包到达之前，而 AudioContext 必须在那次用户手势里创建
-   * （iOS 上手势外创建出来的一律是 suspended，事后 resume 也救不回来）。
+   * AudioContext 必须在用户手势里创建（iOS 上手势外创建出来的一律是 suspended，
+   * 事后 resume 也救不回来）。开场没有按钮，第一次手势可能早于主包到达，
    * 所以它由 index.html 的内联脚本先建好，这里接管；没有就退回自己建。
    */
   constructor(context: AudioContext | null = null) {
     this.context = context;
+  }
+
+  /**
+   * 事后接管内联脚本建的 context —— 第一次手势也可能**晚于**本对象构造
+   * （玩家进场后才碰屏幕），那时构造函数拿到的是 null。
+   */
+  adopt(context: AudioContext | null): void {
+    if (context && !this.context) this.context = context;
   }
 
   async unlock(): Promise<void> {

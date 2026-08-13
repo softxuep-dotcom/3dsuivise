@@ -131,7 +131,6 @@ export const zh: Record<string, string> = {
   "intro.controls.desktop": "键盘：WASD 移动 · E 捡柴/添柴/搬石/取汁/提水 · 空格攻击 · Q 调体温 · B/Tab 背包<br />鼠标：点击地面移动 · 吃喝在背包里点物品格（开背包会暂停）",
   "intro.controls.touch": "左侧摇杆移动 · 右下攻击/行动/体温/背包 · 吃喝在背包里点物品格",
   "intro.eyebrow": "可玩机制原型",
-  "intro.start": "踏入沙海",
   "intro.tagline": "一次坠机把你丢进了沙海。白天找水避暑，夜晚守火挡野狗。",
   "intro.title": "荒漠幸存者",
   "intro.verb1": "白天割仙人掌、走井边提水、猎野狗取皮",
