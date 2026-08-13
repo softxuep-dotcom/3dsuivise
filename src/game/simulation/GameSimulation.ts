@@ -441,7 +441,6 @@ export class GameSimulation {
   private comboTimer = 0;
   /** 头狼是否已被击杀。杀掉不再直接通关 —— 还得撑到天亮。 */
   private alphaSlain = false;
-  /** 本帧玩家是否在移动 —— 劳作产热的输入。 */
   /** 挨打后的休息封锁倒计时，见 REST_COMBAT_LOCK。 */
   private combatTimer = 0;
   /** 当前正在提水的井 id，-1 表示没有。 */
@@ -1533,10 +1532,18 @@ export class GameSimulation {
     }
 
     // === 体温 ===
-    // 四个独立分量相加：篝火、昼/夜基线、劳作产热。
-    //   白天奔波无火 = +1.25/s      白天静止无火 = +0.35/s
-    //   夜晚奔跑无火 = -0.35/s      夜晚静止无火 = -1.25/s
-    //   白天贴火奔波 = +4.65/s      夜晚贴火静止 = +2.15/s
+    // 两个独立分量相加：昼/夜基线，加上贴着篝火时的火焰增益。
+    //
+    //   白天无火 = +0.69/s      白天贴火 = +3.85/s
+    //   夜晚无火 = −1.05/s      夜晚贴火 = +2.11/s
+    //
+    // **没有"劳作产热"这一项** —— 它曾经存在（+0.9/s），但那是白天基线的 2.7 倍，
+    // 直接导致"正常采集必然中暑且无法自救"，已在 WARMTH_FIRE_GAIN 上方那条注释里
+    // 说明为何移除。所以移动、采集、休息都**完全不影响体温**，玩家能动的只有
+    // 三件事：喝水/洗脸水降温、贴火升温、以及就地调节（requestThermalAction）。
+    //
+    // 白天一定会热：地板 15 按 +0.69/s 爬到中暑线 100 要 123 秒，而白天有 180 秒。
+    // 所以"白天必须喝水"不是建议，是硬性节奏。
     const nearFire = this.findNearestLitFire(FIRE_WARMTH_RADIUS) !== null;
     let warmthDelta = 0;
     if (nearFire) warmthDelta += WARMTH_FIRE_GAIN;
