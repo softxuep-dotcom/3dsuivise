@@ -1875,7 +1875,14 @@ export class GameSimulation {
     // 而"直线被挡"这个判定只看两点之间，走到崖脚前它一直是 false —— 狼于是笔直
     // 撞上崖壁，等判定终于变 true 时它已经贴死在坡面上，流场也拉不动了。
     if (wolf.mode === "raid") desired = this.navigation.directionFrom(wolf);
-    else if (wolf.mode === "chase" && this.lineOfSightBlocked(wolf, this.player)) {
+    else if (wolf.mode === "chase"
+      && (this.lineOfSightBlocked(wolf, this.player) || !this.canStepToward(wolf, desired))) {
+      // 「看不见」之外还要加一条「迈不动」。
+      //
+      // 站在营地崖脚抬头看台上的玩家，视线是**通的** —— 于是旧代码判定"直线可用"，
+      // 让狗笔直顶着崖壁走。而那个方向每一帧都被 canTraverseTerrain 拒掉，
+      // 狗就一动不动地站在下面盯着人，一整夜都不上来。视线和可通行是两回事，
+      // 拿前者代替后者，恰好在落差地形上必错。
       desired = this.navigation.directionFrom(wolf);
     }
     // Retreats always follow a terrain-aware flow field. A straight line to the
@@ -2874,12 +2881,33 @@ export class GameSimulation {
     }
   }
 
+  /**
+   * 沿 dir 迈一步会不会被地形拒掉。用的是 stepAxis 同一个判定，所以答案和实际
+   * 移动结果一致；探针取 0.45 米 —— 比一帧的位移长（狗最快约 0.1 米/帧），
+   * 这样它在真正贴上崖壁之前就已经改走流场，而不是先撞上去再纠正。
+   */
+  private canStepToward(from: Vec2, dir: Vec2): boolean {
+    const probe = { x: from.x + dir.x * 0.45, z: from.z + dir.z * 0.45 };
+    return this.canTraverseTerrain(from, probe);
+  }
+
   private canTraverseTerrain(from: Vec2, to: Vec2, terrainSlopeAllowance = 1): boolean {
-    if (terrainSlopeAt(this.world, to) > this.world.terrain.maxWalkableSlope * terrainSlopeAllowance) return false;
+    const limit = this.world.terrain.maxWalkableSlope * terrainSlopeAllowance;
+    const toSlope = terrainSlopeAt(this.world, to);
+    // 落点坡度是一条**站得住吗**的判据，这里却被拿来当**迈得过去吗**用。
+    // 实体已经站在坡度 0.776 的地面上（贴着营地的墙走，被完全不看地形的
+    // pushOutsideCircle 推上去的 —— 实测好几只狗被同一堵墙推到同一个坐标后一起定住），
+    // 此时它横向挪一步、爬升比只有 0.036，几乎是平着走，却因为落点坡度 0.784
+    // 微微过线而被拒；而另一个轴的落点坡度合格、爬升比却有 1.003，同样被拒。
+    // 两条判据一边卡一个方向，实体就被钉死在原地，站着看玩家，一整夜不动。
+    //
+    // 所以：脚下本来就在线上时，只要新落点不比脚下**明显**更陡就放行，让它挪得回去。
+    // 爬崖不受影响 —— 那件事从头到尾由下面的 rise/travel 把关，这里一个字没动。
+    if (toSlope > limit && toSlope > terrainSlopeAt(this.world, from) + 0.05) return false;
     const travel = Math.hypot(to.x - from.x, to.z - from.z);
     if (travel < 0.0001) return true;
     const rise = Math.abs(terrainHeightAt(this.world, to) - terrainHeightAt(this.world, from));
-    return rise / travel <= this.world.terrain.maxWalkableSlope * 1.12 * terrainSlopeAllowance;
+    return rise / travel <= limit * 1.12;
   }
 
   private pushOutsideCircle(entity: Vec2, radius: number, obstacle: Vec2, obstacleRadius: number): void {

@@ -1,4 +1,4 @@
-import { isTerrainWalkable } from "../terrain/TerrainModel";
+import { isTerrainWalkable, terrainHeightAt } from "../terrain/TerrainModel";
 import { direction } from "./geometry";
 import type { Vec2, WorldDefinition } from "./types";
 
@@ -65,7 +65,26 @@ export class NavigationGrid {
 
   directionFrom(position: Vec2): Vec2 {
     const cell = this.toCell(position);
-    if (cell < 0 || this.flow[cell] === UNREACHABLE) return direction(position, this.target);
+    if (cell < 0) return direction(position, this.target);
+    if (this.flow[cell] === UNREACHABLE) {
+      /*
+       * 站在流场没覆盖到的格子里 —— 这**不是**异常，是常态。
+       *
+       * buildStaticObstacles 只采样格子中心，所以一个中心压在崖壁上的 1.5m 格子里，
+       * 完全可能有站得住的地方；实体沿坡滑行或被 resolveCollisions 推挤都会落进来。
+       * 实测：狗顺着流场走到营地崖脚，第 3.5 秒踏进这样一格，此后 blocked=1、
+       * flow=UNREACHABLE，而它脚下的地形其实是可走的。
+       *
+       * 这时**绝不能**退回"直奔目标"。崖下抬头看台上的玩家，那条直线正是被地形
+       * 挡住的方向，于是每一帧都被 canTraverseTerrain 拒掉、一步也走不动 ——
+       * 狗就永远站在崖下盯着人，不上来咬。而且这是个单向陷阱：唯一被给出的方向
+       * 就是走不通的那个，它自己爬不出来。
+       *
+       * 改为先朝最近的、**迈得过去的**有流场格走，把自己拉回路网上，再继续下坡。
+       */
+      const escape = this.nearestFlowCell(cell, position);
+      return direction(position, escape < 0 ? this.target : this.cellCenter(escape));
+    }
     const x = cell % this.width;
     const z = Math.floor(cell / this.width);
     let best = cell;
@@ -116,6 +135,53 @@ export class NavigationGrid {
       x: (index % this.width) * this.cellSize - half + this.cellSize / 2,
       z: Math.floor(index / this.width) * this.cellSize - half + this.cellSize / 2,
     };
+  }
+
+  /**
+   * 从 start 向外一圈圈找最近的、BFS 走到过、**而且从 origin 迈得过去**的格子。
+   *
+   * 三条都必要：
+   *  - 有流场值：一个不可达的开放格救不了任何人（这是它和 findNearestOpenCell 的区别，
+   *    那个是给目标点用的，只看 blocked）。
+   *  - 迈得过去：只按流场值挑会选中崖**上**那一格 —— 它离目标最近，方向却是垂直崖壁。
+   *    实测就是这样：狗在第 4.5 秒逃出来一次，5.5 秒又被推回去，6 秒起彻底钉死。
+   *  - 由近及远：先回到刚才走过的路上，而不是横着贴崖脚平移。
+   *
+   * 半径给到 8 格（12m），足够跨过营地崖壁那一圈。
+   */
+  private nearestFlowCell(start: number, origin: Vec2): number {
+    const startX = start % this.width;
+    const startZ = Math.floor(start / this.width);
+    const maxSlope = this.world.terrain.maxWalkableSlope;
+    const originHeight = terrainHeightAt(this.world, origin);
+    for (let radius = 1; radius <= 8; radius += 1) {
+      let best = -1;
+      let bestScore = Infinity;
+      for (let dz = -radius; dz <= radius; dz += 1) {
+        for (let dx = -radius; dx <= radius; dx += 1) {
+          // 只看这一圈的边，里面几圈上一轮已经查过了。
+          if (Math.max(Math.abs(dx), Math.abs(dz)) !== radius) continue;
+          const x = startX + dx;
+          const z = startZ + dz;
+          if (x < 0 || z < 0 || x >= this.width || z >= this.width) continue;
+          const index = z * this.width + x;
+          if (this.flow[index] === UNREACHABLE) continue;
+          const center = this.cellCenter(index);
+          const travel = Math.hypot(center.x - origin.x, center.z - origin.z);
+          if (travel < 0.0001) continue;
+          // 和 GameSimulation.canTraverseTerrain 同一条坡度规则：爬不上去的不算数。
+          if (Math.abs(terrainHeightAt(this.world, center) - originHeight) / travel > maxSlope) continue;
+          // 同圈内优先离得近的，再用流场值破平 —— 先归队，再谈朝目标走。
+          const score = travel * 100 + this.flow[index];
+          if (score < bestScore) {
+            best = index;
+            bestScore = score;
+          }
+        }
+      }
+      if (best >= 0) return best;
+    }
+    return -1;
   }
 
   private findNearestOpenCell(start: number): number {
