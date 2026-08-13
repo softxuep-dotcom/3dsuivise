@@ -40,7 +40,7 @@ import type {
   WorldDefinition,
   WorldDrop,
 } from "./types";
-import { CRITTER_SPECS, INVENTORY_CAPACITY, INVENTORY_STACK_LIMITS, STRUCTURE_SPECS } from "./types";
+import { BARRIER_STATS, CRITTER_SPECS, INVENTORY_CAPACITY, INVENTORY_STACK_LIMITS, STRUCTURE_SPECS } from "./types";
 
 /**
  * 造一条待渲染文案。模拟层所有面向玩家的字符串都经这里出去 ——
@@ -544,6 +544,7 @@ export class GameSimulation {
     this.updateFires(delta);
     this.updateCacti();
     this.updateWells();
+    this.updateStructures(delta);
     this.updateDrops();
     this.updateCritters(delta);
     this.updateWolves(delta);
@@ -1720,6 +1721,20 @@ export class GameSimulation {
     }
   }
 
+  /**
+   * 树桩自愈。白天自己长回来，玩家不必每晚重造 ——
+   * 这让它从"每晚的消耗品"变成"一次性投入的阵地"，也是原图 h003 的核心设计
+   * （那边是 +5.00/s）。大石不自愈：它是石头不是活物。
+   */
+  private updateStructures(delta: number): void {
+    for (const structure of this.structures) {
+      if (!structure.active || structure.hp >= structure.maxHp) continue;
+      const spec = STRUCTURE_SPECS[structure.kind];
+      if (spec.regen <= 0) continue;
+      structure.hp = Math.min(structure.maxHp, structure.hp + spec.regen * delta);
+    }
+  }
+
   private updateDrops(): void {
     for (const drop of this.drops) {
       if (!drop.active) continue;
@@ -1871,7 +1886,7 @@ export class GameSimulation {
     if (blockingStructure) {
       if (wolf.attackCooldown <= 0) {
         wolf.attackCooldown = 0.95;
-        blockingStructure.hp -= Math.round(wolf.attack * (wolf.kind === "large" ? 1.45 : 1.05));
+        blockingStructure.hp -= this.getBarrierDamage(wolf, STRUCTURE_SPECS[blockingStructure.kind].armor);
         this.events.push({ type: "barrier-hit", itemId: -1 - blockingStructure.id });
         if (blockingStructure.hp <= 0) {
           blockingStructure.active = false;
@@ -1905,7 +1920,7 @@ export class GameSimulation {
       }
       if (wolf.attackCooldown <= 0) {
         wolf.attackCooldown = 0.95;
-        const barrierDamage = Math.round(wolf.attack * (wolf.kind === "large" ? 1.45 : 1.05));
+        const barrierDamage = this.getBarrierDamage(wolf, BARRIER_STATS[blockingItem.kind].armor);
         blockingItem.hp -= barrierDamage;
         this.events.push({ type: "barrier-hit", itemId: blockingItem.id });
         if (blockingItem.hp <= 0) blockingItem.active = false;
@@ -2463,6 +2478,16 @@ export class GameSimulation {
     return best;
   }
 
+  /**
+   * 狼拆路障的一击伤害。大狼咬得更狠（×1.45），护甲按减法直接扣掉。
+   * 减法在这里是关键：6 点护甲对第 3 夜的大狼只减 19%，对小狼却减 41% ——
+   * 路障因此天然更擅长过滤杂鱼，而这正是它该干的活。
+   */
+  private getBarrierDamage(wolf: WolfState, armor: number): number {
+    const raw = Math.round(wolf.attack * (wolf.kind === "large" ? 1.45 : 1.05));
+    return Math.max(1, raw - armor);
+  }
+
   /** 挡在狼前进方向上的放置物。 */
   private findBlockingStructure(wolf: WolfState, desired: Vec2): PlacedStructure | null {
     let closest: PlacedStructure | null = null;
@@ -2778,7 +2803,7 @@ export class GameSimulation {
     item.x = dropPosition.x;
     item.z = dropPosition.z;
     item.kind = kind;
-    item.hp = kind === "stone" ? 220 : 70;
+    item.hp = BARRIER_STATS[kind].hp;
     item.placed = true;
     item.active = true;
     item.rotation = Math.atan2(this.player.facing.z, this.player.facing.x);

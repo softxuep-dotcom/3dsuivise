@@ -16,6 +16,7 @@ import type {
   WorldDefinition,
   DenDefinition,
 } from "../simulation/types";
+import { BARRIER_STATS } from "../simulation/types";
 import mapBlueprint from "./mapBlueprint.json";
 
 interface MapBlueprint {
@@ -120,7 +121,7 @@ export function createWorld(seed = 71291): WorldDefinition {
       kind,
       x,
       z,
-      hp: kind === "stone" ? 220 : 70,
+      hp: BARRIER_STATS[kind].hp,
       placed: false,
       active: true,
       rotation: random() * TAU,

@@ -284,13 +284,43 @@ export interface StructureSpec {
   cost: Array<[InventoryItemKind, number]>;
   stamina: number;
   maxHp: number;
+  /**
+   * 减法护甲，和玩家、狼走同一套公式。
+   * 路障最需要的其实是它而不是血量：它把"一群小狼"从威胁降成噪音，
+   * 而这正是路障存在的意义 —— 用木头换时间，不是用木头换血条。
+   */
+  armor: number;
+  /** 每秒自愈。白天自己长回来，树桩因此是一次性投入的阵地，不是每晚的消耗品。 */
+  regen: number;
   /** 占地半径，同时用于碰撞与"离得太近不让放"的判定。 */
   radius: number;
 }
 
+/**
+ * 地面物当路障时的耐久。
+ *
+ * 大石：封住营地那条唯一坡道的东西，所以要比树桩更硬 —— 它是天然巨石不是木桩，
+ * 因此给高血高甲但**不自愈**。原图里没有"搬石头堵门"这个设计（石头在那边是挖矿
+ * 产出的合成材料），所以没有参考值，这组数是照着"树桩 ×2 血、更高护甲"定的。
+ *
+ * 枯木：成堆时才算路障（见 findBlockingItem 的 clusterSize 判定），聊胜于无。
+ */
+export const BARRIER_STATS: Record<GroundItemKind, { hp: number; armor: number }> = {
+  stone: { hp: 1500, armor: 10 },
+  wood: { hp: 70, armor: 0 },
+};
+
 export const STRUCTURE_SPECS: Record<StructureKind, StructureSpec> = {
+  /**
+   * 树桩。数值对齐原图 `h003`（1000 血 / +5.00 自愈 / 15 护甲 / 木头 ×1），
+   * 按我们的量纲缩放后落在 800 / +2 / 6。
+   *
+   * 改之前是 220 血、无护甲、无自愈 —— 第 3 夜一只大狼 6.5 秒就拆了，
+   * 而原图的树桩能拖住一只恶狼 85 秒。13 倍的差距，
+   * 结果就是"12 劳力 + 1 木头换 6.5 秒"，没人会去造。
+   */
   stake: {
-    cost: [["wood", 1]], stamina: 12, maxHp: 220, radius: 0.9,
+    cost: [["wood", 1]], stamina: 12, maxHp: 800, armor: 6, regen: 2, radius: 0.9,
   },
 };
 
