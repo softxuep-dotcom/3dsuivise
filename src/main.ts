@@ -9,14 +9,12 @@ import { HudController } from "./ui/HudController";
 
 /**
  * index.html 内联脚本留下的引导桥，见那段注释。
- * 它在主包到达之前就接住了"踏入沙海"的点击，并在用户手势里建好了 AudioContext。
+ * 它在主包到达之前就点亮了进度条，并在第一次用户手势里建好 AudioContext。
  */
 interface BootBridge {
-  requested: boolean;
   audioContext: AudioContext | null;
   moduleAttached: boolean;
   ratio: number;
-  onRequest: (() => void) | null;
   set: (ratio: number, label: string | null) => void;
 }
 
@@ -28,7 +26,7 @@ const setProgress = (ratio: number, label: string | null = null): void => boot?.
  * 少了这一步，整段初始化跑在同一个宏任务里，条子从 0 直接跳到 100 —— 等于没有。
  *
  * 带超时兜底：页面切到后台时 rAF **完全不触发**，只等它会把开场流程永久卡死 ——
- * 玩家点完"踏入沙海"顺手切个应用回来，就再也进不去了。
+ * 玩家开着页面顺手切个应用回来，就再也进不去了。
  */
 const nextPaint = (): Promise<void> => new Promise((resolve) => {
   let settled = false;
@@ -48,11 +46,7 @@ const renderRoot = document.getElementById("render-root");
 if (!renderRoot) throw new Error("Missing render root");
 
 // 主包到了，停掉内联脚本那条渐近假进度，后面全是真实进度。
-let startRequested = boot?.requested ?? false;
-if (boot) {
-  boot.moduleAttached = true;
-  boot.onRequest = () => { startRequested = true; };
-}
+if (boot) boot.moduleAttached = true;
 
 async function bootstrap(): Promise<void> {
   // 语言要在任何 UI 构建之前定下来：HudController 的构造函数里就会取文案。
@@ -79,6 +73,23 @@ async function bootstrap(): Promise<void> {
     simulation.phaseTime = 105;
   }
   const audio = new SynthAudio(boot?.audioContext ?? null);
+  /*
+   * 音频只能在用户手势里解锁（iOS 上手势外建出来的 AudioContext 一律 suspended，
+   * 事后 resume 也救不回来）。开场按钮撤掉之后没有那次点击了，改挂在第一次任何手势上 ——
+   * 进场后第一件必须做的事就是移动，那一下就是手势。
+   *
+   * index.html 的内联桥在同一次手势里（注册得更早的捕获监听）把 AudioContext 建好，
+   * 这里 adopt 过来再 resume；那次手势若发生在本对象构造之前，构造函数就已经拿到了。
+   */
+  const unlockAudio = (): void => {
+    document.removeEventListener("pointerdown", unlockAudio, true);
+    document.removeEventListener("keydown", unlockAudio, true);
+    audio.adopt(boot?.audioContext ?? null);
+    void audio.unlock().catch(() => { /* 没声音也照样能玩 */ });
+  };
+  document.addEventListener("pointerdown", unlockAudio, true);
+  document.addEventListener("keydown", unlockAudio, true);
+
   const hud = new HudController(simulation);
   // 重开是整页刷新，所以开场页每次都会重新读一次记录。
   hud.refreshRecordsLine();
@@ -129,10 +140,11 @@ async function bootstrap(): Promise<void> {
   let previousTime = performance.now();
   let hiddenAt = 0;
 
+  // 音频不在这里解锁：进场已经不由用户手势触发，此刻 resume 必然被浏览器拒掉。
+  // 交给上面的 unlockAudio。
   const enterGame = (): void => {
     if (started) return;
     started = true;
-    void audio.unlock().catch(() => { /* 没声音也照样能玩 */ });
     simulation.start();
     hud.showGame();
   };
@@ -182,13 +194,9 @@ async function bootstrap(): Promise<void> {
   requestAnimationFrame(frame);
 
   setProgress(1, "Ready");
-  // 加载完就把进度条收掉，开场页回到只剩一个按钮的干净状态。
-  document.getElementById("boot-progress")?.classList.add("hidden");
-  // 加载期间点过"踏入沙海"就直接进场，不让玩家为同一件事点第二次；
-  // 还没点过就把按钮接上，这时点下去是秒进。
-  if (startRequested) enterGame();
-  else if (boot) boot.onRequest = enterGame;
-  else document.getElementById("start-button")?.addEventListener("click", enterGame);
+  // 加载完直接进场，不再等一次点击。
+  // 生存时钟不会因此空转 —— 它等玩家第一次移动才起跑（GameSimulation.clockStarted）。
+  enterGame();
 }
 
 void bootstrap().catch((error) => console.error("Bootstrap failed", error));

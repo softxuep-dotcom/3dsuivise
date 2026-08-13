@@ -103,15 +103,17 @@
           </p>
           <p id="records-line" class="records-line hidden"></p>
           <!--
-            进度条不再等点击才出现：一进页面就开始跑。
-            按钮和进度条同时在场 —— 点击那一下仍然是必须的，AudioContext 和横屏锁
-            只能在用户手势里发起，但玩家不必先点一下才知道游戏在加载。
+            没有开始按钮：一进页面就开始加载，加载完直接进场。
+            这一页因此不再是一道门，只是加载期间看到的东西。
+
+            代价是没有那次点击了，而 AudioContext 与横屏锁只能在用户手势里发起 ——
+            它们改挂在下面的"第一次任何手势"上。生存时钟不受影响：它本来就等
+            玩家第一次移动才起跑（GameSimulation.clockStarted）。
           -->
           <div id="boot-progress" class="boot-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
             <i><b id="boot-bar"></b></i>
             <span id="boot-status">Loading engine…</span>
           </div>
-          <button id="start-button" class="primary-button" type="button" data-i18n="intro.start">Step into the sand</button>
           <p class="controls-copy">
             <span class="desktop-copy" data-i18n-html="intro.controls.desktop">WASD to move · E to gather, feed, carry, draw · Space to attack · Q for warmth · B/Tab for pack<br />Click the ground to move · eat and drink from the pack (opening it pauses)</span>
             <span class="touch-copy" data-i18n="intro.controls.touch">Left stick to move · attack / act / warmth / pack on the right · eat and drink from the pack</span>
@@ -188,25 +190,21 @@
       /*
        * 开场引导桥。这段**必须**是内联的普通脚本，不能进主包。
        *
-       * 手机首次访问要先下载并解析 868 KiB 的 JS，实测十几秒；而"踏入沙海"的点击监听
-       * 原本挂在主包里，那十几秒内点它完全没反应，主包到了也不会自动进游戏，
-       * 玩家得再点一次。这里先把点击接住并亮起进度条，主包到达后接手真实进度、跑完自动进。
+       * 手机首次访问要先下载并解析 868 KiB 的 JS，实测十几秒。这段先把进度条点亮，
+       * 主包到达后接手真实进度、跑完自动进场 —— 全程不需要玩家点任何东西。
        *
-       * AudioContext 与横屏锁也放在这里：它们只能在用户手势里发起，而主包到达时
-       * 那次手势早就过期了。
+       * 第一次手势的监听也放在这里：AudioContext 与横屏锁只能在用户手势里发起，
+       * 而加载期间玩家不耐烦戳屏幕的那一下，主包往往还没到，挂在主包里就接不住。
        */
       (function () {
-        var button = document.getElementById("start-button");
         var panel = document.getElementById("boot-progress");
         var bar = document.getElementById("boot-bar");
         var status = document.getElementById("boot-status");
 
         var boot = {
-          requested: false,
           audioContext: null,
           moduleAttached: false,
           ratio: 0,
-          onRequest: null,
           /**
            * 进度只增不减，避免真实进度和渐近假进度互相拉扯时来回跳。
            * 文案同样只跟着"跑在最前面"的那一步走 —— 网速快时人物资源可能先于
@@ -222,9 +220,14 @@
         };
         window.__boot = boot;
 
-        button.addEventListener("click", function () {
-          if (boot.requested) return;
-          boot.requested = true;
+        /*
+         * 第一次手势 —— 曾经是"踏入沙海"那一下，现在没有按钮了，改成任何一次
+         * 点击或按键。进场后第一件必须做的事就是移动，所以这次手势一定会来，
+         * 只是比原先晚几秒：在那之前静音，而横屏锁多数浏览器本来就只在全屏下给。
+         */
+        function onFirstGesture() {
+          document.removeEventListener("pointerdown", onFirstGesture, true);
+          document.removeEventListener("keydown", onFirstGesture, true);
           try {
             var Ctor = window.AudioContext || window.webkitAudioContext;
             if (Ctor) boot.audioContext = new Ctor();
@@ -234,15 +237,12 @@
               screen.orientation.lock("landscape").catch(function () {});
             }
           } catch (error) { /* 锁不上也照样能玩 */ }
-          if (boot.onRequest) boot.onRequest();
-        });
+        }
+        document.addEventListener("pointerdown", onFirstGesture, true);
+        document.addEventListener("keydown", onFirstGesture, true);
 
-        // 一进页面就开始跑，不等点击。
-        //
-        // 原先是"点了才开始显示进度"：手机上玩家盯着一个静止的开场页十几秒，
-        // 完全看不出后台在下载 900KB，只会以为页面坏了。现在进度条一上来就在动，
-        // 按钮始终在场 —— 点击那一下仍然必须有（AudioContext 与横屏锁只能在
-        // 用户手势里发起），但它不再是"开始加载"的开关，只是"我准备好了"。
+        // 一进页面就开始跑。手机上玩家盯着一个静止的开场页十几秒，完全看不出
+        // 后台在下载 900KB，只会以为页面坏了。
         creep();
 
         /*
