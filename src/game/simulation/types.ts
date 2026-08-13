@@ -230,6 +230,27 @@ export interface WellState {
   refillAt: number;
 }
 
+/**
+ * 狗巢：夜袭犬的出生点，也是地图上唯一一个"敌人有来处"的地标。
+ *
+ * 原先夜袭犬从地图四条边随机刷出，再先去一个**随机营地**附近的锚点、才折向
+ * 唯一亮着火的那座 —— 实测第 1 夜配额 40 只里只有 9 只真正走到营地 20 米内
+ * （23%），大半个夜晚它们都在路上。玩家因此学不到任何东西：狼不是从某处来的，
+ * 它就是天气。
+ *
+ * 巢在地形上被刻成一圈土垄 + 中间的浅坑，**只留朝向营地的那一个口**
+ * （实测 36 个方位里只有 3 个可走），所以狼流出来的方向是确定的、看得见的。
+ */
+export interface DenDefinition extends Vec2 {
+  id: number;
+  /** 巢口朝向（弧度），指向它要进攻的营地。 */
+  mouthAngle: number;
+  /** 土垄外缘半径；巢口在这个圈上开一道缺口。 */
+  radius: number;
+  /** 巢口的世界坐标，狼从这里冒出来。 */
+  mouth: Vec2;
+}
+
 export interface LandmarkDefinition extends Vec2 {
   id: number;
   kind: LandmarkKind;
@@ -354,6 +375,7 @@ export interface WorldDefinition {
   ironNodes: IronNode[];
   wells: WellDefinition[];
   landmarks: LandmarkDefinition[];
+  dens: DenDefinition[];
   startCampId: number;
 }
 

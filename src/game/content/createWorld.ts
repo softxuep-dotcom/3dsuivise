@@ -14,6 +14,7 @@ import type {
   TreeDefinition,
   Vec2,
   WorldDefinition,
+  DenDefinition,
 } from "../simulation/types";
 import mapBlueprint from "./mapBlueprint.json";
 
@@ -35,6 +36,17 @@ interface MapBlueprint {
     platform: Vec2[];
     approach: Vec2[];
     gate: Vec2;
+  }>;
+  /** 狗巢：位置与形状同时驱动地形烘焙（shape_dens）和运行时刷怪点。 */
+  dens?: Array<{
+    id: number;
+    x: number;
+    z: number;
+    mouthAngle: number;
+    radius: number;
+    rimHeight: number;
+    hollowDepth: number;
+    mouthWidth: number;
   }>;
   ridges: Array<Omit<HillDefinition, "id">>;
 }
@@ -82,6 +94,24 @@ export function createWorld(seed = 71291): WorldDefinition {
     trees.push({ id: trees.length, ...point, rotation: random() * TAU, scale: 0.75 + random() * 0.55 });
     walls.push({ ...point, radius: 1.05, kind: "tree" });
   }
+
+  /**
+   * 狗巢。位置在蓝图里，地形烘焙时会照着它刻出土垄与缺口
+   * （见 authoring/terrain/generate_heightfield.py 的 shape_dens）。
+   * 这里只把它翻译成运行时结构，并算出巢口的世界坐标。
+   */
+  const dens: DenDefinition[] = (BLUEPRINT.dens ?? []).map((source) => ({
+    id: source.id,
+    x: source.x,
+    z: source.z,
+    mouthAngle: source.mouthAngle,
+    radius: source.radius,
+    // 巢口落在土垄的缺口上：从中心沿 mouthAngle 走到垄外一点，狼从这里踏出来。
+    mouth: {
+      x: source.x + Math.cos(source.mouthAngle) * source.radius * 0.82,
+      z: source.z + Math.sin(source.mouthAngle) * source.radius * 0.82,
+    },
+  }));
 
   const initialItems: GroundItem[] = [];
   const addItem = (kind: GroundItem["kind"], x: number, z: number): void => {
@@ -201,6 +231,7 @@ export function createWorld(seed = 71291): WorldDefinition {
     hills,
     initialItems,
     initialCacti,
+    dens,
     ironNodes,
     wells,
     landmarks,

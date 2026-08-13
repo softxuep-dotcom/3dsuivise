@@ -248,6 +248,7 @@ export class GameRenderer {
     this.buildTrees();
     this.buildGroundCover();
     this.buildLandmarks();
+    this.buildDens();
     this.buildCamps();
     this.buildCacti();
     this.buildIronNodes();
@@ -608,6 +609,77 @@ export class GameRenderer {
     place(grass, grassPoints, 0.02, 1.12);
     place(heath, heathPoints, 0.18, 0.62);
     place(pebbles, pebblePoints, 0.12, 0.58);
+  }
+
+  /**
+   * 狗巢。地形已经刻出土垄与缺口（shape_dens），这里只补三样让它一眼可读的东西：
+   * 巢口那个黑洞、洞口两侧被爪子刨出的土脊、以及散落的骨头。
+   *
+   * 关键是**黑洞要够黑**：它是玩家夜里从 53 米外唯一能定位到的东西。
+   * 用一个不受光的纯黑圆面朝天倾斜嵌进坡里，比任何几何都更像"深不见底"。
+   */
+  private buildDens(): void {
+    const earth = makeMaterial(0x6a5642, 1);
+    const packed = makeMaterial(0x53412f, 1);
+    const bone = makeMaterial(0xd9cfb4, 0.85);
+    for (const den of this.world.dens) {
+      const group = new THREE.Group();
+      const mouth = den.mouth;
+      group.position.set(mouth.x, this.worldHeight(mouth.x, mouth.z), mouth.z);
+      // 让整组朝向巢口方向，后面的偏移就都能用局部坐标写。
+      group.rotation.y = -den.mouthAngle;
+
+      // 洞口：一个不受光的黑面，微微仰起嵌进土坡。
+      const hole = new THREE.Mesh(
+        new THREE.CircleGeometry(1.9, 14),
+        new THREE.MeshBasicMaterial({ color: 0x08070a }),
+      );
+      hole.rotation.x = -Math.PI / 2.55;
+      hole.position.set(-1.1, 1.05, 0);
+      hole.scale.set(1, 0.72, 1);
+      group.add(hole);
+
+      // 洞沿：一圈压实的土，把黑面和土坡接起来，免得黑洞看着像贴纸。
+      const lip = new THREE.Mesh(new THREE.TorusGeometry(1.95, 0.42, 5, 12, Math.PI * 1.25), packed);
+      lip.rotation.set(-Math.PI / 2.55, 0, Math.PI * 0.12);
+      lip.position.set(-1.05, 1.0, 0);
+      lip.scale.set(1, 0.78, 1);
+      lip.castShadow = true;
+      group.add(lip);
+
+      // 刨出来的土脊：洞口两侧各三道，越靠外越矮，读作"这里被反复进出过"。
+      for (const side of [-1, 1]) {
+        for (let index = 0; index < 3; index += 1) {
+          const spoil = new THREE.Mesh(new THREE.SphereGeometry(0.62 - index * 0.13, 6, 4), earth);
+          spoil.position.set(0.5 + index * 0.85, 0.24 - index * 0.05, side * (1.5 + index * 0.5));
+          spoil.scale.set(1.5, 0.5, 1);
+          spoil.rotation.y = side * 0.3;
+          spoil.castShadow = true;
+          group.add(spoil);
+        }
+      }
+
+      // 骨头：吃剩下的。数量少、位置散，是气味不是装饰。
+      const scatter = mulberry32(den.id * 7919 + 13);
+      for (let index = 0; index < 7; index += 1) {
+        const angle = scatter() * Math.PI * 2;
+        const radius = 1.9 + scatter() * 4.2;
+        const long = scatter() > 0.45;
+        const piece = new THREE.Mesh(
+          long
+            ? new THREE.CylinderGeometry(0.075, 0.075, 0.55 + scatter() * 0.5, 5)
+            : new THREE.SphereGeometry(0.16 + scatter() * 0.1, 5, 4),
+          bone,
+        );
+        piece.position.set(Math.cos(angle) * radius + 1.4, 0.09, Math.sin(angle) * radius);
+        piece.rotation.set(Math.PI / 2, 0, scatter() * Math.PI);
+        piece.castShadow = true;
+        group.add(piece);
+      }
+
+      group.position.y += 0.02;
+      this.scene.add(group);
+    }
   }
 
   private buildLandmarks(): void {

@@ -1875,6 +1875,26 @@ export class GameSimulation {
 
     const blockingItem = wolf.mode === "retreating" ? null : this.findBlockingItem(wolf, desired);
     if (blockingItem) {
+      const obstacleRadius = blockingItem.kind === "stone" ? 1.48 : 0.62;
+      const attackReach = WOLF_RADIUS + obstacleRadius + 0.2;
+      const barrierDistance = distance(wolf, blockingItem);
+      if (barrierDistance > attackReach) {
+        // Once a wolf commits to breaching a barrier, approach that barrier
+        // directly instead of running it through getSteeredDirection(). The
+        // generic item avoidance starts farther out than bite range and used
+        // to turn wolves around before they could ever damage a boulder.
+        const approach = direction(wolf, blockingItem);
+        wolf.facing = approach;
+        const pace = wolf.mode === "chase" ? wolf.speed * 1.2 : wolf.speed;
+        this.moveEntity(
+          wolf,
+          approach.x * pace * delta,
+          approach.z * pace * delta,
+          WOLF_RADIUS,
+          true,
+        );
+        return;
+      }
       if (wolf.attackCooldown <= 0) {
         wolf.attackCooldown = 0.95;
         const barrierDamage = Math.round(wolf.attack * (wolf.kind === "large" ? 1.45 : 1.05));
@@ -2073,12 +2093,24 @@ export class GameSimulation {
       : side === 1 ? { x: half, z: along }
       : side === 2 ? { x: along, z: -half }
       : { x: along, z: half };
+    const den = this.world.dens[0] ?? null;
+    // 夜袭犬从**狗巢**涌出，不再从地图边缘随机刷。
+    //
+    // 旧写法有两处代价：一是玩家学不到东西 —— 狼从四条边随机冒出来，它不是
+    // 从某处来的，它就是天气；二是大半个夜晚它们都在路上，实测第 1 夜配额
+    // 40 只里只有 9 只（23%）真正走到营地 20 米内，配额和实际压力对不上账。
+    //
+    // 白天的野狼仍然满地图散布 —— 兽皮和狼牙要靠出门找，那条循环不受影响。
     const camp = tutorialWolf
       ? this.world.camps[this.world.startCampId]
       : this.world.camps[Math.floor(this.random() * this.world.camps.length)];
     const spawnCandidate = options.origin ?? (tutorialWolf ? {
       x: camp.x + Math.cos(camp.entranceAngle) * (camp.radius + 18),
       z: camp.z + Math.sin(camp.entranceAngle) * (camp.radius + 18),
+    } : role === "raider" && den ? {
+      // 在巢口外一小圈里散开，免得整夜都从同一个像素点冒出来。
+      x: den.mouth.x + Math.cos(this.random() * TAU) * 2.2,
+      z: den.mouth.z + Math.sin(this.random() * TAU) * 2.2,
     } : edgeSpawn);
     const spawn = this.findNearestWalkablePoint(spawnCandidate);
 
@@ -2119,17 +2151,40 @@ export class GameSimulation {
       attack = Math.max(6, Math.round(attack * 0.8));
     }
 
-    const anchorAngle = this.random() * TAU;
-    const anchorDistance = 12 + this.random() * 10;
-    const anchor = role === "wild"
-      ? this.findNearestWalkablePoint({ x: spawn.x, z: spawn.z })
-      : this.findNearestWalkablePoint({
-        x: camp.x + Math.cos(anchorAngle) * anchorDistance,
-        z: camp.z + Math.sin(anchorAngle) * anchorDistance,
-      });
-
+    // 攻营的比例逐夜爬升：16% → 35%。这是夜晚压力真正的成长曲线，
+    // 配额只决定"这一夜总共放出多少条狗"，而这一条决定"其中多少条会走到你门口"。
     const raiderChance = Math.min(0.35, 0.16 + (this.day - 1) * 0.06);
     const raider = role === "raider" && (tutorialWolf || kind === "alpha" || this.random() < raiderChance);
+    const assaultCamp = den ? this.world.camps[this.world.startCampId] : camp;
+
+    const anchorAngle = this.random() * TAU;
+    const anchorDistance = 12 + this.random() * 10;
+    // 锚点决定这只狗整夜待在哪。
+    //
+    // **不是所有夜狗都来攻营** —— raiderChance 只让 16%~35%（逐夜递增）挂上
+    // raider 标记去打营地，其余的在自己的锚点附近巡逻。这个分流机制本来就有，
+    // 但原先所有夜狗的锚点都挑一座**随机营地**，于是巡逻的那批也漫无目的地
+    // 在五座营地之间晃。
+    //
+    // 现在分成两处：攻营的锚在被攻营地外围，其余的守在**巢边**。
+    // 于是狗巢不只是一根出怪管子，它是一个看得见、有狗在活动、可以主动去打的地方 ——
+    // 玩家从营地望过去就知道今晚还剩多少没上来。
+    const anchor = role === "wild"
+      ? this.findNearestWalkablePoint({ x: spawn.x, z: spawn.z })
+      : raider
+        ? this.findNearestWalkablePoint({
+          x: assaultCamp.x + Math.cos(anchorAngle) * anchorDistance,
+          z: assaultCamp.z + Math.sin(anchorAngle) * anchorDistance,
+        })
+        : this.findNearestWalkablePoint(den ? {
+          x: den.x + Math.cos(anchorAngle) * (den.radius + 3 + this.random() * 7),
+          z: den.z + Math.sin(anchorAngle) * (den.radius + 3 + this.random() * 7),
+        } : {
+          x: camp.x + Math.cos(anchorAngle) * anchorDistance,
+          z: camp.z + Math.sin(anchorAngle) * anchorDistance,
+        });
+
+
     this.wolves.push({
       id: this.wolfId++,
       kind,
@@ -2395,7 +2450,9 @@ export class GameSimulation {
     for (const item of this.items) {
       if (!item.active || !item.placed) continue;
       const itemDistance = distance(wolf, item);
-      if (itemDistance > 2.3) continue;
+      // Acquire the barrier before the 3.2 m generic avoidance radius. Once
+      // acquired, updateWolf deliberately approaches it until bite range.
+      if (itemDistance > 3.4) continue;
       if (dot(desired, direction(wolf, item)) < 0.35) continue;
       const clusterSize = this.items.filter((other) => other.active && other.placed && distanceSquared(item, other) < 4.2 * 4.2).length;
       if (item.kind === "wood" && clusterSize < 2) continue;

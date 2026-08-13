@@ -308,6 +308,46 @@ def sample_nearest(field: np.ndarray, x_grid: np.ndarray, z_grid: np.ndarray, x:
     return float(field[row, column])
 
 
+def shape_dens(terrain: np.ndarray, x_grid: np.ndarray, z_grid: np.ndarray, dens: list[dict], rng: np.random.Generator) -> np.ndarray:
+    """Raise an earth mound with a hollow centre and one walkable mouth.
+
+    The silhouette has to do two jobs at once from a high isometric camera:
+    read as "something lives in there" from 50 m away, and stay walkable at the
+    mouth so the pack can actually stream out of it. So the rim is a ring
+    (raised), the middle is a shallow bowl (sunken), and a wedge of the ring
+    facing ``mouthAngle`` is left flat at the surrounding ground height.
+    """
+    result = terrain.copy()
+    micro = gaussian_filter(rng.normal(0.0, 1.0, terrain.shape), 1.1)
+    micro = normalize(micro) * 0.12
+    for den in dens:
+        dx = x_grid - den["x"]
+        dz = z_grid - den["z"]
+        radius = np.hypot(dx, dz)
+        outer = den["radius"]
+
+        # Ring profile: peaks partway out, falls to nothing at the outer edge so
+        # the mound blends into the plain instead of ending on a cliff.
+        rim = np.sin(np.clip(radius / outer, 0.0, 1.0) * np.pi) ** 1.4
+        # Bowl: only the inner half, so the floor sits below the surrounding ground.
+        # NOTE: this module's smoothstep clamps the divisor to max(1e-6, edge1 - edge0),
+        # so it does NOT support descending edges — a reversed pair silently degrades
+        # into a step function pointing the wrong way. Always go ascending + (1.0 - x).
+        hollow = 1.0 - smoothstep(0.0, outer * 0.55, radius)
+
+        # The mouth is a wedge around mouthAngle, widened by mouthWidth at the rim.
+        angle = np.arctan2(dz, dx)
+        delta = np.abs(np.arctan2(np.sin(angle - den["mouthAngle"]), np.cos(angle - den["mouthAngle"])))
+        half_wedge = np.arctan2(den["mouthWidth"] * 0.5, max(1.0, outer * 0.7))
+        mouth = 1.0 - smoothstep(half_wedge, half_wedge * 2.1, delta)
+
+        raise_amount = rim * den["rimHeight"] * (1.0 - mouth)
+        sink_amount = hollow * den["hollowDepth"] * (1.0 - mouth * 0.75)
+        shell = 1.0 - smoothstep(outer * 0.9, outer * 1.35, radius)
+        result += (raise_amount - sink_amount + micro * shell) * shell
+    return result
+
+
 def shape_shelters(terrain: np.ndarray, x_grid: np.ndarray, z_grid: np.ndarray, camps: list[dict], rng: np.random.Generator) -> np.ndarray:
     original = terrain.copy()
     result = terrain.copy()
@@ -386,6 +426,8 @@ def main() -> None:
         carve_valley_chain(terrain, x_grid, z_grid, chain)
     terrain = erode(terrain)
     terrain = shape_shelters(terrain, x_grid, z_grid, blueprint["camps"], rng)
+    # 狗巢在营地之后刻：它离任何一座营地都在 22 米以上，不会互相压。
+    terrain = shape_dens(terrain, x_grid, z_grid, blueprint.get("dens", []), rng)
 
     output_resolution = blueprint["resolution"]
     if output_resolution != WORK_RESOLUTION:
