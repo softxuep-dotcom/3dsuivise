@@ -141,8 +141,8 @@ const WEAPON_TIERS: EquipTier[] = [
  *
  * 铁甲堆减法防御，皮甲堆百分比闪避。减法吃"多而弱"的咬伤，百分比吃"少而重"的，
  * 两条曲线必然交叉 —— 解 `A − D铁 = (A − D皮)(1 − 闪避)` 得交叉点在原始攻击
- * 30.0 / 35.2 / 35.9（逐阶）。第 5 夜头狼 38 攻击已经过线，大狼要到第 8 夜才过。
- * 所以**重甲是守夜的甲，皮甲是打头狼的甲**，这不是平衡说辞，是公式的形状。
+ * 30.0 / 35.2 / 35.9（逐阶）。后期精英狼的攻击已经过线，普通狼群则更适合用重甲扛。
+ * 所以**重甲是守夜的甲，皮甲是扛精英重击的甲**，这不是平衡说辞，是公式的形状。
  */
 const ARMOR_TIERS: EquipTier[] = [
   { id: "none", line: "none", tier: 0, cost: [], needsFire: false, defense: 2 },
@@ -191,7 +191,7 @@ interface WeaponStat {
   critChance: number;
   critMult: number;
   moveScale: number;
-  /** 刀线击退：推开的米数。头狼免疫。 */
+  /** 刀线击退：推开的米数。精英狼免疫。 */
   knockback: number;
   /** 刀线击退真正值钱的部分：把目标的咬击往后推多少秒。 */
   knockbackStun: number;
@@ -208,7 +208,7 @@ interface WeaponStat {
  *   单体持久战          ——  剑三满层 228 DPS 对刀三 104.5，剑线领先 2.18×
  *
  * 早先的版本让刀线**同时**拥有大面积、低劳力、破甲与击退，剑线只有 +33% 单击，
- * 而单击优势只在"面前恰好一个目标"时兑现 —— 全局只有头狼那一场。
+ * 而单击优势只在"面前恰好一个目标"时兑现 —— 主要用于大狼与精英狼。
  * 于是刀线全面压制。修正有两处：劳力两线拉平（刀一次打好几个还收费更低等于白送），
  * 以及给剑线一个**刀线结构上吃不到**的机制 —— 连击。刀每一刀都换目标，永远停在 0 段。
  */
@@ -252,8 +252,8 @@ const ARMOR_STATS: Record<ArmorKind, ArmorStat> = {
  */
 const COMBO_WINDOW = 1.2;
 
-/** 头狼最早在第几天的夜里登场。见下方 maybeSpawnAlpha() 的注释。 */
-const ALPHA_MIN_DAY = 4;
+/** 精英狼从第 3 天起混入狼群，之后逐日提高出现率，但永远只是少数。 */
+const ELITE_MIN_DAY = 3;
 
 // 肉的两级。生肉顶饿不回体力，烤肉才回 —— 烤肉的价值全在体力那一条上。
 const RAW_HUNGER: readonly [number, number] = [12, 18];
@@ -262,9 +262,6 @@ const COOKED_HUNGER: readonly [number, number] = [26, 38];
 const COOKED_WATER: readonly [number, number] = [5, 10];
 const COOKED_HEALTH = 14;
 
-// 洗脸水，对齐原图 I01V（触发器 047）：体温 -25~-50、水分 +10~25。
-const WASH_WATER_COOLING: readonly [number, number] = [25, 50];
-const WASH_WATER_HYDRATION: readonly [number, number] = [10, 25];
 /** Dawn withdrawal cadence: small packs peel away instead of the whole raid vanishing at once. */
 const RETREAT_BATCH_SIZE = 5;
 const RETREAT_BATCH_INTERVAL = 2.4;
@@ -276,8 +273,8 @@ const RETREAT_WITHIN_BATCH_STAGGER = 0.22;
 //
 // 冷却 40 → 120 秒。原图用**劳力成本**（尿 10、活埋 15）限制它们，我们改成零消耗 +
 // 长冷却，那冷却就必须真的长：40 秒时一个白天能按三次，把中暑线从 123 秒推到 188 秒，
-// 而白天只有 180 秒 —— 等于零代价地抹掉了"白天必定中暑"这条压力，洗脸水和喝水降温
-// 全都失去存在理由。120 秒把它压回**每相位一次**的自救阀门：白天中暑推迟到 145 秒、
+// 而白天只有 180 秒 —— 等于零代价地抹掉了"白天必定中暑"这条压力，喝水降温也
+// 失去存在理由。120 秒把它压回**每相位一次**的自救阀门：白天中暑推迟到 145 秒、
 // 夜里失温推迟到 95 秒，两者都仍然会在相位内发生。
 //
 // 90 秒以上其实结果相同（舒适区门槛卡着，第二次永远来不及按），取 120 是为了留出余量，
@@ -416,16 +413,6 @@ const WATER_RESTORE = 26;
 /** 一份水降 14 点体温：正好能把刚中暑的 100 拉到解除线 92 以下。 */
 const WATER_WARMTH_COST = 14;
 
-// --- 终局 ---
-/**
- * 累计击杀达标后头狼出场。（原图狼王需要 250 杀，按我们 3~4 夜的体量缩到 40）
- *
- * **它已经不是通关条件了。** 通关是"给卡车加满 5 桶油再开出去"，
- * 头狼降级成一场夜里躲得掉、也可以主动去啃的硬仗 —— 打赢它掉的是狼牙和兽皮，
- * 也就是三阶装备的材料，而三阶装备正是"打穿守巢犬吃近路"那条线的门票。
- */
-const ALPHA_KILL_REQUIREMENT = 40;
-
 /** 走到几米内可以搬起一桶油。 */
 const FUEL_PICKUP_REACH = 2.6;
 /** 扛着桶走到车尾几米内就算装车。半径给得比拾取宽，免得对着车找角度。 */
@@ -442,13 +429,13 @@ const TRUCK_DEPART_MAX_SECONDS = 12;
 /**
  * 守巢的大狼数量、仇恨半径，以及它们离锚点多远就放弃追击折回。
  *
- * 12 米这个数是从布局倒推的：三桶油就在守卫脚下（2~3 米），所以去拿桶必定惊动它们；
+ * 14 米这个数是从布局倒推的：三桶油就在守卫脚下（2~5 米），所以去拿桶必定惊动它们；
  * 而卡车停在 30 米外，所以走到车边、装车、发车全程都不会拉到仇恨。
  * 「先去看车、再决定要不要打」因此是一个能安全做出的判断。
  */
-const DEN_GUARD_COUNT = 3;
-const GUARD_AGGRO_RADIUS = 12;
-const GUARD_LEASH = 20;
+const DEN_GUARD_COUNT = 5;
+const GUARD_AGGRO_RADIUS = 14;
+const GUARD_LEASH = 22;
 
 export class GameSimulation {
   readonly world: WorldDefinition;
@@ -505,7 +492,6 @@ export class GameSimulation {
   private gameOverSent = false;
   private duskWarningSent = false;
   private largeWolfAnnounced = false;
-  private alphaSpawned = false;
   /** 胜利结算只跑一次。 */
   private victorySent = false;
   /** 玩家正扛着的那桶油；放下时要把同一个对象放回地面，而不是新建一桶。 */
@@ -574,7 +560,7 @@ export class GameSimulation {
   }
 
   /**
-   * 守巢的三只大狼，开局就站在巢边那组油桶旁。
+   * 守巢的五只大狼，开局就站在巢边那组油桶旁。
    *
    * 它们和夜袭犬是两回事：不随夜晚刷新、天亮不撤退、死了不补 ——
    * 打赢一次就永久打开了那条近路。这是"升级装备"这条线唯一的实质回报，
@@ -593,8 +579,8 @@ export class GameSimulation {
         role: "guard",
         forceKind: "large",
         origin: this.findNearestWalkablePoint({
-          x: centre.x + Math.cos(angle) * 3.4,
-          z: centre.z + Math.sin(angle) * 3.4,
+          x: centre.x + Math.cos(angle) * 4.8,
+          z: centre.z + Math.sin(angle) * 4.8,
         }),
       });
     }
@@ -1007,7 +993,8 @@ export class GameSimulation {
 
     const inArc = (target: Vec2): boolean =>
       distanceSquared(this.player, target) <= attackRange * attackRange
-      && dot(this.player.facing, direction(this.player, target)) >= stats.arcDot;
+      && dot(this.player.facing, direction(this.player, target)) >= stats.arcDot
+      && this.hasMeleeLine(this.player, target);
 
     for (const wolf of this.wolves) {
       if (wolf.mode === "dead" || !inArc(wolf)) continue;
@@ -1056,7 +1043,7 @@ export class GameSimulation {
    *
    * 顺序是刻意的：**重创与连击的倍率在减护甲之前结算**。
    * 先乘后减，倍率就对"打有甲目标"格外划算，"重击能破甲"这个直觉才成立；
-   * 反过来先减后乘，重创会在小狼身上被放大、在头狼身上被稀释，正好是反的。
+   * 反过来先减后乘，重创会在小狼身上被放大、在精英狼身上被稀释，正好是反的。
    */
   private rollDamage(
     stats: WeaponStat,
@@ -1119,10 +1106,10 @@ export class GameSimulation {
    * +0.4 秒，等于把它的输出压掉七成。乘上"同时打五六只"，这就是刀线守夜能力
    * 的真正来源 —— 不在伤害上，在减伤上。
    *
-   * 头狼免疫，否则 BOSS 战会变成推箱子。
+   * 精英狼体型太重，免疫击退；它仍然只是普通狼种，不再拥有独立 BOSS 逻辑。
    */
   private applyKnockback(wolf: WolfState, stats: WeaponStat): void {
-    if (stats.knockback <= 0 || wolf.kind === "alpha") return;
+    if (stats.knockback <= 0 || wolf.kind === "elite") return;
     wolf.attackCooldown += stats.knockbackStun;
     const away = direction(this.player, wolf);
     // 走正常的碰撞与地形回退：直接改坐标会把狼推进崖壁里卡住抽搐。
@@ -1130,25 +1117,13 @@ export class GameSimulation {
     this.events.push({ type: "knockback", wolfId: wolf.id });
   }
 
-  // consumeJuice / consumeWater / consumeWashWater 已删除：它们只服务于 HUD 上那三颗
-  // 快捷键和 R/F/C 热键。消耗现在一律走背包的物品格（开背包会暂停游戏），
-  // "这份水拿来喝还是兑洗脸水"这个取舍因此发生在看得见全部存量的地方。
+  // 旧的饮食快捷方法已经删除：它们只服务于 HUD 快捷键和 R/F/C 热键。
+  // 消耗现在一律走背包的物品格（开背包会暂停游戏）。
   useInventorySlot(index: number): void {
     if (!this.running) return;
     const stack = this.player.inventory[index];
     if (!stack) return;
     this.noteInPlaceAction();
-
-    // 洗脸水（原图 I01V）：降温主力。同样一份水，兑过之后降温效率是直接喝的四倍，
-    // 代价是补水少一半 —— 于是"这份水拿来喝还是拿来降温"成了一个真实的取舍。
-    if (stack.kind === "wash-water") {
-      this.removeFromSlot(index, 1);
-      this.player.water = clamp(this.player.water + this.randomInt(...WASH_WATER_HYDRATION), 0, 100);
-      this.player.warmth = clamp(this.player.warmth - this.randomInt(...WASH_WATER_COOLING), WARMTH_MIN, WARMTH_MAX);
-      this.updateCondition();
-      this.events.push({ type: "drink" });
-      return;
-    }
 
     // 每种消耗品同时喂多条轴，权重不同 —— 移植自原图的食物表：
     // 肉主要补体力和饥饿，仙人掌汁偏水分，水是纯水分且都要付体温代价。
@@ -1439,30 +1414,6 @@ export class GameSimulation {
     return null;
   }
 
-  /** 洗脸水：1 份水兑成 1 份洗脸水，降温效率翻四倍（原图 I01V）。 */
-  craftWashWater(): boolean {
-    if (!this.running) return false;
-    if (this.getInventoryCount("water") < 1) {
-      this.events.push({ type: "message", key: "msg.26" });
-      return false;
-    }
-    if (this.getInventoryCount("wash-water") >= INVENTORY_STACK_LIMITS["wash-water"] * 2) {
-      this.events.push({ type: "message", key: "msg.27" });
-      return false;
-    }
-    this.noteInPlaceAction();
-    this.removeInventory("water", 1);
-    if (!this.addInventory("wash-water", 1)) {
-      // 同烤肉：兑不出来就把那份水还回去，绝不能凭空蒸发。
-      this.addInventory("water", 1);
-      this.events.push({ type: "message", key: "msg.28" });
-      return false;
-    }
-    this.events.push({ type: "craft-wash-water" });
-    this.events.push({ type: "message", key: "msg.29" });
-    return true;
-  }
-
   getInventoryCount(kind: InventoryItemKind): number {
     return this.player.inventory.reduce((total, stack) => total + (stack?.kind === kind ? stack.count : 0), 0);
   }
@@ -1589,11 +1540,7 @@ export class GameSimulation {
 
   // getNearestThreat() 已删除：它服务的是那块常驻在屏幕中央的"最近敌人"面板。
   // 夜里地图上几十只狼，24 米内永远有一只顶上来，那块面板等于常年糊在视野正中。
-  // 现在普通狼的血量走头顶跟随血条（受伤才亮 2.6 秒），头狼走顶部 BOSS 条。
-
-  getAlpha(): WolfState | null {
-    return this.wolves.find((wolf) => wolf.kind === "alpha" && wolf.mode !== "dead") ?? null;
-  }
+  // 狼的血量统一走头顶跟随血条（受伤才亮 2.6 秒），不再有唯一 BOSS 血条。
 
   /**
    * 通关进度：车里几桶、还差几桶、手上有没有扛着一桶，以及最近一桶还没捡的油在哪。
@@ -1677,9 +1624,6 @@ export class GameSimulation {
     }
     if (fuel.loaded >= fuel.required) return loc("sim.fuelReady", { metres: Math.round(fuel.truckDistance) });
 
-    const alpha = this.getAlpha();
-    if (alpha) return loc("sim.16", { v0: Math.max(0, Math.ceil(alpha.health)), v1: alpha.maxHealth });
-
     if (this.phase === "night") {
       if (this.player.warmth < 30) return loc("sim.17");
       const lit = this.getNearestLitCamp();
@@ -1738,7 +1682,7 @@ export class GameSimulation {
   private describeFuelHunt(fuel: ReturnType<GameSimulation["getFuelProgress"]>): LocalizedText {
     if (!fuel.nearest) return loc("sim.fuelNone", { loaded: fuel.loaded, required: fuel.required });
     // 最近的一桶往往就是巢边那三桶（离起点营地 41 米，比任何野外桶都近）。
-    // 只报距离等于把拿着匕首的第 2 天玩家一头指进三只大狼里 —— 得说清那儿有狗看着，
+    // 只报距离等于把拿着匕首的第 2 天玩家一头指进五只大狼里 —— 得说清那儿有狗看着，
     // 打还是绕才是玩家自己的选择。
     return loc(fuel.nearest.guarded ? "sim.fuelHuntGuarded" : "sim.fuelHunt", {
       left: fuel.required - fuel.loaded,
@@ -1761,7 +1705,8 @@ export class GameSimulation {
     const needsPenalty = this.player.hunger < 12 || this.player.water < 12 ? 0.84 : 1;
     // 武器与护甲的移速系数相乘。全重装（熔渣重刀 + 熔渣板甲）是 0.92 × 0.88 = 0.810
     // → 6.64，全轻装是 1.06 × 1.09 = 1.155 → 9.47，差 43%。
-    // 但 6.64 依然跑得过第 8 夜最快的狼（5.63）—— 慢是税，不是死刑。
+    // 守油大狼发现玩家后会短程冲刺；全重装不能再无伤拉着它们绕地形，
+    // 轻装仍能靠机动脱离，装备选择因此有明确取舍。
     const gearScale = WEAPON_STATS[this.player.weapon].moveScale * ARMOR_STATS[this.player.armor].moveScale;
     const speed = 8.2 * carryingPenalty * needsPenalty * gearScale * this.getConditionSpeedScale();
     this.moveEntity(this.player, movement.x * speed * delta, movement.z * speed * delta, PLAYER_RADIUS, true);
@@ -1804,7 +1749,7 @@ export class GameSimulation {
     // **没有"劳作产热"这一项** —— 它曾经存在（+0.9/s），但那是白天基线的 2.7 倍，
     // 直接导致"正常采集必然中暑且无法自救"，已在 WARMTH_FIRE_GAIN 上方那条注释里
     // 说明为何移除。所以移动、采集、休息都**完全不影响体温**，玩家能动的只有
-    // 三件事：喝水/洗脸水降温、贴火升温、以及就地调节（requestThermalAction）。
+    // 三件事：喝水降温、贴火升温、以及就地调节（requestThermalAction）。
     //
     // 白天一定会热：地板 15 按 +0.69/s 爬到中暑线 100 要 123 秒，而白天有 180 秒。
     // 所以"白天必须喝水"不是建议，是硬性节奏。
@@ -2061,17 +2006,26 @@ export class GameSimulation {
     }
 
     if (wolf.mode === "retreating") wolf.lostTimer += delta;
-    // 夜袭狼靠视野主动锁定；白天的野狼只有被激怒后才会追击；头狼与守巢犬昼夜都在猎杀。
-    const hunting = wolf.kind === "alpha" || wolf.role === "guard" ? true
+    // 夜袭狼靠视野主动锁定；白天的普通野狼只有被激怒后才会追击；精英狼与守巢犬昼夜都在猎杀。
+    const hunting = wolf.kind === "elite" || wolf.role === "guard" ? true
       : wolf.role === "wild" ? wolf.provoked
         : this.phase === "night";
     const canSeePlayer = hunting && wolf.mode !== "retreating" && this.wolfCanSeePlayer(wolf);
     if (canSeePlayer) {
       wolf.mode = "chase";
       wolf.lostTimer = 0;
+      // 守油犬是一组岗哨，不是五个互不通气的野怪。惊动其中一只，其余四只同时出动，
+      // 否则玩家仍能贴着警戒圈逐只拉走，增加数量只会变成重复五次同一场单挑。
+      if (wolf.role === "guard") {
+        for (const guard of this.wolves) {
+          if (guard.role !== "guard" || guard.mode === "dead") continue;
+          guard.mode = "chase";
+          guard.lostTimer = 0;
+        }
+      }
     } else if (wolf.mode === "chase") {
       wolf.lostTimer += delta;
-      // 守巢犬的绳子短得多（20 米对 38 米）：它们的职责是看住那三桶油，
+      // 守巢犬的绳子短得多（22 米对 38 米）：它们的职责是看住那三桶油，
       // 不是满图追人。绳子短，"把它们引开再回来偷桶"才有可能不成立 ——
       // 想要那三桶就得真打赢，这正是这条路线该有的价格。
       const leash = wolf.role === "guard" ? GUARD_LEASH : 38;
@@ -2102,7 +2056,7 @@ export class GameSimulation {
     }
 
     const playerDistance = distance(wolf, this.player);
-    if (wolf.mode === "chase" && playerDistance < 1.75) {
+    if (wolf.mode === "chase" && playerDistance < 1.75 && this.hasMeleeLine(wolf, this.player)) {
       if (wolf.attackCooldown <= 0) {
         wolf.attackCooldown = 1.15;
         const armor = ARMOR_STATS[this.player.armor];
@@ -2182,7 +2136,9 @@ export class GameSimulation {
         // to turn wolves around before they could ever damage a boulder.
         const approach = direction(wolf, blockingItem);
         wolf.facing = approach;
-        const pace = wolf.mode === "chase" ? wolf.speed * 1.2 : wolf.speed;
+        const pace = wolf.mode === "chase"
+          ? wolf.speed * (wolf.role === "guard" ? 1.7 : 1.2)
+          : wolf.speed;
         this.moveEntity(
           wolf,
           approach.x * pace * delta,
@@ -2215,7 +2171,11 @@ export class GameSimulation {
       steered = this.findSteppableDirection(wolf, steered) ?? steered;
     }
     wolf.facing = steered;
-    const pace = wolf.mode === "retreating" ? wolf.speed * 1.45 : wolf.mode === "chase" ? wolf.speed * 1.2 : wolf.speed;
+    const pace = wolf.mode === "retreating"
+      ? wolf.speed * 1.45
+      : wolf.mode === "chase"
+        ? wolf.speed * (wolf.role === "guard" ? 1.7 : 1.2)
+        : wolf.speed;
     const beforeX = wolf.x;
     const beforeZ = wolf.z;
     /*
@@ -2266,7 +2226,7 @@ export class GameSimulation {
 
   private scheduleRaiderRetreat(): void {
     const raiders = this.wolves
-      .filter((wolf) => wolf.role === "raider" && wolf.kind !== "alpha" && wolf.mode !== "dead")
+      .filter((wolf) => wolf.role === "raider" && wolf.mode !== "dead")
       // Wolves already near an edge form the first packs, keeping later packs
       // visible around the camps while the withdrawal unfolds.
       .sort((a, b) => this.distanceToWorldEdge(a) - this.distanceToWorldEdge(b) || a.id - b.id);
@@ -2314,24 +2274,6 @@ export class GameSimulation {
     wolf.deathTimer = 0.8;
     this.player.kills += 1;
 
-    if (wolf.kind === "alpha") {
-      this.createDrop(wolf, "raw-meat", -0.65, 3);
-      this.createDrop(wolf, "hide", 0.65, 4);
-      // 狼牙是四条三阶线的共同门槛，平时只有白天的大狼一颗一颗地掉。
-      // 头狼一次给 3 颗 = 一件三阶装备的整份门票。
-      this.createDrop(wolf, "wolf-fang", 0, 3);
-      this.events.push({ type: "wolf-killed", wolfId: wolf.id });
-      // **头狼不再是通关条件。** 通关是把卡车加满油开出去。
-      //
-      // 它曾经是"击杀 40 只 → 头狼登场 → 杀掉它 → 撑到天亮"，
-      // 那条链子的问题不在长短，在于它和这张图上所有别的东西都不发生关系：
-      // 你在哪过夜、去不去狗巢、装备升到几阶，对它都只是同一个 DPS 检查的前置。
-      // 现在它退回成一场**可以躲开**的硬仗 —— 打赢的回报是三阶材料，
-      // 而三阶装备是"打穿守巢犬吃近路"那条线的门票。它从终点变成了一条支线。
-      this.events.push({ type: "message", key: "msg.39" });
-      return;
-    }
-
     // 守巢犬和白天的野狼掉一样的东西 —— 它们本来就是大狼，
     // 而且打赢它们的即时回报是那三桶油，掉落只是顺带。
     if (wolf.role === "guard") {
@@ -2347,39 +2289,20 @@ export class GameSimulation {
     // 而一个昼夜只需要约 6 块熟肉。夜袭掉落等于把食物供给放大十几倍，
     // 饥饿和体力这两条轴因此永远咬不住人。
     if (wolf.role === "wild") {
-      const bulk = wolf.kind === "large" ? 2 : 1;
+      const bulk = wolf.kind === "elite" ? 3 : wolf.kind === "large" ? 2 : 1;
       this.createDrop(wolf, "raw-meat", -0.65, bulk);
       this.createDrop(wolf, "hide", 0.65, bulk);
-      // 狼牙：三阶装备的共同门槛，**只有白天的大狼**掉。
+      // 狼牙：三阶装备的共同门槛，**只有白天的大狼和精英狼**掉。
       //
       // 大狼占比是 min(0.58, 0.22 + (天数−1)×0.09)，第 1 天只有 22%、第 5 天才 58%，
-      // 这把三阶自动锁到第 3 天以后 —— 不需要写任何天数判定。而大狼（血 95 /
-      // 护甲 5 / 攻击 13）拿一阶装备去打是有风险的：三阶的门票是"你得敢主动
+      // 这把三阶自动锁到第 3 天以后 —— 不需要写任何天数判定。而大狼（血 160 /
+      // 护甲 7 / 攻击 20）拿一阶装备去打风险很高：三阶的门票是"你得敢主动
       // 找大狼打"，这比"再挖十块矿"有意思得多。
-      if (wolf.kind === "large") this.createDrop(wolf, "wolf-fang", 0, 1);
+      if (wolf.kind === "large" || wolf.kind === "elite") {
+        this.createDrop(wolf, "wolf-fang", 0, wolf.kind === "elite" ? 2 : 1);
+      }
     }
     this.events.push({ type: "wolf-killed", wolfId: wolf.id });
-    this.maybeSpawnAlpha();
-  }
-
-  /** 累计击杀达标后，头狼在夜晚从地图边缘登场；白天达标则等到入夜。 */
-  /**
-   * 头狼登场。
-   *
-   * 除了累计击杀，还加了一道**时间闸** `day >= ALPHA_MIN_DAY`。
-   * 原因：三阶装备卡在狼牙上，而狼牙只从白天的大狼掉、大狼占比要到第 3 天才爬上来；
-   * 光靠击杀数当门槛的话，头狼可能在玩家还穿着一阶装备时就登场，
-   * 二阶三阶整条阶梯没有使用场景 —— 十二件装备里有八件成了装饰品。
-   */
-  private maybeSpawnAlpha(): void {
-    if (this.alphaSpawned || this.victorySent) return;
-    if (this.player.kills < ALPHA_KILL_REQUIREMENT) return;
-    if (this.day < ALPHA_MIN_DAY) return;
-    if (this.phase !== "night") return;
-    this.alphaSpawned = true;
-    this.spawnWolf({ role: "raider", forceKind: "alpha" });
-    this.events.push({ type: "alpha-spawned" });
-    this.events.push({ type: "message", key: "msg.40" });
   }
 
   private createDrop(position: Vec2, kind: InventoryItemKind, angleOffset: number, count = 1): void {
@@ -2440,30 +2363,33 @@ export class GameSimulation {
     const spawn = this.findNearestWalkablePoint(spawnCandidate);
 
     const largeChance = Math.min(0.58, 0.22 + (this.day - 1) * 0.09);
+    const eliteChance = this.day < ELITE_MIN_DAY ? 0 : Math.min(0.16, 0.04 + (this.day - ELITE_MIN_DAY) * 0.03);
+    const kindRoll = this.random();
     const kind: WolfKind = options.forceKind
-      ?? (tutorialWolf || this.random() >= largeChance ? "small" : "large");
+      ?? (tutorialWolf ? "small" : kindRoll < eliteChance ? "elite" : kindRoll < eliteChance + largeChance ? "large" : "small");
     const scaling = this.getNightScaling();
 
     let maxHealth: number;
     let attack: number;
     let defense: number;
     let speed: number;
-    if (kind === "alpha") {
-      // 头狼：明显是一堵墙，但不是数值上不可战胜 —— 对应原图狼王 10000HP / 28 护甲。
-      maxHealth = 620 + scaling.health * 6;
+    if (kind === "elite") {
+      // 精英狼是可重复出现的高阶狼种，不是唯一 BOSS；体型和数值明显高一档，但仍走普通狼 AI。
+      maxHealth = 280 + scaling.health * 2;
       attack = 26 + scaling.attack;
       defense = 9;
-      speed = 3.5;
+      speed = (4.6 + this.random() * 0.4) * scaling.speed;
     } else if (tutorialWolf) {
       maxHealth = 28;
       attack = 5;
       defense = 0;
       speed = 3.05;
     } else if (kind === "large") {
-      maxHealth = 112 + scaling.health;
-      attack = 16 + scaling.attack;
-      defense = 5;
-      speed = (2.85 + this.random() * 0.55) * scaling.speed;
+      // 大狼是装备门槛，不该再被初始匕首几刀带走；生命、咬伤、护甲和追击速度一起抬高。
+      maxHealth = 160 + scaling.health;
+      attack = 20 + scaling.attack;
+      defense = 7;
+      speed = (4.2 + this.random() * 0.65) * scaling.speed;
     } else {
       maxHealth = 58 + scaling.health;
       attack = 10 + scaling.attack;
@@ -2479,7 +2405,7 @@ export class GameSimulation {
     // 攻营的比例逐夜爬升：16% → 35%。这是夜晚压力真正的成长曲线，
     // 配额只决定"这一夜总共放出多少条狗"，而这一条决定"其中多少条会走到你门口"。
     const raiderChance = Math.min(0.35, 0.16 + (this.day - 1) * 0.06);
-    const raider = role === "raider" && (tutorialWolf || kind === "alpha" || this.random() < raiderChance);
+    const raider = role === "raider" && (tutorialWolf || this.random() < raiderChance);
     // 攻营犬直接进 raid 模式（见下方 mode 字段），目标每帧由 getRaidTarget() 重算，
     // 所以锚点只在它们被打退、退回 patrol 时才用得上 —— 落在玩家当前位置附近即可。
     const assaultCamp = den ? (this.getPlayerShelter() ?? this.player) : camp;
@@ -2711,7 +2637,7 @@ export class GameSimulation {
 
   private wolfCanSeePlayer(wolf: WolfState): boolean {
     // 守巢犬**没有视野盲区**：它们在看着三桶油，绕到背后不该算偷袭成功。
-    // 半径收到 12 米作为交换 —— 比别的狼看得近，但看得全。
+    // 半径收到 14 米作为交换 —— 比别的狼看得近，但看得全。
     // 视线遮挡照旧生效，所以隔着土垄靠近仍然是有效的接近方式。
     if (wolf.role === "guard") {
       if (distanceSquared(wolf, this.player) > GUARD_AGGRO_RADIUS * GUARD_AGGRO_RADIUS) return false;
@@ -2722,6 +2648,17 @@ export class GameSimulation {
     const towardPlayer = direction(wolf, this.player);
     if (dot(wolf.facing, towardPlayer) < 0.08 && distanceSquared(wolf, this.player) > 5 * 5) return false;
     return !this.lineOfSightBlocked(wolf, this.player);
+  }
+
+  /**
+   * 近战必须真的处在同一层地面上。
+   *
+   * 旧判定只有水平距离，玩家站在巢穴土垄上仍能隔着两三米落差砍到下面的守卫，
+   * 守卫却找不到能爬上去的路。高度差与遮挡一起判定后，卡在崖边不再等于无伤输出位。
+   */
+  private hasMeleeLine(start: Vec2, end: Vec2): boolean {
+    const heightDelta = Math.abs(terrainHeightAt(this.world, start) - terrainHeightAt(this.world, end));
+    return heightDelta <= 1.65 && !this.lineOfSightBlocked(start, end);
   }
 
   private lineOfSightBlocked(start: Vec2, end: Vec2): boolean {
@@ -2794,7 +2731,8 @@ export class GameSimulation {
    * 路障因此天然更擅长过滤杂鱼，而这正是它该干的活。
    */
   private getBarrierDamage(wolf: WolfState, armor: number): number {
-    const raw = Math.round(wolf.attack * (wolf.kind === "large" ? 1.45 : 1.05));
+    const sizeScale = wolf.kind === "elite" ? 1.6 : wolf.kind === "large" ? 1.45 : 1.05;
+    const raw = Math.round(wolf.attack * sizeScale);
     return Math.max(1, raw - armor);
   }
 
@@ -2870,15 +2808,12 @@ export class GameSimulation {
         type: "message",
         key: litAtDusk && litAtDusk.fuel >= this.phaseTime ? "msg.duskFireOk" : "msg.duskFireShort",
       });
-      // 白天打满击杀数的话，头狼会在入夜的这一刻登场。
-      this.maybeSpawnAlpha();
       return;
     }
     this.phase = "day";
     this.day += 1;
     this.phaseTime = LATER_DAY_DURATION;
     // 只有夜袭部队撤离；白天的野狼留在原地继续游荡，它们才是狼皮的来源。
-    // 头狼绝不撤退 —— 它一旦登场就必须被杀死，否则玩家再也没有通关途径。
     this.scheduleRaiderRetreat();
     this.duskWarningSent = false;
     this.wildRespawnCountdown = 2;

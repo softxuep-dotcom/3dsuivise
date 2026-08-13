@@ -35,7 +35,6 @@ export type InventoryItemKind =
   | "hide"
   | "iron-ore"
   | "water"
-  | "wash-water"
   | "wolf-fang"
   | "wood";
 
@@ -67,20 +66,20 @@ export type WeaponKind =
  *
  * 减法防御吃"多而弱"的咬伤，百分比闪避吃"少而重"的咬伤，两条曲线必然交叉 ——
  * 交叉点解出来是原始攻击 30.0 / 35.2 / 35.9（逐阶）。所以重甲是守夜的甲，
- * 皮甲是打头狼的甲。
+ * 皮甲是扛精英狼重击的甲。
  */
 export type ArmorKind =
   | "none"
   | "scale-1" | "scale-2" | "scale-3"
   | "hide-1" | "hide-2" | "hide-3";
-export type WolfKind = "small" | "large" | "alpha";
+export type WolfKind = "small" | "large" | "elite";
 export type WolfMode = "entering" | "patrol" | "chase" | "raid" | "retreating" | "dead";
 /**
  * 野狼白天在地图上游荡且只在被激怒后反击；夜袭狼从狗巢涌出且不掉狼皮；
  * **守巢犬**是第三种：从开局就趴在巢边那三桶汽油旁边，昼夜常驻、不撤退、不重生。
  *
  * 它们是"打"这条通关路线的收费站 —— 巢边的油离卡车只有三十几米，
- * 但要先能正面吃下三只大狼。绕开它们去捡野外的散桶完全可行，代价是路程。
+ * 但要先能正面吃下五只大狼。绕开它们去捡野外的散桶完全可行，代价是路程。
  */
 export type WolfRole = "wild" | "raider" | "guard";
 
@@ -274,7 +273,7 @@ export interface LandmarkDefinition extends Vec2 {
  * 汽油桶。通关要往卡车里装满 {@link FUEL_REQUIRED} 桶。
  *
  * 全图放 9 桶而只要 5 桶，是为了让两条路线都走得通而不是二选一：
- *   - **巢边 3 桶** 离卡车只有三十几米，但守巢的三只大狼就趴在旁边；
+ *   - **巢边 3 桶** 离卡车只有三十几米，但守巢的五只大狼就趴在旁边；
  *   - **野外 6 桶** 谁也不看着，但散在半张图上，扛一趟要一个白天的一大半。
  * 拿光巢边三桶也还差两桶，所以无论怎么打都得出门至少两趟。
  */
@@ -470,7 +469,6 @@ export type GameEvent =
   | { type: "cook" }
   | { type: "thermal"; direction: "cool" | "warm" }
   | { type: "craft-coat" }
-  | { type: "craft-wash-water" }
   | { type: "craft-weapon" }
   | { type: "rest"; active: boolean }
   | { type: "attack" }
@@ -490,7 +488,6 @@ export type GameEvent =
   | { type: "thorns"; wolfId: number; amount: number }
   | { type: "critter-hit"; critterId: number }
   | { type: "critter-killed"; critterId: number; kind: CritterKind }
-  | { type: "alpha-spawned" }
   /** 一桶油进了车斗。 */
   | { type: "fuel-loaded"; loaded: number; required: number }
   /** 油加满、玩家上车，卡车开始驶离。之后只剩结算动画。 */
@@ -562,7 +559,6 @@ export const INVENTORY_STACK_LIMITS: Record<InventoryItemKind, number> = {
   hide: 4,
   "iron-ore": 6,
   water: 4,
-  "wash-water": 3,
   /** 狼牙只用于四条线的三阶，单个配方最多要 3 颗 —— 上限 4 刚好一格装得下。 */
   "wolf-fang": 4,
   wood: 4,

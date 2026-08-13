@@ -1,5 +1,6 @@
 import type { LocalizedText } from "../game/simulation/types";
 import { en } from "./locales/en";
+import { de, fr, it, ptBR } from "./locales/western";
 import { zh } from "./locales/zh";
 
 /**
@@ -13,55 +14,63 @@ import { zh } from "./locales/zh";
  * 所有语言文件跟着失效。
  */
 
-export type Locale = "en" | "zh";
+export type Locale = "en" | "zh" | "fr" | "de" | "it" | "pt-BR";
 
-export const SUPPORTED_LOCALES: Locale[] = ["en", "zh"];
+export const SUPPORTED_LOCALES: Locale[] = ["en", "zh", "fr", "de", "it", "pt-BR"];
 
 /** 语言自选菜单用的原生名称（永远用该语言自己的写法，不翻译）。 */
 export const LOCALE_NAMES: Record<Locale, string> = {
   en: "English",
   zh: "中文",
+  fr: "Français",
+  de: "Deutsch",
+  it: "Italiano",
+  "pt-BR": "Português (Brasil)",
 };
 
 const FALLBACK: Locale = "en";
 const STORAGE_KEY = "desert-survivor.locale";
 
-const TABLES: Record<Locale, Record<string, string>> = { en, zh };
+const TABLES: Record<Locale, Record<string, string>> = { en, zh, fr, de, it, "pt-BR": ptBR };
 
 let current: Locale = FALLBACK;
 let pluralRules = new Intl.PluralRules("en");
 
 /**
- * 检测顺序：`?lang=` > localStorage > 浏览器 > 英文。
+ * 检测顺序：`?lang=` > 浏览器 > 旧版 localStorage > 英文。
  *
  * URL 参数排第一是为了能直接分享/测试某一门语言，不用改浏览器设置；
- * localStorage 排第二是因为玩家手动选过就该记住，不该被浏览器设置覆盖回去。
+ * 当前版本没有语言选择器，旧版本留下的 localStorage 不能压过浏览器语言 ——
+ * 否则中文浏览器会被一次过期的英语选择永久锁成英文。
  */
 export function detectLocale(): Locale {
   const fromQuery = new URLSearchParams(window.location.search).get("lang");
   const queryMatch = matchLocale(fromQuery);
   if (queryMatch) return queryMatch;
 
+  // navigator.languages 是按偏好排序的，逐个规范化后取第一个我们支持的。
+  for (const tag of navigator.languages ?? [navigator.language]) {
+    const match = matchLocale(tag);
+    if (match) return match;
+  }
+
+  // 只在浏览器没有任何受支持语言时兼容旧版手动选择。
   try {
     const stored = matchLocale(window.localStorage.getItem(STORAGE_KEY));
     if (stored) return stored;
   } catch {
     // 隐私模式 / 跨域 iframe 下 localStorage 会直接抛，静默降级。
   }
-
-  // navigator.languages 是按偏好排序的，逐个规范化后取第一个我们支持的。
-  for (const tag of navigator.languages ?? [navigator.language]) {
-    const match = matchLocale(tag);
-    if (match) return match;
-  }
   return FALLBACK;
 }
 
-/** `zh-CN` / `zh-Hans-CN` / `ZH` 都要能落到 `zh`。 */
+/** 地区变体落到已有翻译；葡语当前采用巴西版本。 */
 function matchLocale(tag: string | null | undefined): Locale | null {
   if (!tag) return null;
-  const base = tag.toLowerCase().split("-")[0];
-  return SUPPORTED_LOCALES.find((locale) => locale === base) ?? null;
+  const normalized = tag.trim().toLowerCase().replace("_", "-");
+  const base = normalized.split("-")[0];
+  if (base === "pt") return "pt-BR";
+  return SUPPORTED_LOCALES.find((locale) => locale.toLowerCase() === base) ?? null;
 }
 
 export function getLocale(): Locale {

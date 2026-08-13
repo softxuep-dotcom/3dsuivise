@@ -54,7 +54,7 @@ async function bootstrap(): Promise<void> {
   setLocale(detectLocale());
   applyStaticText();
 
-  setProgress(0.5, "Generating the sands…");
+  setProgress(0.5, t("boot.generating"));
   await nextPaint();
 
   const world = createWorld();
@@ -91,22 +91,20 @@ async function bootstrap(): Promise<void> {
   document.addEventListener("keydown", unlockAudio, true);
 
   const hud = new HudController(simulation);
-  // 重开是整页刷新，所以开场页每次都会重新读一次记录。
-  hud.refreshRecordsLine();
 
   if (import.meta.env.DEV) {
     // 开发期调试句柄：用来在浏览器控制台里快进模拟、检查五轴状态。
     (window as unknown as { game: unknown }).game = { simulation, world, hud };
   }
 
-  setProgress(0.58, "Raising the terrain…");
+  setProgress(0.58, t("boot.terrain"));
   await nextPaint();
 
   let renderer: GameRenderer;
   try {
     // 人物资源占进度条最后的 25% —— 四个 GLB 加起来 646 KB，比其余所有东西都大。
     renderer = new GameRenderer(renderRoot!, world, simulation, (loaded, total) => {
-      setProgress(0.75 + (loaded / total) * 0.25, `Loading the survivor ${loaded}/${total}…`);
+      setProgress(0.75 + (loaded / total) * 0.25, t("boot.survivorProgress", { loaded, total }));
     });
   } catch (error) {
     console.error(error);
@@ -114,13 +112,13 @@ async function bootstrap(): Promise<void> {
     throw error;
   }
 
-  setProgress(0.7, "Lighting the scene…");
+  setProgress(0.7, t("boot.lighting"));
   await nextPaint();
   // 着色器是第一次 render 时才编译的，手机上这一下能卡好几百毫秒。
   // 先在进度条后面把它跑掉，进场那一刻就不会再顿一次。
   renderer.render(0);
 
-  setProgress(0.75, "Loading the survivor…");
+  setProgress(0.75, t("boot.survivor"));
   await nextPaint();
   await renderer.whenPlayerAssetReady();
 
@@ -193,7 +191,7 @@ async function bootstrap(): Promise<void> {
   };
   requestAnimationFrame(frame);
 
-  setProgress(1, "Ready");
+  setProgress(1, t("boot.ready"));
   // 加载完直接进场，不再等一次点击。
   // 生存时钟不会因此空转 —— 它等玩家第一次移动才起跑（GameSimulation.clockStarted）。
   enterGame();

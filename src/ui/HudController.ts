@@ -1,7 +1,7 @@
 import type { EquipTier, GameSimulation } from "../game/simulation/GameSimulation";
 import { t, tx } from "../i18n";
 import { clamp } from "../game/simulation/geometry";
-import { describeRecords, loadRecords, submitRun } from "./Records";
+import { submitRun } from "./Records";
 import { STRUCTURE_SPECS } from "../game/simulation/types";
 import type {
   GameEvent,
@@ -56,7 +56,6 @@ export class HudController {
   private readonly staminaBar = required<HTMLElement>("stamina-bar");
   private readonly healthValue = required<HTMLElement>("health-value");
   private readonly warmthValue = required<HTMLElement>("warmth-value");
-  private readonly craftWashButton = required<HTMLButtonElement>("craft-wash-button");
   private readonly craftCookButton = required<HTMLButtonElement>("craft-cook-button");
   private readonly buildButtons: Array<[HTMLButtonElement, StructureKind]> = [
     [required<HTMLButtonElement>("build-stake-button"), "stake"],
@@ -71,7 +70,6 @@ export class HudController {
   private readonly supplies: Array<[HTMLElement, InventoryItemKind]> = [
     [required<HTMLElement>("supply-water"), "water"],
     [required<HTMLElement>("supply-juice"), "cactus-juice"],
-    [required<HTMLElement>("supply-wash"), "wash-water"],
     [required<HTMLElement>("supply-meat"), "cooked-meat"],
   ];
   private readonly bagUsage = required<HTMLElement>("bag-usage");
@@ -108,10 +106,6 @@ export class HudController {
   private readonly phaseLabel = required<HTMLElement>("phase-label");
   private readonly timeLabel = required<HTMLElement>("time-label");
   private readonly clock = required<HTMLElement>("clock");
-  private readonly bossBar = required<HTMLElement>("boss-bar");
-  private readonly bossName = required<HTMLElement>("boss-name");
-  private readonly bossStats = required<HTMLElement>("boss-stats");
-  private readonly bossHealthBar = required<HTMLElement>("boss-health-bar");
   private readonly prompt = required<HTMLElement>("prompt");
   private readonly restIndicator = required<HTMLElement>("rest-indicator");
   private readonly gatherIndicator = required<HTMLElement>("gather-indicator");
@@ -119,7 +113,6 @@ export class HudController {
   private readonly toast = required<HTMLElement>("toast");
   private readonly resultCopy = required<HTMLElement>("result-copy");
   private readonly victoryCopy = required<HTMLElement>("victory-copy");
-  private readonly recordsLine = required<HTMLElement>("records-line");
   private readonly handsStatus = required<HTMLElement>("hands-status");
   private readonly coatStatus = required<HTMLElement>("coat-status");
   private readonly weaponStatus = required<HTMLElement>("weapon-status");
@@ -162,10 +155,6 @@ export class HudController {
     }
     this.craftCookButton.addEventListener("click", () => {
       this.simulation.craftCookedMeat();
-      this.updateInventory();
-    });
-    this.craftWashButton.addEventListener("click", () => {
-      this.simulation.craftWashWater();
       this.updateInventory();
     });
   }
@@ -249,16 +238,6 @@ export class HudController {
     this.restIndicator.classList.toggle("hidden", gathering || !player.resting);
     if (gathering) this.gatherIndicator.textContent = t("hud.gathering", { seconds: player.gatherTimer.toFixed(1) });
 
-    // 只有头狼配得上一条常驻 BOSS 血槽；普通狼的血量走头顶跟随血条（见 GameRenderer）。
-    const alpha = this.simulation.getAlpha();
-    this.bossBar.classList.toggle("hidden", !alpha);
-    if (alpha) {
-      const ratio = clamp(alpha.health / alpha.maxHealth, 0, 1);
-      this.bossName.textContent = t(`dog.${alpha.kind}`);
-      this.bossStats.textContent = `${Math.max(0, Math.ceil(alpha.health))} / ${alpha.maxHealth}`;
-      this.bossHealthBar.style.width = `${ratio * 100}%`;
-    }
-
     const hint = this.simulation.getInteractionHint();
     const touchLayout = matchMedia("(pointer: coarse)").matches || window.innerWidth <= 760;
     this.actionButton.textContent = t(`action.${hint.action}`);
@@ -318,15 +297,10 @@ export class HudController {
    * 这块常驻的小字以前写的是"猎杀 12/40"，也就是**目标行说什么它就重复什么**。
    * 现在两者分工：目标行说"此刻该干嘛"（会被口渴、失温、扛着桶一路抢走），
    * 这块只说"离赢还有多远"—— 无论目标行正在喊什么，它都不变。
-   * 头狼在场时例外：那一刻确实没有别的事需要知道。
    */
   private updateHuntProgress(): void {
-    const alpha = this.simulation.getAlpha();
     const fuel = this.simulation.getFuelProgress();
-    this.huntProgress.classList.toggle("alpha", Boolean(alpha));
-    this.huntProgress.textContent = alpha
-      ? t("hunt.alphaHere")
-      : t("hunt.fuel", { loaded: fuel.loaded, required: fuel.required });
+    this.huntProgress.textContent = t("hunt.fuel", { loaded: fuel.loaded, required: fuel.required });
   }
 
   handle(event: GameEvent): void {
@@ -342,7 +316,6 @@ export class HudController {
       const label = this.simulation.getCritterLabel(event.kind);
       this.showToast(t(event.kind === "oryx" ? "toast.huntBig" : "toast.hunt", { name: label }), 1.8);
     }
-    if (event.type === "alpha-spawned") this.showToast(t("toast.alphaSpawned"), 4);
     if (event.type === "fuel-loaded") {
       this.showToast(t("toast.fuelLoaded", { loaded: event.loaded, required: event.required }), 2.6);
     }
@@ -403,11 +376,6 @@ export class HudController {
       ? t("craft.cook", { raws, health: 14 })
       : t("craft.cook.none");
     this.craftCookButton.disabled = raws < 1;
-    const waters = this.simulation.getInventoryCount("water");
-    this.craftWashButton.textContent = waters > 0
-      ? t("craft.wash", { waters })
-      : t("craft.wash.none");
-    this.craftWashButton.disabled = waters < 1;
   }
 
   /**
@@ -588,18 +556,10 @@ export class HudController {
       kills: this.simulation.player.kills,
       won,
     });
-    this.refreshRecordsLine();
     if (brokeDay && brokeKills) return t("records.bothNew", { day: records.bestDay, kills: records.bestKills });
     if (brokeDay) return t("records.dayNew", { day: records.bestDay });
     if (brokeKills) return t("records.killsNew", { kills: records.bestKills });
     return t("records.best", { day: records.bestDay, kills: records.bestKills });
-  }
-
-  /** 开场页那一行；没玩过时整行隐藏，不占版面。 */
-  refreshRecordsLine(): void {
-    const text = describeRecords(loadRecords());
-    this.recordsLine.textContent = text ?? "";
-    this.recordsLine.classList.toggle("hidden", text === null);
   }
 
   private showGameOver(): void {

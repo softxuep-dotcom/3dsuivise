@@ -36,24 +36,19 @@
           <div class="supply-line" data-i18n-attr="aria-label:hud.supply.aria">
             <span id="supply-water"><i data-i18n="supply.water">Wtr</i> <b>0</b></span>
             <span id="supply-juice"><i data-i18n="supply.juice">Sap</i> <b>0</b></span>
-            <span id="supply-wash"><i data-i18n="supply.wash">Wash</i> <b>0</b></span>
             <span id="supply-meat"><i data-i18n="supply.meat">Meat</i> <b>0</b></span>
           </div>
           <div class="hud-actions">
-            <button id="sound-button" class="inventory-button sound-button" type="button" data-i18n-attr="aria-label:hud.sound.aria" aria-pressed="true"><span data-i18n="hud.sound.label">Sound</span> <b id="sound-state">on</b></button>
+            <button id="sound-button" class="inventory-button sound-button" type="button" data-i18n-attr="aria-label:hud.sound.aria" aria-pressed="true"><span data-i18n="hud.sound.label">Sound</span> <b id="sound-state" data-i18n="sound.on">On</b></button>
           </div>
         </section>
 
         <!--
-          顶部中央栏。时钟、头狼血条、提示都排在同一个纵向流里，靠 flex 自己让位 ——
+          顶部中央栏。时钟与提示排在同一个纵向流里，靠 flex 自己让位 ——
           原先每个元素各写一套 top 偏移，每加一档响应式断点就要重算一遍，迟早叠在一起。
         -->
         <div class="top-stack">
           <div class="clock" id="clock"><span id="phase-label"></span><b id="time-label">00:50</b></div>
-          <section id="boss-bar" class="boss-bar hidden" data-i18n-attr="aria-label:hud.boss.aria">
-            <div><strong id="boss-name"></strong><span id="boss-stats"></span></div>
-            <i><b id="boss-health-bar"></b></i>
-          </section>
           <div id="toast" class="toast hidden"></div>
           <div id="gather-indicator" class="status-pill gather-indicator hidden"></div>
           <div id="rest-indicator" class="status-pill rest-indicator hidden"></div>
@@ -85,23 +80,17 @@
 
       <!--
         开场页的静态文案在这里写死**英文**，主包到达后由 i18n 按检测到的语言重填
-        （data-i18n / data-i18n-html）。之所以不做内联字典：那 15 条会和主包的
+        （data-i18n）。之所以不做内联字典：这些文案会和主包的
         语言表重复一份，而首屏英文对绝大多数玩家已经够用。
       -->
       <div id="intro" class="overlay">
-        <div class="intro-card">
-          <p class="eyebrow" data-i18n="intro.eyebrow">Playable mechanics prototype</p>
+        <div class="intro-card loading-card">
           <h1 data-i18n="intro.title">Desert Survivor</h1>
-          <p class="tagline" data-i18n="intro.tagline">A crash left you in the open sand. There is still a truck out there — find five barrels of fuel and drive out.</p>
+          <p class="tagline" data-i18n="intro.tagline">Find five fuel barrels. Drive out.</p>
           <div class="verb-row" data-i18n-attr="aria-label:intro.verbs.aria">
-            <span><b>1</b><i data-i18n="intro.verb1">Cut cactus, draw from wells, hunt dogs for hide</i></span>
-            <span><b>2</b><i data-i18n="intro.verb2">Stock deadwood before dusk, feed the fire, seal the gate</i></span>
-            <span><b>3</b><i data-i18n="intro.verb3">Haul 5 fuel barrels to the truck · three sit under guard by the den, the loose ones are far</i></span>
+            <span><b data-i18n="intro.phase.day">Day</b><i data-i18n="intro.verb1">Find water and fuel</i></span>
+            <span><b data-i18n="intro.phase.night">Night</b><i data-i18n="intro.verb2">Feed the fire. Hold off the dogs.</i></span>
           </div>
-          <p class="axis-copy" data-i18n="intro.axes">
-            Water or food hitting zero kills you outright. The daytime sun drives your warmth up into heatstroke; the night cold drags it down into hypothermia — neither kills, but either leaves you barely able to move. Gathering and swinging both cost stamina, and only standing still restores it quickly.
-          </p>
-          <p id="records-line" class="records-line hidden"></p>
           <!--
             没有开始按钮：一进页面就开始加载，加载完直接进场。
             这一页因此不再是一道门，只是加载期间看到的东西。
@@ -114,10 +103,6 @@
             <i><b id="boot-bar"></b></i>
             <span id="boot-status">Loading engine…</span>
           </div>
-          <p class="controls-copy">
-            <span class="desktop-copy" data-i18n-html="intro.controls.desktop">WASD to move · E to gather, feed, carry, draw · Space to attack · Q for warmth · B/Tab for pack<br />Click the ground to move · eat and drink from the pack (opening it pauses)</span>
-            <span class="touch-copy" data-i18n="intro.controls.touch">Left stick to move · attack / act / warmth / pack on the right · eat and drink from the pack</span>
-          </p>
         </div>
       </div>
 
@@ -148,6 +133,10 @@
             <button class="inventory-slot" data-slot="6" type="button"></button>
             <button class="inventory-slot" data-slot="7" type="button"></button>
           </div>
+          <div class="craft-list" data-i18n-attr="aria-label:pack.craft.aria">
+            <button id="craft-cook-button" class="craft-button" type="button"></button>
+            <button id="build-stake-button" class="craft-button" type="button"></button>
+          </div>
           <!--
             装备升级区。内容全部由 HudController.renderUpgradeSlot() 生成，
             因为它有三种形态：阶 0 是两条线的分叉卡、中途是当前↓下阶的升级卡、
@@ -155,11 +144,6 @@
           -->
           <div id="weapon-upgrade-slot" class="upgrade-slot" data-i18n-attr="aria-label:pack.weaponSlot.aria"></div>
           <div id="armor-upgrade-slot" class="upgrade-slot" data-i18n-attr="aria-label:pack.armorSlot.aria"></div>
-          <div class="craft-list" data-i18n-attr="aria-label:pack.craft.aria">
-            <button id="build-stake-button" class="craft-button" type="button"></button>
-            <button id="craft-cook-button" class="craft-button" type="button"></button>
-            <button id="craft-wash-button" class="craft-button" type="button"></button>
-          </div>
           <p class="inventory-help" data-i18n="pack.help"></p>
         </div>
       </div>
@@ -200,6 +184,98 @@
         var panel = document.getElementById("boot-progress");
         var bar = document.getElementById("boot-bar");
         var status = document.getElementById("boot-status");
+
+        /*
+         * 主包到达前也必须用浏览器语言。只内联加载页短句；完整语言表仍在主包里。
+         * 检测顺序与 src/i18n/index.ts 保持一致，避免先闪英文、随后才切换语言。
+         */
+        function matchInitialLocale(tag) {
+          if (!tag) return null;
+          var base = String(tag).trim().toLowerCase().replace("_", "-").split("-")[0];
+          if (base === "pt") return "pt-BR";
+          return ["zh", "en", "fr", "de", "it"].indexOf(base) >= 0 ? base : null;
+        }
+        var initialLocale = matchInitialLocale(new URLSearchParams(location.search).get("lang"));
+        var preferredLanguages = navigator.languages || [navigator.language];
+        for (var languageIndex = 0; !initialLocale && languageIndex < preferredLanguages.length; languageIndex += 1) {
+          initialLocale = matchInitialLocale(preferredLanguages[languageIndex]);
+        }
+        if (!initialLocale) {
+          try { initialLocale = matchInitialLocale(localStorage.getItem("desert-survivor.locale")); }
+          catch (error) { /* 隐私模式下读不到就走英文兜底 */ }
+        }
+        initialLocale = initialLocale || "en";
+        var initialCopy = {
+          en: {
+            "intro.title": "Desert Survivor",
+            "intro.tagline": "Find five fuel barrels. Drive out.",
+            "intro.phase.day": "Day",
+            "intro.verb1": "Find water and fuel",
+            "intro.phase.night": "Night",
+            "intro.verb2": "Feed the fire. Hold off the dogs.",
+            "intro.verbs.aria": "Day and night objectives",
+            boot: "Loading engine…",
+          },
+          zh: {
+            "intro.title": "荒漠幸存者",
+            "intro.tagline": "找齐 5 桶汽油，开车离开沙漠。",
+            "intro.phase.day": "白天",
+            "intro.verb1": "找水、找汽油",
+            "intro.phase.night": "夜晚",
+            "intro.verb2": "添柴、挡狼",
+            "intro.verbs.aria": "昼夜目标",
+            boot: "加载引擎…",
+          },
+          fr: {
+            "intro.title": "Survivant du désert",
+            "intro.tagline": "Trouvez cinq barils d'essence. Quittez le désert.",
+            "intro.phase.day": "Jour",
+            "intro.verb1": "Trouver de l'eau et de l'essence",
+            "intro.phase.night": "Nuit",
+            "intro.verb2": "Alimenter le feu. Repousser les chiens.",
+            "intro.verbs.aria": "Objectifs du jour et de la nuit",
+            boot: "Chargement du jeu…",
+          },
+          de: {
+            "intro.title": "Überleben in der Wüste",
+            "intro.tagline": "Finde fünf Benzinfässer. Entkomme der Wüste.",
+            "intro.phase.day": "Tag",
+            "intro.verb1": "Wasser und Benzin finden",
+            "intro.phase.night": "Nacht",
+            "intro.verb2": "Feuer nähren. Hunde abwehren.",
+            "intro.verbs.aria": "Ziele für Tag und Nacht",
+            boot: "Spielsystem wird geladen…",
+          },
+          it: {
+            "intro.title": "Sopravvissuto del deserto",
+            "intro.tagline": "Trova cinque barili di benzina. Fuggi dal deserto.",
+            "intro.phase.day": "Giorno",
+            "intro.verb1": "Trova acqua e benzina",
+            "intro.phase.night": "Notte",
+            "intro.verb2": "Alimenta il fuoco. Respingi i cani.",
+            "intro.verbs.aria": "Obiettivi diurni e notturni",
+            boot: "Caricamento del gioco…",
+          },
+          "pt-BR": {
+            "intro.title": "Sobrevivente do deserto",
+            "intro.tagline": "Encontre cinco barris de gasolina. Saia do deserto.",
+            "intro.phase.day": "Dia",
+            "intro.verb1": "Encontre água e gasolina",
+            "intro.phase.night": "Noite",
+            "intro.verb2": "Alimente a fogueira. Afaste os cães.",
+            "intro.verbs.aria": "Objetivos de dia e de noite",
+            boot: "Carregando o jogo…",
+          },
+        };
+        var activeInitialCopy = initialCopy[initialLocale];
+        document.documentElement.lang = initialLocale === "zh" ? "zh-CN" : initialLocale;
+        var initialNodes = document.querySelectorAll("#intro [data-i18n]");
+        for (var nodeIndex = 0; nodeIndex < initialNodes.length; nodeIndex += 1) {
+          var initialKey = initialNodes[nodeIndex].getAttribute("data-i18n");
+          if (activeInitialCopy[initialKey]) initialNodes[nodeIndex].textContent = activeInitialCopy[initialKey];
+        }
+        document.querySelector(".verb-row").setAttribute("aria-label", activeInitialCopy["intro.verbs.aria"]);
+        status.textContent = activeInitialCopy.boot;
 
         var boot = {
           audioContext: null,

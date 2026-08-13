@@ -18,7 +18,15 @@ interface WolfView {
   group: THREE.Group;
   bodyMaterial: THREE.MeshStandardMaterial;
   rig: WildDogRig;
-  /** 头顶血条：受伤后短暂浮现，头狼常驻。挂在场景根上而不是狼身上，免得继承死亡侧翻。 */
+  /** 上一帧的世界坐标；模型朝向与步态都以真实位移为准，不直接照搬寻路的瞬时 facing。 */
+  lastPosition: THREE.Vector2;
+  /** 已平滑的显示朝向。狼停住时保持这个角度，避免原地左右甩身。 */
+  visualHeading: number;
+  /** 真实移动方向的低通结果；寻路连续左右试探时不会把抖动直接传给模型。 */
+  travelDirection: THREE.Vector2;
+  /** 0..1 的移动权重，给起步与停步留一个很短的缓冲。 */
+  moveAmount: number;
+  /** 头顶血条：受伤后短暂浮现。挂在场景根上而不是狼身上，免得继承死亡侧翻。 */
   bar: THREE.Group;
   barFill: THREE.Sprite;
   /** 血条剩余显示秒数。 */
@@ -32,6 +40,12 @@ const WOLF_BAR_SECONDS = 2.6;
 const WOLF_BAR_WIDTH = 1.15;
 const WOLF_BAR_HEIGHT = 0.15;
 
+/** 沿最短圆弧平滑角度，跨过 ±π 时不会整圈回转。 */
+const dampAngle = (current: number, target: number, speed: number, delta: number): number => {
+  const difference = Math.atan2(Math.sin(target - current), Math.cos(target - current));
+  return current + difference * (1 - Math.exp(-speed * delta));
+};
+
 /**
  * 每只狼一套血条材质，不共用 —— 淡出是逐条各自算的，共用材质会让全场血条一起闪。
  * 精灵本来就不合批，两个精灵两次绘制，隐藏时直接跳过，所以这点开销是值的。
@@ -42,7 +56,7 @@ const createWolfBar = (wolf: WolfState): { bar: THREE.Group; fill: THREE.Sprite 
     color: 0x0a0f13, transparent: true, opacity: 0.72, depthWrite: false,
   }));
   const fill = new THREE.Sprite(new THREE.SpriteMaterial({
-    color: wolf.kind === "alpha" ? 0xff8a3d : 0xe2564a, transparent: true, depthWrite: false,
+    color: wolf.kind === "elite" ? 0xff8a3d : 0xe2564a, transparent: true, depthWrite: false,
   }));
   const kindScale = wolfScale(wolf);
   back.scale.set(WOLF_BAR_WIDTH * kindScale + 0.06, WOLF_BAR_HEIGHT * kindScale + 0.05, 1);
@@ -161,13 +175,13 @@ const smoothTerrainBlend = (edge0: number, edge1: number, value: number): number
   return t * t * (3 - 2 * t);
 };
 
-// 头犬是全场唯一的巨型剪影；白天野狗偏沙黄，夜袭犬偏赤褐。
+// 精英狼比大狼再大一档，但不再是全场唯一的 BOSS 剪影。
 const wolfScale = (wolf: WolfState): number => (
-  wolf.kind === "alpha" ? 1.85 : wolf.kind === "large" ? 1.22 : 0.84
+  wolf.kind === "elite" ? 1.52 : wolf.kind === "large" ? 1.30 : 0.84
 );
 
 const wolfBodyColor = (wolf: WolfState): number => {
-  if (wolf.kind === "alpha") return 0x7a4b2b;
+  if (wolf.kind === "elite") return 0x6f3926;
   if (wolf.role === "wild") return 0xd6a055;
   if (wolf.kind === "large") return 0xb66a32;
   return wolf.raider ? 0xc9823c : 0xd09a56;
@@ -1693,8 +1707,29 @@ export class GameRenderer {
         this.scene.add(view.bar);
       }
       this.syncWolfBar(wolf, view, delta);
+      const movedX = wolf.x - view.lastPosition.x;
+      const movedZ = wolf.z - view.lastPosition.y;
+      const movedDistance = Math.hypot(movedX, movedZ);
+      // 只让真正的位移改变显示朝向。寻路会在障碍前左右试探 facing；狼没有移动时
+      // 跟着它转，会表现成站在原地高频甩身。
+      const movingNow = wolf.mode !== "dead" && movedDistance > Math.max(0.003, delta * 0.12);
+      if (movingNow && wolf.hurtFlash <= 0) {
+        const inverseDistance = 1 / movedDistance;
+        const directionBlend = 1 - Math.exp(-delta * 10);
+        view.travelDirection.x = lerp(view.travelDirection.x, movedX * inverseDistance, directionBlend);
+        view.travelDirection.y = lerp(view.travelDirection.y, movedZ * inverseDistance, directionBlend);
+        if (view.travelDirection.lengthSq() > 0.01) view.travelDirection.normalize();
+        const travelHeading = -Math.atan2(view.travelDirection.y, view.travelDirection.x);
+        const turnSpeed = wolf.mode === "chase" || wolf.mode === "retreating" ? 11 : 7;
+        view.visualHeading = dampAngle(view.visualHeading, travelHeading, turnSpeed, delta);
+      }
+      const actualSpeed = delta > 0 ? movedDistance / delta : 0;
+      const targetMoveAmount = movingNow ? clamp(actualSpeed / Math.max(wolf.speed, 0.1), 0, 1) : 0;
+      const movementBlend = 1 - Math.exp(-delta * (movingNow ? 18 : 14));
+      view.moveAmount = lerp(view.moveAmount, targetMoveAmount, movementBlend);
+      view.lastPosition.set(wolf.x, wolf.z);
       view.group.position.set(wolf.x, this.worldHeight(wolf.x, wolf.z) + (wolf.mode === "dead" ? 0.2 : 0), wolf.z);
-      view.group.rotation.y = -Math.atan2(wolf.facing.z, wolf.facing.x);
+      view.group.rotation.y = view.visualHeading;
       const kindScale = wolfScale(wolf);
       if (wolf.mode === "dead") {
         const death = 1 - clamp(wolf.deathTimer / 0.8, 0, 1);
@@ -1707,15 +1742,15 @@ export class GameRenderer {
         view.group.rotation.z = 0;
         view.group.scale.setScalar(kindScale);
         const phase = this.time * (wolf.mode === "chase" || wolf.mode === "retreating" ? 12 : 8) + wolf.id * 0.83;
-        const moving = wolf.mode !== "patrol" || Math.sin(phase * 0.25) > -0.35;
+        const moving = view.moveAmount > 0.035;
         const stride = moving ? Math.sin(phase) : 0;
-        const strideAmount = moving ? (wolf.mode === "chase" ? 0.72 : 0.48) : 0;
+        const strideAmount = moving ? (wolf.mode === "chase" ? 0.72 : 0.48) * view.moveAmount : 0;
         view.rig.legs[0].rotation.z = stride * strideAmount;
         view.rig.legs[1].rotation.z = -stride * strideAmount;
         view.rig.legs[2].rotation.z = -stride * strideAmount;
         view.rig.legs[3].rotation.z = stride * strideAmount;
-        view.rig.root.position.y = Math.abs(stride) * 0.035;
-        view.rig.root.rotation.z = wolf.mode === "chase" ? -0.08 : 0;
+        view.rig.root.position.y = Math.abs(stride) * 0.035 * view.moveAmount;
+        view.rig.root.rotation.z = wolf.mode === "chase" ? -0.08 * view.moveAmount : 0;
         view.rig.head.rotation.z = wolf.mode === "chase" ? -0.14 : Math.sin(phase * 0.28) * 0.035;
         view.rig.tail.rotation.x = Math.sin(phase * 0.65) * (wolf.mode === "retreating" ? 0.08 : 0.32);
         view.rig.tail.rotation.z = wolf.mode === "retreating" ? -0.35 : 0.15;
@@ -1728,7 +1763,7 @@ export class GameRenderer {
         const hurt = clamp(wolf.hurtFlash / 0.18, 0, 1);
         view.rig.head.rotation.z += hurt * 0.26;
         view.rig.root.position.x -= hurt * 0.09;
-        view.group.position.y += Math.abs(stride) * 0.035;
+        view.group.position.y += Math.abs(stride) * 0.035 * view.moveAmount;
       }
       view.bodyMaterial.color.setHex(
         wolf.hurtFlash > 0 ? 0xe04a46 : wolf.mode === "retreating" ? 0x7d9094 : wolfBodyColor(wolf),
@@ -1749,16 +1784,15 @@ export class GameRenderer {
    * 头顶血条的显示规则。
    *
    * 不常驻：夜里地图上有几十只狼，全挂血条就是一片红。只在**这一刻挨了打**之后
-   * 亮 2.6 秒，够看清掉了多少血、够判断还要几刀。头狼例外，它是通关目标，
-   * 只要活着就一直显示。
+   * 亮 2.6 秒，够看清掉了多少血、够判断还要几刀。所有狼统一遵守这条规则，
+   * 精英狼也不再占用一条常驻 BOSS 血槽。
    */
   private syncWolfBar(wolf: WolfState, view: WolfView, delta: number): void {
     if (wolf.health < view.lastHealth) view.barTimer = WOLF_BAR_SECONDS;
     view.lastHealth = wolf.health;
     view.barTimer = Math.max(0, view.barTimer - delta);
 
-    const alphaAlive = wolf.kind === "alpha" && wolf.mode !== "dead";
-    const visible = wolf.mode !== "dead" && (alphaAlive || view.barTimer > 0);
+    const visible = wolf.mode !== "dead" && view.barTimer > 0;
     view.bar.visible = visible;
     if (!visible) return;
 
@@ -1774,7 +1808,7 @@ export class GameRenderer {
       wolf.z,
     );
     // 最后 0.5 秒淡出，避免"啪"地消失。
-    const opacity = alphaAlive ? 1 : clamp(view.barTimer / 0.5, 0, 1);
+    const opacity = clamp(view.barTimer / 0.5, 0, 1);
     view.barFill.material.opacity = opacity;
     (view.bar.children[0] as THREE.Sprite).material.opacity = opacity * 0.72;
   }
@@ -1830,7 +1864,19 @@ export class GameRenderer {
     const rig = createWildDogRig(wolfBodyColor(wolf));
     group.add(rig.mesh);
     const { bar, fill } = createWolfBar(wolf);
-    return { group, rig, bodyMaterial: rig.mesh.material, bar, barFill: fill, barTimer: 0, lastHealth: wolf.health };
+    return {
+      group,
+      rig,
+      bodyMaterial: rig.mesh.material,
+      lastPosition: new THREE.Vector2(wolf.x, wolf.z),
+      visualHeading: -Math.atan2(wolf.facing.z, wolf.facing.x),
+      travelDirection: new THREE.Vector2(wolf.facing.x, wolf.facing.z).normalize(),
+      moveAmount: 0,
+      bar,
+      barFill: fill,
+      barTimer: 0,
+      lastHealth: wolf.health,
+    };
   }
 
   private syncFires(): void {

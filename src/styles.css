@@ -66,7 +66,7 @@ button { font: inherit; }
 }
 
 /*
- * 顶部中央栏：时钟 / 头狼血条 / 吐司 / 状态提示排成一列，靠 flex 自己让位。
+ * 顶部中央栏：时钟 / 吐司 / 状态提示排成一列，靠 flex 自己让位。
  * 宽度卡在 44vw 以内，两侧给左上目标条和右上状态栏留出通道 —— 屏幕中央那一块
  * 是玩家真正在看的地方，任何常驻元素都不许落进去。
  */
@@ -112,7 +112,6 @@ button { font: inherit; }
   font-weight: 800;
   letter-spacing: .04em;
 }
-.objective-progress.alpha { color: #ff9d8c; }
 
 .status-strip {
   top: max(18px, env(safe-area-inset-top));
@@ -197,21 +196,6 @@ button { font: inherit; }
   letter-spacing: .02em;
 }
 .drain-note.healing { color: #8fd6a8; }
-
-/* 开场页的历史最好成绩：一行就够，没玩过时整行隐藏，不占版面。 */
-.records-line {
-  margin: 14px 0 0;
-  padding: 7px 12px;
-  border: 1px solid rgba(242, 210, 158, .28);
-  border-radius: 999px;
-  background: rgba(242, 210, 158, .08);
-  color: #f2d29e;
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: .02em;
-  text-align: center;
-}
-.record-break { color: #ffd98a; font-weight: 900; }
 
 /*
  * 随身补给：**只读**。攻/防那一行删了（几乎是静态数字，背包里本来就有同样的两个），
@@ -317,35 +301,6 @@ button { font: inherit; }
 .clock.night { border-color: rgba(118, 150, 211, .45); background: rgba(10, 15, 33, .86); }
 
 /*
- * 头狼血条。普通狼的血量改成头顶跟随血条（见 GameRenderer），只有头狼保留 HUD 条 ——
- * 它是通关目标，值一条常驻的 BOSS 血槽；而夜里地图上几十只小狼，
- * 任何一只都能顶上来的"最近敌人"面板只会常年糊在屏幕中央。
- */
-.boss-bar {
-  /* 宽度跟着中央栏的横向预算走，别自己长出容器 —— 长出去就会压到左上目标条。 */
-  width: 260px;
-  max-width: 100%;
-  padding: 7px 11px 8px;
-  border: 1px solid rgba(255, 138, 61, .5);
-  border-radius: 10px;
-  background: rgba(34, 17, 14, .86);
-  box-shadow: 0 6px 22px rgba(0, 0, 0, .3);
-  backdrop-filter: blur(7px);
-}
-
-.boss-bar > div { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 5px; font-size: 10px; }
-.boss-bar strong { color: #ffcf9e; letter-spacing: .08em; }
-.boss-bar span { color: #c9a08c; font-variant-numeric: tabular-nums; }
-.boss-bar i { display: block; height: 6px; overflow: hidden; border-radius: 5px; background: rgba(255,255,255,.12); }
-.boss-bar i b {
-  display: block;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, #c4431f, #ff9d43);
-  transition: width .18s ease;
-}
-
-/*
  * 声音开关是状态栏里唯一剩下的按钮，靠右收成一颗小的。
  * 它的可视高度只有 20px，远低于能可靠点中的尺寸 —— 用一层透明的伪元素把命中区域
  * 向外扩 12px，视觉不变、面板也不长高。面板里已经没有别的可点元素，扩出去不会抢点击。
@@ -445,6 +400,21 @@ button { font: inherit; }
   text-align: center;
 }
 
+/* 加载页只交代目标与最基本操作；详细规则进入游戏后用情境提示教。 */
+.loading-card {
+  width: min(520px, 92vw);
+  padding: 30px 34px 24px;
+}
+
+.intro-card.loading-card h1 {
+  max-width: 100%;
+  font-size: clamp(36px, 6vw, 56px);
+  letter-spacing: .04em;
+  overflow-wrap: anywhere;
+}
+
+html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
+
 .intro-card h1, .intro-card h2 {
   margin: 0;
   color: #fbfaf2;
@@ -460,16 +430,17 @@ button { font: inherit; }
 
 .verb-row {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
-  margin: 22px 0 26px;
+  margin: 18px auto 20px;
 }
 
 .verb-row span {
-  display: grid;
-  gap: 7px;
-  place-items: center;
-  padding: 14px 8px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  padding: 11px 12px;
   border: 1px solid var(--line);
   border-radius: 12px;
   color: #dbe7ea;
@@ -480,11 +451,9 @@ button { font: inherit; }
 .verb-row i { font-style: normal; }
 
 .verb-row b {
-  display: grid;
-  width: 27px;
-  height: 27px;
-  place-items: center;
-  border-radius: 50%;
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border-radius: 999px;
   background: rgba(255, 156, 66, .18);
   color: var(--ember);
 }
@@ -542,21 +511,7 @@ button { font: inherit; }
   font-size: 12px;
   letter-spacing: .04em;
 }
-.controls-copy { margin: 19px 0 0; color: #849ba5; font-size: 11px; line-height: 1.7; }
-.touch-copy { display: none; }
 .game-over-card p:not(.eyebrow) { margin: 18px 0 24px; color: #c3d3d8; line-height: 1.7; }
-
-.axis-copy {
-  margin: 0 0 4px;
-  padding: 10px 14px;
-  border: 1px solid rgba(222, 240, 246, .14);
-  border-radius: 12px;
-  background: rgba(255,255,255,.035);
-  color: #9fb6bf;
-  font-size: 11px;
-  line-height: 1.8;
-  text-align: left;
-}
 
 .victory-card .eyebrow { color: #ffd479; }
 .victory-card h2 { color: #fff4d8; }
@@ -864,9 +819,6 @@ button { font: inherit; }
   .intro-card { padding: 25px 20px 20px; }
   .verb-row { gap: 6px; }
   .verb-row span { padding: 10px 5px; font-size: 10px; }
-  .desktop-copy { display: none; }
-  .touch-copy { display: block; }
-  .controls-copy { margin-top: 13px; font-size: 10px; }
 }
 
 /*
@@ -922,7 +874,6 @@ button { font: inherit; }
   .hud-actions { gap: 3px; }
   .top-stack { gap: 5px; }
   .toast { padding: 6px 11px; font-size: 11px; }
-  .boss-bar { padding: 5px 9px 6px; }
 }
 
 @media (pointer: coarse) and (orientation: landscape) {
@@ -956,7 +907,6 @@ button { font: inherit; }
   .top-stack { top: max(6px, env(safe-area-inset-top)); gap: 5px; }
   .clock { padding: 4px 8px; }
   .toast { padding: 6px 11px; font-size: 11px; }
-  .boss-bar { padding: 5px 9px 6px; }
 }
 
 /* 再矮一档：说明行是教学用的，最先让位。 */

@@ -81,10 +81,6 @@ export class SynthAudio {
         else if (event.condition === "hypothermia") this.tone(300, 0.5, "sine", 0.45, 0.35);
         else this.tone(430, 0.22, "sine", 0.3, 1.15);
         break;
-      case "alpha-spawned":
-        this.tone(85, 0.9, "sawtooth", 0.95, 0.6);
-        window.setTimeout(() => this.tone(120, 0.7, "square", 0.6, 0.5), 260);
-        break;
       case "victory":
         this.tone(420, 0.3, "triangle", 0.6, 1.35);
         window.setTimeout(() => this.tone(560, 0.32, "triangle", 0.55, 1.3), 180);

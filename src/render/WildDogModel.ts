@@ -12,12 +12,14 @@ const BONE = {
   tail: 7,
 } as const;
 
+// KayKit-like palette: broad, readable colour blocks rather than noisy realistic fur.
+// BODY remains white so GameRenderer's per-kind tint can recolour the main coat.
 const BODY = 0xffffff;
-const PATCH = 0x34281f;
-const CREAM = 0xf0d8a7;
-const BLACK = 0x171514;
-const RUST = 0xa94f27;
-const AMBER = 0xe8b55c;
+const PATCH = 0x49382d;
+const CREAM = 0xf2ddb0;
+const BLACK = 0x211d1a;
+const RUST = 0xb85f32;
+const AMBER = 0xf3bd55;
 
 export interface WildDogRig {
   mesh: THREE.SkinnedMesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
@@ -90,22 +92,22 @@ const createGeometry = (): THREE.BufferGeometry => {
     )));
   };
 
-  // Deep chest, tucked waist and raised shoulders give the model an African wild-dog silhouette.
-  add(new THREE.CapsuleGeometry(0.42, 0.82, 3, 6), BONE.root, BODY, [1.04, 1, 0.82], [-0.02, 0.88, 0], Math.PI / 2);
-  add(new THREE.DodecahedronGeometry(1, 0), BONE.root, BODY, [0.5, 0.55, 0.43], [0.43, 0.94, 0]);
-  add(new THREE.DodecahedronGeometry(1, 0), BONE.root, BODY, [0.43, 0.42, 0.37], [-0.5, 0.84, 0]);
-  add(new THREE.DodecahedronGeometry(1, 0), BONE.root, BODY, [0.34, 0.46, 0.36], [0.69, 1.06, 0], -0.22);
-  add(new THREE.DodecahedronGeometry(1, 0), BONE.root, CREAM, [0.3, 0.38, 0.44], [0.5, 0.8, 0]);
+  // Rounded connected masses mirror the KayKit character's chunky, readable silhouette.
+  add(new THREE.CapsuleGeometry(0.43, 0.84, 4, 8), BONE.root, BODY, [1.06, 1, 0.86], [-0.04, 0.9, 0], Math.PI / 2);
+  add(new THREE.DodecahedronGeometry(1, 1), BONE.root, BODY, [0.5, 0.54, 0.44], [0.42, 0.96, 0]);
+  add(new THREE.DodecahedronGeometry(1, 1), BONE.root, BODY, [0.43, 0.43, 0.38], [-0.51, 0.88, 0]);
+  add(new THREE.DodecahedronGeometry(1, 1), BONE.root, BODY, [0.37, 0.47, 0.38], [0.67, 1.09, 0], -0.20);
+  add(new THREE.DodecahedronGeometry(1, 1), BONE.root, CREAM, [0.31, 0.37, 0.45], [0.49, 0.82, 0]);
 
-  // Raised dark saddle and short mane remain readable from the high isometric camera.
-  add(new THREE.DodecahedronGeometry(1, 0), BONE.root, PATCH, [0.5, 0.14, 0.31], [-0.18, 1.22, 0.05], 0.07);
-  for (let index = 0; index < 4; index += 1) {
+  // One clean dark saddle and three mane tufts survive the high isometric camera.
+  add(new THREE.DodecahedronGeometry(1, 1), BONE.root, PATCH, [0.5, 0.13, 0.32], [-0.17, 1.24, 0.04], 0.06);
+  for (let index = 0; index < 3; index += 1) {
     add(
-      new THREE.ConeGeometry(0.075, 0.22 - index * 0.018, 4),
+      new THREE.ConeGeometry(0.072, 0.19 - index * 0.018, 5),
       BONE.root,
       BLACK,
       [1, 1, 0.78],
-      [0.48 - index * 0.24, 1.39 - index * 0.035, 0],
+      [0.48 - index * 0.25, 1.39 - index * 0.03, 0],
       0.04,
     );
   }
@@ -118,35 +120,36 @@ const createGeometry = (): THREE.BufferGeometry => {
     rotation: number,
   ): void => add(
     new THREE.CircleGeometry(1, 7), BONE.root, color,
-    [scale[0], scale[1], 1], position, rotation,
+    [scale[0], scale[1], 1], position, rotation, 0,
+    position[2] < 0 ? Math.PI : 0,
   );
-  addSidePatch(BLACK, [0.35, 0.27], [0.12, 0.93, 0.405], 0.3);
-  addSidePatch(CREAM, [0.25, 0.19], [-0.48, 0.82, 0.365], -0.22);
-  addSidePatch(RUST, [0.19, 0.23], [0.48, 0.9, 0.415], 0.14);
-  addSidePatch(CREAM, [0.26, 0.2], [0.16, 0.95, -0.405], -0.27);
-  addSidePatch(BLACK, [0.27, 0.24], [-0.45, 0.85, -0.37], 0.2);
-  addSidePatch(RUST, [0.17, 0.2], [0.52, 0.9, -0.415], -0.12);
+  addSidePatch(BLACK, [0.34, 0.25], [0.10, 0.96, 0.43], 0.28);
+  addSidePatch(CREAM, [0.23, 0.18], [-0.48, 0.85, 0.39], -0.20);
+  addSidePatch(RUST, [0.18, 0.21], [0.46, 0.91, 0.44], 0.12);
+  addSidePatch(CREAM, [0.25, 0.19], [0.14, 0.97, -0.43], -0.24);
+  addSidePatch(BLACK, [0.25, 0.22], [-0.44, 0.87, -0.39], 0.18);
+  addSidePatch(RUST, [0.17, 0.19], [0.48, 0.92, -0.44], -0.10);
 
-  // Rounded skull, black mask, long muzzle and very large ears separate it from a wolf at a glance.
-  add(new THREE.DodecahedronGeometry(1, 1), BONE.head, BODY, [0.37, 0.34, 0.33], [0.96, 1.23, 0]);
-  add(new THREE.DodecahedronGeometry(1, 0), BONE.head, BLACK, [0.25, 0.17, 0.34], [1.02, 1.34, 0]);
-  add(new THREE.BoxGeometry(1, 1, 1), BONE.head, CREAM, [0.48, 0.24, 0.28], [1.29, 1.14, 0]);
-  add(new THREE.DodecahedronGeometry(1, 0), BONE.head, BLACK, [0.2, 0.18, 0.29], [1.58, 1.14, 0]);
-  add(new THREE.SphereGeometry(1, 6, 4), BONE.head, BLACK, [0.075, 0.07, 0.055], [1.7, 1.16, 0]);
+  // Large round ears are intentional: African wild dog identity, softened to match KayKit.
+  add(new THREE.DodecahedronGeometry(1, 1), BONE.head, BODY, [0.39, 0.36, 0.35], [0.97, 1.26, 0]);
+  add(new THREE.DodecahedronGeometry(1, 1), BONE.head, BLACK, [0.24, 0.16, 0.35], [1.03, 1.36, 0]);
+  add(new THREE.CapsuleGeometry(0.18, 0.34, 3, 6), BONE.head, CREAM, [1, 1, 0.84], [1.33, 1.16, 0], Math.PI / 2);
+  add(new THREE.DodecahedronGeometry(1, 1), BONE.head, BLACK, [0.18, 0.16, 0.26], [1.58, 1.15, 0]);
+  add(new THREE.SphereGeometry(1, 8, 5), BONE.head, BLACK, [0.07, 0.065, 0.055], [1.7, 1.17, 0]);
 
   const addEar = (z: number): void => {
-    const outward = z > 0 ? 0.1 : -0.1;
-    add(new THREE.ConeGeometry(1, 1, 3), BONE.head, BLACK, [0.25, 0.58, 0.17], [0.79, 1.65, z], outward);
-    add(new THREE.ConeGeometry(1, 1, 3), BONE.head, RUST, [0.13, 0.36, 0.06], [0.8, 1.64, z + Math.sign(z) * 0.092], outward);
+    // Flattened spheres read as rounded ears, closer to the player's friendly toy-like shapes.
+    add(new THREE.SphereGeometry(1, 8, 6), BONE.head, BLACK, [0.25, 0.40, 0.12], [0.79, 1.59, z]);
+    add(new THREE.SphereGeometry(1, 8, 6), BONE.head, RUST, [0.15, 0.26, 0.035], [0.82, 1.59, z + Math.sign(z) * 0.112]);
   };
-  addEar(0.25);
-  addEar(-0.25);
-  add(new THREE.SphereGeometry(1, 6, 4), BONE.head, BLACK, [0.08, 0.075, 0.045], [1.13, 1.31, 0.3]);
-  add(new THREE.SphereGeometry(1, 6, 4), BONE.head, BLACK, [0.08, 0.075, 0.045], [1.13, 1.31, -0.3]);
-  add(new THREE.SphereGeometry(1, 5, 4), BONE.head, AMBER, [0.035, 0.035, 0.025], [1.17, 1.325, 0.338]);
-  add(new THREE.SphereGeometry(1, 5, 4), BONE.head, AMBER, [0.035, 0.035, 0.025], [1.17, 1.325, -0.338]);
-  add(new THREE.BoxGeometry(1, 1, 1), BONE.jaw, PATCH, [0.43, 0.13, 0.25], [1.34, 1, 0]);
-  add(new THREE.BoxGeometry(1, 1, 1), BONE.jaw, CREAM, [0.27, 0.055, 0.2], [1.4, 0.92, 0]);
+  addEar(0.27);
+  addEar(-0.27);
+  add(new THREE.SphereGeometry(1, 8, 5), BONE.head, BLACK, [0.065, 0.06, 0.04], [1.15, 1.33, 0.31]);
+  add(new THREE.SphereGeometry(1, 8, 5), BONE.head, BLACK, [0.065, 0.06, 0.04], [1.15, 1.33, -0.31]);
+  add(new THREE.SphereGeometry(1, 6, 5), BONE.head, AMBER, [0.026, 0.026, 0.02], [1.18, 1.34, 0.342]);
+  add(new THREE.SphereGeometry(1, 6, 5), BONE.head, AMBER, [0.026, 0.026, 0.02], [1.18, 1.34, -0.342]);
+  add(new THREE.CapsuleGeometry(0.11, 0.30, 3, 6), BONE.jaw, PATCH, [1, 1, 0.9], [1.36, 1.01, 0], Math.PI / 2);
+  add(new THREE.BoxGeometry(1, 1, 1), BONE.jaw, CREAM, [0.24, 0.045, 0.18], [1.42, 0.94, 0]);
 
   const addLeg = (
     bone: number,
@@ -156,19 +159,19 @@ const createGeometry = (): THREE.BufferGeometry => {
     lowerColor: number,
     rear = false,
   ): void => {
-    add(new THREE.DodecahedronGeometry(1, 0), bone, upperColor, [rear ? 0.22 : 0.17, 0.28, 0.18], [x, 0.64, z]);
-    add(new THREE.CylinderGeometry(0.09, 0.07, 0.56, 5), bone, lowerColor, [1, 1, 1], [x + (rear ? 0.04 : 0), 0.3, z]);
-    add(new THREE.BoxGeometry(1, 1, 1), bone, BLACK, [0.2, 0.12, 0.2], [x + 0.09, 0.07, z]);
+    add(new THREE.DodecahedronGeometry(1, 1), bone, upperColor, [rear ? 0.21 : 0.18, 0.28, 0.19], [x, 0.64, z]);
+    add(new THREE.CylinderGeometry(0.09, 0.075, 0.54, 7), bone, lowerColor, [1, 1, 1], [x + (rear ? 0.04 : 0), 0.31, z]);
+    add(new THREE.CapsuleGeometry(0.09, 0.16, 3, 6), bone, BLACK, [1, 1, 1.12], [x + 0.1, 0.08, z], Math.PI / 2);
   };
   addLeg(BONE.frontLeft, 0.49, 0.3, PATCH, CREAM);
   addLeg(BONE.frontRight, 0.49, -0.3, RUST, BLACK);
   addLeg(BONE.rearLeft, -0.51, 0.28, BODY, BLACK, true);
   addLeg(BONE.rearRight, -0.51, -0.28, PATCH, CREAM, true);
 
-  // Three colour blocks turn the tail into a readable white flag with a dark tip.
-  add(new THREE.ConeGeometry(0.17, 0.52, 6), BONE.tail, PATCH, [1, 1, 1], [-1.06, 1.01, 0], Math.PI / 2.3);
-  add(new THREE.ConeGeometry(0.14, 0.46, 6), BONE.tail, CREAM, [1, 1, 1], [-1.35, 1.2, 0], Math.PI / 2.3);
-  add(new THREE.ConeGeometry(0.105, 0.27, 6), BONE.tail, BLACK, [1, 1, 1], [-1.59, 1.35, 0], Math.PI / 2.3);
+  // Thick raised tail with a white flag and dark tip: iconic and easy to read at game scale.
+  add(new THREE.CapsuleGeometry(0.16, 0.36, 3, 7), BONE.tail, PATCH, [1, 1, 0.92], [-1.04, 1.05, 0], Math.PI / 2.25);
+  add(new THREE.CapsuleGeometry(0.13, 0.32, 3, 7), BONE.tail, CREAM, [1, 1, 0.9], [-1.35, 1.23, 0], Math.PI / 2.25);
+  add(new THREE.ConeGeometry(0.1, 0.26, 7), BONE.tail, BLACK, [1, 1, 1], [-1.61, 1.38, 0], Math.PI / 2.25);
 
   const merged = mergeGeometries(parts, false);
   for (const part of parts) part.dispose();
@@ -183,7 +186,7 @@ const wildDogGeometry = createGeometry();
 export const createWildDogRig = (tint: number): WildDogRig => {
   const material = new THREE.MeshStandardMaterial({
     color: tint,
-    roughness: 0.95,
+    roughness: 0.9,
     metalness: 0,
     flatShading: true,
     vertexColors: true,

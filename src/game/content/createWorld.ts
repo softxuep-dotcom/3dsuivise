@@ -84,7 +84,7 @@ type TerrainWorld = Parameters<typeof isTerrainWalkable>[0];
  *
  *   巢边 3 桶 ──(33 m)── 卡车
  *      ↑                    ↑
- *   守巢的三只大狼        安全，没有守卫
+ *   守巢的五只大狼        安全，没有守卫
  *
  * 卡车放在**巢的背面**（mouthAngle + π），于是走到车边不会惊动趴在巢口那侧的守卫；
  * 而巢边三桶就在守卫脚下 —— 想吃这条近路就得先打赢。

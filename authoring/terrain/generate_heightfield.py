@@ -5,7 +5,7 @@ Andrino's MIT-licensed terrain-erosion-3-ways project:
 https://github.com/dandrino/terrain-erosion-3-ways
 
 The implementation here is purpose-built for Ember Ridge: three authored ridge
-chains, two drainage valleys, and five individually drawn cliff shelters.
+chains and five individually drawn cliff shelters.
 """
 
 from __future__ import annotations
@@ -100,21 +100,6 @@ def ridge_chain_height(terrain: np.ndarray, x_grid: np.ndarray, z_grid: np.ndarr
         height = start["height"] + (end["height"] - start["height"]) * amount
         chain_height = np.maximum(chain_height, profile * height)
     return chain_height
-
-
-def carve_valley_chain(terrain: np.ndarray, x_grid: np.ndarray, z_grid: np.ndarray, chain: dict) -> None:
-    distance = np.full_like(terrain, np.inf)
-    points = chain["points"]
-    for start, end in zip(points, points[1:]):
-        vx = end["x"] - start["x"]
-        vz = end["z"] - start["z"]
-        length_squared = max(1e-6, vx * vx + vz * vz)
-        amount = np.clip(((x_grid - start["x"]) * vx + (z_grid - start["z"]) * vz) / length_squared, 0.0, 1.0)
-        closest_x = start["x"] + vx * amount
-        closest_z = start["z"] + vz * amount
-        distance = np.minimum(distance, np.hypot(x_grid - closest_x, z_grid - closest_z))
-    mask = 1.0 - smoothstep(chain["width"] * 0.15, chain["width"], distance)
-    terrain -= mask * chain["depth"]
 
 
 def flow_accumulation(height: np.ndarray) -> np.ndarray:
@@ -345,6 +330,30 @@ def shape_dens(terrain: np.ndarray, x_grid: np.ndarray, z_grid: np.ndarray, dens
         sink_amount = hollow * den["hollowDepth"] * (1.0 - mouth * 0.75)
         shell = 1.0 - smoothstep(outer * 0.9, outer * 1.35, radius)
         result += (raise_amount - sink_amount + micro * shell) * shell
+
+        # Bake a broad, level combat apron around the three guarded barrels.
+        #
+        # The barrels sit 12 m down the mouth axis. Before this pass the den rim
+        # and the underlying ridge left several 2-4 m ledges within melee range:
+        # the player could stand on one side, hit the guards below, and remain
+        # unreachable. Flattening only the mouth-facing ellipse keeps the den's
+        # rear silhouette while ensuring both sides of the fight share one floor.
+        forward = dx * math.cos(den["mouthAngle"]) + dz * math.sin(den["mouthAngle"])
+        lateral = -dx * math.sin(den["mouthAngle"]) + dz * math.cos(den["mouthAngle"])
+        apron_center = outer + 4.0
+        apron_distance = np.hypot((forward - apron_center) / 12.0, lateral / 11.0)
+        apron = 1.0 - smoothstep(0.62, 1.0, apron_distance)
+        # Do not flatten the back or sides of the mound; open only the mouth side.
+        apron *= smoothstep(outer * 0.55, outer * 0.95, forward)
+        apron_height = sample_nearest(
+            terrain,
+            x_grid,
+            z_grid,
+            den["x"] + math.cos(den["mouthAngle"]) * apron_center,
+            den["z"] + math.sin(den["mouthAngle"]) * apron_center,
+        )
+        apron_target = apron_height + micro * 0.05
+        result = result * (1.0 - apron) + apron_target * apron
     return result
 
 
@@ -422,8 +431,6 @@ def main() -> None:
         for host in camp["hostShoulders"]:
             ridge_layer = np.maximum(ridge_layer, ridge_chain_height(terrain, x_grid, z_grid, host_chain_to_world(camp, host)))
     terrain += ridge_layer
-    for chain in blueprint["valleyChains"]:
-        carve_valley_chain(terrain, x_grid, z_grid, chain)
     terrain = erode(terrain)
     terrain = shape_shelters(terrain, x_grid, z_grid, blueprint["camps"], rng)
     # 狗巢在营地之后刻：它离任何一座营地都在 22 米以上，不会互相压。
