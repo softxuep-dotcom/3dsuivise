@@ -126,13 +126,13 @@ button { font: inherit; }
 }
 
 /*
- * 标签轨道 38px → 48px。中文四个字在 11px 下是 22px，英文 "Warmth" 是 45px ——
- * 原先的 38px 是照着中文定的，一换语言就压到血条上。
- * 状态栏内容宽 208px，扣掉 48 + 28 + 两道 7px 间距，血条还剩 118px。
+ * 标签轨道 38px → 56px。中文四个字在 11px 下只有 22px，原先的 38px 是照着中文
+ * 定的；英文最长的 "Stamina" 在 11px/700 下约 50px，一换语言就压到血条上。
+ * 状态栏内容宽 208px，扣掉 56 + 28 + 两道 7px 间距，血条还剩 110px。
  */
 .meter {
   display: grid;
-  grid-template-columns: 48px 1fr 28px;
+  grid-template-columns: 56px 1fr 28px;
   align-items: center;
   gap: 7px;
   margin-bottom: 7px;
@@ -768,11 +768,11 @@ button { font: inherit; }
   }
 
   /*
-   * 标签轨道 28px → 40px：英文的 "Warmth" 在 9px/700 下是 37.1px，
-   * 原先直接压到血条上；中文四字只有 18px，当初根本没留余量。
-   * 多占的 12px 从进度条的 1fr 里出，它还剩 79px，依然读得出刻度。
+   * 标签轨道 28px → 46px：中文四字在 9px 下只有 18px，当初根本没留余量；
+   * 英文 "Warmth" 是 37.1px、最长的 "Stamina" 约 41px，都装不进 28px。
+   * 多占的 18px 从进度条的 1fr 里出，它还剩 73px，依然读得出刻度。
    */
-  .meter { grid-template-columns: 40px 1fr; gap: 5px; margin-bottom: 5px; font-size: 9px; }
+  .meter { grid-template-columns: 46px 1fr; gap: 5px; margin-bottom: 5px; font-size: 9px; }
   .meter em { display: none; }
   /*
    * gap 6 → 4：justify-content: space-between 把 gap 当硬下限，

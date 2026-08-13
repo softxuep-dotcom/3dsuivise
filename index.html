@@ -27,7 +27,7 @@
           <div class="meter water"><span data-i18n="meter.water">Water</span><i><b id="water-bar"></b></i><em id="water-value">90</em></div>
           <div class="meter hunger"><span data-i18n="meter.food">Food</span><i><b id="hunger-bar"></b></i><em id="hunger-value">82</em></div>
           <div class="meter warmth" id="warmth-meter"><span data-i18n="meter.warmth">Warmth</span><i><b id="warmth-bar"></b></i><em id="warmth-value">22</em></div>
-          <div class="meter stamina"><span data-i18n="meter.stamina">Labour</span><i><b id="stamina-bar"></b></i><em id="stamina-value">100</em></div>
+          <div class="meter stamina"><span data-i18n="meter.stamina">Stamina</span><i><b id="stamina-bar"></b></i><em id="stamina-value">100</em></div>
           <div class="drain-note hidden" id="drain-note"></div>
           <!--
             补给计数是**只读**的：消耗一律回背包操作，但"我还有没有水"是随时要瞄一眼的决策信息，
@@ -72,7 +72,7 @@
         -->
         <div class="bottom-right">
           <div class="utility-buttons">
-            <button id="thermal-button" class="utility-button" type="button" data-i18n-attr="aria-label:hud.thermal.aria"><span data-i18n="hud.thermal.label">Warmth</span> <b id="thermal-state">—</b></button>
+            <button id="thermal-button" class="utility-button" type="button" data-i18n-attr="aria-label:hud.thermal.aria"><b id="thermal-state">—</b></button>
             <button id="backpack-button" class="utility-button" type="button" data-i18n-attr="aria-label:hud.pack.aria"><span data-i18n="hud.pack.label">Pack</span> <b id="bag-usage">0/8</b></button>
           </div>
           <div class="action-buttons">
@@ -96,10 +96,10 @@
           <div class="verb-row" data-i18n-attr="aria-label:intro.verbs.aria">
             <span><b>1</b><i data-i18n="intro.verb1">Cut cactus, draw from wells, hunt dogs for hide</i></span>
             <span><b>2</b><i data-i18n="intro.verb2">Stock deadwood before dusk, feed the fire, seal the gate</i></span>
-            <span><b>3</b><i data-i18n="intro.verb3">Take a weapon line — saber or sword — to tier 3, then draw out the alpha</i></span>
+            <span><b>3</b><i data-i18n="intro.verb3">Take a weapon line — sabre or sword — to tier 3, then draw out the alpha</i></span>
           </div>
           <p class="axis-copy" data-i18n="intro.axes">
-            Thirst or hunger hitting zero kills you outright. The daytime sun drives your warmth up into heatstroke; the night cold drags it down into hypothermia — neither kills, but either leaves you barely able to move. Gathering and swinging both cost labour, and only standing still restores it quickly.
+            Water or food hitting zero kills you outright. The daytime sun drives your warmth up into heatstroke; the night cold drags it down into hypothermia — neither kills, but either leaves you barely able to move. Gathering and swinging both cost stamina, and only standing still restores it quickly.
           </p>
           <p id="records-line" class="records-line hidden"></p>
           <!--
@@ -132,7 +132,7 @@
           </div>
           <div class="stat-row" data-i18n-attr="aria-label:pack.stats.aria">
             <span><i data-i18n="pack.stat.health">Health</i> <b id="stat-health">100</b></span>
-            <span><i data-i18n="pack.stat.stamina">Labour</i> <b id="stat-stamina">100</b></span>
+            <span><i data-i18n="pack.stat.stamina">Stamina</i> <b id="stat-stamina">100</b></span>
             <span><i data-i18n="pack.stat.attack">Attack</i> <b id="stat-attack">30</b></span>
             <span><i data-i18n="pack.stat.defense">Defence</i> <b id="stat-defense">2</b></span>
           </div>

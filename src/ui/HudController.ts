@@ -86,13 +86,17 @@ export class HudController {
     const hot = warmth > 62;
     const cold = warmth < 35;
     const cooldown = hot ? this.simulation.coolCooldown : this.simulation.warmCooldown;
+    // 按钮原先是「静态标签 Warmth」+「状态词」两行，读出来是 "Warmth / Warm"。
+    // 现在只剩一行，由状态词自己把话说完：两个可按的状态是动词短语（Cool down /
+    // Warm up），两个不可按的状态自己带上名词（Warmth OK / Warmth 120s）——
+    // 否则冷却态会变成一颗没有标签的 "120s"，而 120 秒冷却恰恰是最常驻的状态。
     if (!hot && !cold) {
       this.thermalState.textContent = t("thermal.fine");
       this.thermalButton.disabled = true;
       return;
     }
     if (cooldown > 0) {
-      this.thermalState.textContent = `${Math.ceil(cooldown)}s`;
+      this.thermalState.textContent = t("thermal.cooldown", { seconds: Math.ceil(cooldown) });
       this.thermalButton.disabled = true;
       return;
     }

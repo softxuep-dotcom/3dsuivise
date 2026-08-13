@@ -1472,7 +1472,7 @@ export class GameSimulation {
       && this.getInventoryCount("raw-meat") > 0) {
       const lit = this.getNearestLitCamp();
       return lit
-        ? loc("sim.cookNearby", { meters: Math.round(lit.distance), health: COOKED_HEALTH })
+        ? loc("sim.cookNearby", { metres: Math.round(lit.distance), health: COOKED_HEALTH })
         : loc("sim.cookAnywhere");
     }
     if (this.getInventoryCount("raw-meat") === 0 && this.getInventoryCount("cooked-meat") === 0) {
