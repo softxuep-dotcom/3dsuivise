@@ -44,10 +44,20 @@ export class SynthAudio {
     if (!this.enabled || !this.context || !this.master) return;
     switch (event.type) {
       case "pickup":
-        this.tone(event.kind === "cactus-juice" ? 620 : 360, 0.08, "sine", 0.6, 1.25);
+        // 油桶给一个空腔的闷响，和捡柴、搬石头都不一样 —— 手上占着什么，耳朵先知道。
+        this.tone(event.kind === "cactus-juice" ? 620 : event.kind === "fuel" ? 190 : 360,
+          0.08, event.kind === "fuel" ? "triangle" : "sine", 0.6, 1.25);
         break;
       case "drop":
-        this.tone(event.kind === "stone" ? 95 : 150, 0.1, "triangle", 0.85, 0.7);
+        this.tone(event.kind === "stone" ? 95 : event.kind === "fuel" ? 130 : 150, 0.1, "triangle", 0.85, 0.7);
+        break;
+      // 装车是这一局里唯一一个"进度前进了一格"的动作，给它一声干净的上扬。
+      case "fuel-loaded":
+        this.tone(300 + event.loaded * 55, 0.16, "triangle", 0.55, 1.4);
+        break;
+      case "truck-depart":
+        this.tone(70, 1.1, "sawtooth", 0.9, 1.35);
+        window.setTimeout(() => this.tone(105, 0.9, "square", 0.55, 1.5), 240);
         break;
       case "feed-fire":
         this.noise(0.28, 0.7);

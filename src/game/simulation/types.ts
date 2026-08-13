@@ -18,8 +18,14 @@ export interface LocalizedText {
   key: string;
   params?: Record<string, string | number | LocalizedText>;
 }
-/** 双手搬运物：地图大石，以及玩家搭好后可以重新布置的树桩。 */
-export type CarryKind = "stone" | "stake";
+/**
+ * 双手搬运物：地图大石、玩家搭好后可以重新布置的树桩，以及汽油桶。
+ *
+ * 汽油桶走搬运而不是背包，是整个通关目标的支点：扛着桶就跑不快（×0.54）、
+ * 也**打不了架**（requestAttack 直接被 carrying 挡掉）。于是"取油"这件事
+ * 天然是一段没有还手能力的路程 —— 你得先决定这一趟安不安全。
+ */
+export type CarryKind = "stone" | "stake" | "fuel";
 /** 地面上散落的可拾取物仍然有两种；木头进背包，大石上手。 */
 export type GroundItemKind = "wood" | "stone";
 export type InventoryItemKind =
@@ -69,8 +75,14 @@ export type ArmorKind =
   | "hide-1" | "hide-2" | "hide-3";
 export type WolfKind = "small" | "large" | "alpha";
 export type WolfMode = "entering" | "patrol" | "chase" | "raid" | "retreating" | "dead";
-/** 野狼白天在地图上游荡且只在被激怒后反击；夜袭狼由边缘涌入且不掉狼皮。 */
-export type WolfRole = "wild" | "raider";
+/**
+ * 野狼白天在地图上游荡且只在被激怒后反击；夜袭狼从狗巢涌出且不掉狼皮；
+ * **守巢犬**是第三种：从开局就趴在巢边那三桶汽油旁边，昼夜常驻、不撤退、不重生。
+ *
+ * 它们是"打"这条通关路线的收费站 —— 巢边的油离卡车只有三十几米，
+ * 但要先能正面吃下三只大狼。绕开它们去捡野外的散桶完全可行，代价是路程。
+ */
+export type WolfRole = "wild" | "raider" | "guard";
 
 /**
  * 荒漠猎物。取自原图的非毒生物 —— 蜘蛛、蝎子、眼镜蛇（都带 60 秒毒）没有移植。
@@ -259,6 +271,39 @@ export interface LandmarkDefinition extends Vec2 {
 }
 
 /**
+ * 汽油桶。通关要往卡车里装满 {@link FUEL_REQUIRED} 桶。
+ *
+ * 全图放 9 桶而只要 5 桶，是为了让两条路线都走得通而不是二选一：
+ *   - **巢边 3 桶** 离卡车只有三十几米，但守巢的三只大狼就趴在旁边；
+ *   - **野外 6 桶** 谁也不看着，但散在半张图上，扛一趟要一个白天的一大半。
+ * 拿光巢边三桶也还差两桶，所以无论怎么打都得出门至少两趟。
+ */
+export interface FuelBarrelDefinition extends Vec2 {
+  id: number;
+  rotation: number;
+  /** 是否属于守巢犬看着的那一组；只用于生成时定位守卫，运行时不再区分。 */
+  guarded: boolean;
+}
+
+export type FuelBarrelPlacement = "ground" | "carried" | "loaded";
+
+export interface FuelBarrelState extends Vec2 {
+  id: number;
+  rotation: number;
+  placement: FuelBarrelPlacement;
+}
+
+/**
+ * 卡车：荒原上唯一的出口。停在狗巢背面二十来米 —— 近到你一定会撞见巢，
+ * 远到站在车边不会被守巢犬看见（它们的视野 14.5 米，车离桶 33 米）。
+ */
+export interface TruckDefinition extends Vec2 {
+  rotation: number;
+  /** 加满油后驶离的方向（单位向量），指向最近的一条地图边。 */
+  exit: Vec2;
+}
+
+/**
  * 玩家搭建的放置物。
  *   树桩 —— 路障。原图只要 1 个木头、1000 血自愈、15 护甲，是整套基地防御的基石；
  *          我们此前的防御只有"一个营地一块大石"，没有任何布防余地。
@@ -406,8 +451,13 @@ export interface WorldDefinition {
   wells: WellDefinition[];
   landmarks: LandmarkDefinition[];
   dens: DenDefinition[];
+  barrels: FuelBarrelDefinition[];
+  truck: TruckDefinition;
   startCampId: number;
 }
+
+/** 通关要往卡车里装几桶油。 */
+export const FUEL_REQUIRED = 5;
 
 export type GameEvent =
   | { type: "pickup"; kind: CarryKind | InventoryItemKind }
@@ -441,6 +491,10 @@ export type GameEvent =
   | { type: "critter-hit"; critterId: number }
   | { type: "critter-killed"; critterId: number; kind: CritterKind }
   | { type: "alpha-spawned" }
+  /** 一桶油进了车斗。 */
+  | { type: "fuel-loaded"; loaded: number; required: number }
+  /** 油加满、玩家上车，卡车开始驶离。之后只剩结算动画。 */
+  | { type: "truck-depart" }
   | { type: "player-hit"; amount: number }
   | { type: "barrier-hit"; itemId: number }
   | { type: "build"; kind: StructureKind }
@@ -451,7 +505,7 @@ export type GameEvent =
   | { type: "game-over" };
 
 export interface InteractionHint {
-  action: "pickup" | "drop" | "feed" | "cactus" | "mine" | "well" | "none";
+  action: "pickup" | "drop" | "feed" | "cactus" | "mine" | "well" | "load" | "board" | "none";
   text: LocalizedText;
 }
 

@@ -19,6 +19,7 @@ import type {
   CampState,
   DeathCause,
   EquipLine,
+  FuelBarrelState,
   GameEvent,
   LocalizedText,
   GroundItem,
@@ -40,7 +41,7 @@ import type {
   WorldDefinition,
   WorldDrop,
 } from "./types";
-import { BARRIER_STATS, CRITTER_SPECS, INVENTORY_CAPACITY, INVENTORY_STACK_LIMITS, STRUCTURE_SPECS } from "./types";
+import { BARRIER_STATS, CRITTER_SPECS, FUEL_REQUIRED, INVENTORY_CAPACITY, INVENTORY_STACK_LIMITS, STRUCTURE_SPECS } from "./types";
 
 /**
  * 造一条待渲染文案。模拟层所有面向玩家的字符串都经这里出去 ——
@@ -49,6 +50,22 @@ import { BARRIER_STATS, CRITTER_SPECS, INVENTORY_CAPACITY, INVENTORY_STACK_LIMIT
 const loc = (key: string, params?: LocalizedText["params"]): LocalizedText => (
   params ? { key, params } : { key }
 );
+
+/**
+ * 从 `from` 看向 `to` 的**屏幕方位角**：0 = 屏幕正上方，顺时针为正。
+ *
+ * 不能直接用世界坐标的 atan2 —— 相机固定架在 (+19, +24, +19) 俯视原点，
+ * 也就是整张图在屏幕上转了 45°：屏幕上方对应世界的 (−x, −z)，屏幕右方对应 (+x, −z)。
+ * 玩家没有小地图、也没有别的方位参照，所以"北"只能定义成"屏幕朝上"，
+ * 否则报出来的方位和他看到的画面差 45°，比不报还糟。
+ */
+function screenBearing(from: Vec2, to: Vec2): number {
+  const dx = to.x - from.x;
+  const dz = to.z - from.z;
+  const right = dx - dz;
+  const up = -(dx + dz);
+  return Math.atan2(right, up);
+}
 
 const PLAYER_RADIUS = 0.72;
 const WOLF_RADIUS = 0.68;
@@ -400,8 +417,38 @@ const WATER_RESTORE = 26;
 const WATER_WARMTH_COST = 14;
 
 // --- 终局 ---
-/** 累计击杀达标后头狼出场。（原图狼王需要 250 杀，按我们 3~4 夜的体量缩到 40） */
+/**
+ * 累计击杀达标后头狼出场。（原图狼王需要 250 杀，按我们 3~4 夜的体量缩到 40）
+ *
+ * **它已经不是通关条件了。** 通关是"给卡车加满 5 桶油再开出去"，
+ * 头狼降级成一场夜里躲得掉、也可以主动去啃的硬仗 —— 打赢它掉的是狼牙和兽皮，
+ * 也就是三阶装备的材料，而三阶装备正是"打穿守巢犬吃近路"那条线的门票。
+ */
 const ALPHA_KILL_REQUIREMENT = 40;
+
+/** 走到几米内可以搬起一桶油。 */
+const FUEL_PICKUP_REACH = 2.6;
+/** 扛着桶走到车尾几米内就算装车。半径给得比拾取宽，免得对着车找角度。 */
+const TRUCK_LOAD_REACH = 4.5;
+/**
+ * 空着手站在车边几米内可以发车（油加满时）。
+ * 和装车用同一个半径：卡车本身是半径 2.4 的实体障碍，玩家半径 0.72，
+ * 也就是最近只能贴到 3.12 米 —— 判定再收紧一点就会出现"贴着车按不动"。
+ */
+const TRUCK_BOARD_REACH = 4.5;
+/** 驶离速度与最长驶离时间（到边界就结算，这个上限只是保险）。 */
+const TRUCK_DEPART_SPEED = 11;
+const TRUCK_DEPART_MAX_SECONDS = 12;
+/**
+ * 守巢的大狼数量、仇恨半径，以及它们离锚点多远就放弃追击折回。
+ *
+ * 12 米这个数是从布局倒推的：三桶油就在守卫脚下（2~3 米），所以去拿桶必定惊动它们；
+ * 而卡车停在 30 米外，所以走到车边、装车、发车全程都不会拉到仇恨。
+ * 「先去看车、再决定要不要打」因此是一个能安全做出的判断。
+ */
+const DEN_GUARD_COUNT = 3;
+const GUARD_AGGRO_RADIUS = 12;
+const GUARD_LEASH = 20;
 
 export class GameSimulation {
   readonly world: WorldDefinition;
@@ -415,6 +462,9 @@ export class GameSimulation {
   readonly wolves: WolfState[] = [];
   readonly critters: CritterState[] = [];
   readonly drops: WorldDrop[] = [];
+  readonly barrels: FuelBarrelState[];
+  /** 卡车。位置在驶离时会变，所以它是状态不是定义的引用。 */
+  readonly truck: { x: number; z: number; rotation: number; loaded: number };
 
   phase: Phase = "day";
   day = 1;
@@ -439,8 +489,6 @@ export class GameSimulation {
   private comboStacks = 0;
   private comboTargetKey: string | null = null;
   private comboTimer = 0;
-  /** 头狼是否已被击杀。杀掉不再直接通关 —— 还得撑到天亮。 */
-  private alphaSlain = false;
   /** 挨打后的休息封锁倒计时，见 REST_COMBAT_LOCK。 */
   private combatTimer = 0;
   /** 当前正在提水的井 id，-1 表示没有。 */
@@ -458,8 +506,12 @@ export class GameSimulation {
   private duskWarningSent = false;
   private largeWolfAnnounced = false;
   private alphaSpawned = false;
-  /** 头狼被击杀后置位，胜利结算只跑一次。 */
+  /** 胜利结算只跑一次。 */
   private victorySent = false;
+  /** 玩家正扛着的那桶油；放下时要把同一个对象放回地面，而不是新建一桶。 */
+  private carriedBarrel: FuelBarrelState | null = null;
+  /** >0 表示卡车正在驶离，玩家已经在车上，只剩结算动画。 */
+  private departTimer = 0;
   // 死因记录，供 UI 显示游戏结束文案
   deathCause: DeathCause | null = null;
   won = false;
@@ -484,6 +536,14 @@ export class GameSimulation {
     this.cacti = world.initialCacti.map((patch) => ({ ...patch }));
     this.ironNodes = world.ironNodes.map((node) => ({ ...node }));
     this.wells = world.wells.map((well) => ({ id: well.id, charges: WELL_CHARGES_INITIAL, refillAt: 0 }));
+    this.barrels = world.barrels.map((barrel) => ({
+      id: barrel.id,
+      x: barrel.x,
+      z: barrel.z,
+      rotation: barrel.rotation,
+      placement: "ground" as const,
+    }));
+    this.truck = { x: world.truck.x, z: world.truck.z, rotation: world.truck.rotation, loaded: 0 };
     this.player = {
       x: startCamp.x,
       z: startCamp.z + 1.5,
@@ -510,6 +570,34 @@ export class GameSimulation {
     };
     this.navigation.rebuild(this.player);
     this.seedCritters();
+    this.seedDenGuards();
+  }
+
+  /**
+   * 守巢的三只大狼，开局就站在巢边那组油桶旁。
+   *
+   * 它们和夜袭犬是两回事：不随夜晚刷新、天亮不撤退、死了不补 ——
+   * 打赢一次就永久打开了那条近路。这是"升级装备"这条线唯一的实质回报，
+   * 所以必须是一次性的：会重生的话，玩家没有理由为它投资装备。
+   */
+  private seedDenGuards(): void {
+    const guarded = this.world.barrels.filter((barrel) => barrel.guarded);
+    if (guarded.length === 0) return;
+    const centre = {
+      x: guarded.reduce((sum, barrel) => sum + barrel.x, 0) / guarded.length,
+      z: guarded.reduce((sum, barrel) => sum + barrel.z, 0) / guarded.length,
+    };
+    for (let index = 0; index < DEN_GUARD_COUNT; index += 1) {
+      const angle = (index / DEN_GUARD_COUNT) * TAU + 0.4;
+      this.spawnWolf({
+        role: "guard",
+        forceKind: "large",
+        origin: this.findNearestWalkablePoint({
+          x: centre.x + Math.cos(angle) * 3.4,
+          z: centre.z + Math.sin(angle) * 3.4,
+        }),
+      });
+    }
   }
 
   start(): void {
@@ -520,6 +608,12 @@ export class GameSimulation {
   update(deltaSeconds: number, movement: Vec2): void {
     if (!this.running) return;
     const delta = Math.min(deltaSeconds, 0.05);
+    // 驶离期间整个模拟停摆：不掉水、不掉饿、狗追不上来，摇杆也不再有作用。
+    // 让生存轴继续跑的话，最后这十秒会出现"通关动画里渴死"这种荒唐结局。
+    if (this.departTimer > 0) {
+      this.updateDeparture(delta);
+      return;
+    }
     this.player.attackCooldown = Math.max(0, this.player.attackCooldown - delta);
     this.player.attackFlash = Math.max(0, this.player.attackFlash - delta);
     this.player.hurtFlash = Math.max(0, this.player.hurtFlash - delta);
@@ -594,7 +688,8 @@ export class GameSimulation {
   }
 
   requestInteraction(): void {
-    if (!this.running) return;
+    // 驶离期间整个操作面锁死：那十秒里玩家已经在车上了，按什么都不该有反应。
+    if (!this.running || this.departTimer > 0) return;
     this.noteActivity();
 
     // 水分是"归零即死"的轴。一旦玩家站在枯木堆里，E 会一直被拾取抢走，
@@ -613,8 +708,22 @@ export class GameSimulation {
       }
     }
 
+    // 扛着油桶站在车尾 —— 这一按是装车而不是放地上。装车不可逆，
+    // 所以判定半径（4.5）比拾取半径（2.6）宽：对着车找角度不该是玩法的一部分。
+    if (this.player.carrying === "fuel" && this.carriedBarrel
+      && distance(this.player, this.truck) <= TRUCK_LOAD_REACH) {
+      this.loadCarriedBarrel();
+      return;
+    }
+
     if (this.player.carrying) {
       this.dropCarriedItem();
+      return;
+    }
+
+    // 空手站在加满油的车边 = 发车。放在拾取之前，否则车边掉了根柴就永远上不了车。
+    if (this.truck.loaded >= FUEL_REQUIRED && distance(this.player, this.truck) <= TRUCK_BOARD_REACH) {
+      this.departWithTruck();
       return;
     }
 
@@ -631,6 +740,15 @@ export class GameSimulation {
         this.events.push({ type: "feed-fire", campId: hearth.campId });
         return;
       }
+    }
+
+    const barrel = this.findNearestBarrel(FUEL_PICKUP_REACH);
+    if (barrel) {
+      barrel.placement = "carried";
+      this.carriedBarrel = barrel;
+      this.player.carrying = "fuel";
+      this.events.push({ type: "pickup", kind: "fuel" });
+      return;
     }
 
     const item = this.findNearestItem(2.5);
@@ -685,12 +803,77 @@ export class GameSimulation {
     }
   }
 
+  /** 地上（不是被扛着、也不是已装车的）离玩家最近的一桶油。 */
+  private findNearestBarrel(maxDistance: number): FuelBarrelState | null {
+    let best: FuelBarrelState | null = null;
+    let bestDistance = maxDistance * maxDistance;
+    for (const barrel of this.barrels) {
+      if (barrel.placement !== "ground") continue;
+      const value = distanceSquared(this.player, barrel);
+      if (value >= bestDistance) continue;
+      best = barrel;
+      bestDistance = value;
+    }
+    return best;
+  }
+
+  /** 把手上这桶装进车斗。装满即可发车，但发车仍要玩家自己按一下。 */
+  private loadCarriedBarrel(): void {
+    const barrel = this.carriedBarrel;
+    if (!barrel) return;
+    barrel.placement = "loaded";
+    this.carriedBarrel = null;
+    this.player.carrying = null;
+    this.truck.loaded += 1;
+    this.events.push({ type: "fuel-loaded", loaded: this.truck.loaded, required: FUEL_REQUIRED });
+    this.events.push({
+      type: "message",
+      key: this.truck.loaded >= FUEL_REQUIRED ? "msg.fuelFull" : "msg.fuelLoaded",
+      params: { loaded: this.truck.loaded, required: FUEL_REQUIRED },
+    });
+  }
+
+  /**
+   * 发车。之后的十来秒是结算动画，不是玩法：
+   * 玩家坐在车上、生存轴停摆、狗咬不到。把它做成可玩的驾驶段会引出一整套
+   * 载具操作与地形碰撞，而它只服务这一局的最后 10 秒。
+   */
+  private departWithTruck(): void {
+    if (this.departTimer > 0 || this.victorySent) return;
+    this.departTimer = TRUCK_DEPART_MAX_SECONDS;
+    this.setResting(false);
+    this.player.carrying = null;
+    this.carriedBarrel = null;
+    this.events.push({ type: "truck-depart" });
+    this.events.push({ type: "message", key: "msg.truckDepart" });
+  }
+
+  /** 卡车正在驶离：把车和车上的人一起往地图外推，出界即通关。 */
+  private updateDeparture(delta: number): void {
+    this.departTimer -= delta;
+    const exit = this.world.truck.exit;
+    this.truck.x += exit.x * TRUCK_DEPART_SPEED * delta;
+    this.truck.z += exit.z * TRUCK_DEPART_SPEED * delta;
+    this.player.x = this.truck.x;
+    this.player.z = this.truck.z;
+    this.player.facing = exit;
+    if (this.departTimer <= 0 || this.distanceToWorldEdge(this.truck) <= 1) {
+      this.endGameWithVictory();
+    }
+  }
+
+  isDeparting(): boolean {
+    return this.departTimer > 0;
+  }
+
   /**
    * 火塘之外还有没有更近的可交互目标。
    * 采集类目标的判定半径都在 3.2 米以内，火塘却有 10 米 —— 不比距离的话，
    * 营地范围内的拾取、割仙人掌、挖矿、提水会被添柴全部吃掉。
    */
   private hasNearerTarget(hearthDistance: number): boolean {
+    const barrel = this.findNearestBarrel(FUEL_PICKUP_REACH);
+    if (barrel && distance(this.player, barrel) < hearthDistance) return true;
     const item = this.findNearestItem(2.5);
     if (item && distance(this.player, item) < hearthDistance) return true;
     const structure = this.findNearestStructure(2.7);
@@ -796,7 +979,7 @@ export class GameSimulation {
   }
 
   requestAttack(): void {
-    if (!this.running || this.player.attackCooldown > 0 || this.player.carrying) return;
+    if (!this.running || this.departTimer > 0 || this.player.attackCooldown > 0 || this.player.carrying) return;
     this.noteActivity();
     const stats = WEAPON_STATS[this.player.weapon];
     // 劳力不足不会禁止挥砍，但伤害衰减到 60%，"脱力"是可感知的惩罚而不是硬锁。
@@ -1285,6 +1468,7 @@ export class GameSimulation {
   }
 
   getInteractionHint(): InteractionHint {
+    if (this.departTimer > 0) return { action: "none", text: loc("hint.none") };
     if (this.player.gatherTimer > 0) return { action: "well", text: loc("hint.drawing") };
     // 与 requestInteraction 保持一致：水分告急时，仙人掌优先、其次找井。
     if (this.player.water < WATER_URGENT && !this.player.carrying) {
@@ -1292,10 +1476,18 @@ export class GameSimulation {
       const urgentWell = this.findNearestWell(WELL_REACH);
       if (urgentWell) return { action: "well", text: loc("hint.urgentWell", { cost: STAMINA_COST_DRAW }) };
     }
+    if (this.player.carrying === "fuel") {
+      return distance(this.player, this.truck) <= TRUCK_LOAD_REACH
+        ? { action: "load", text: loc("hint.loadFuel", { loaded: this.truck.loaded, required: FUEL_REQUIRED }) }
+        : { action: "drop", text: loc("hint.dropFuel") };
+    }
     if (this.player.carrying) {
       return this.player.carrying === "stake"
         ? { action: "drop", text: loc("hint.dropStake") }
         : { action: "drop", text: loc("hint.dropStone") };
+    }
+    if (this.truck.loaded >= FUEL_REQUIRED && distance(this.player, this.truck) <= TRUCK_BOARD_REACH) {
+      return { action: "board", text: loc("hint.board") };
     }
     // 与 requestInteraction 同一套优先级：火塘只在比脚边的东西更近时才占住 E。
     if (this.getInventoryCount("wood") > 0) {
@@ -1303,6 +1495,9 @@ export class GameSimulation {
       if (hearth && !this.hasNearerTarget(hearth.distance)) {
         return { action: "feed", text: loc("hint.feed", { left: this.getInventoryCount("wood") }) };
       }
+    }
+    if (this.findNearestBarrel(FUEL_PICKUP_REACH)) {
+      return { action: "pickup", text: loc("hint.liftFuel", { loaded: this.truck.loaded, required: FUEL_REQUIRED }) };
     }
     const item = this.findNearestItem(2.5);
     if (item) {
@@ -1400,14 +1595,50 @@ export class GameSimulation {
     return this.wolves.find((wolf) => wolf.kind === "alpha" && wolf.mode !== "dead") ?? null;
   }
 
-  getAlphaProgress(): { kills: number; required: number; spawned: boolean; slain: boolean; minDay: number } {
+  /**
+   * 通关进度：车里几桶、还差几桶、手上有没有扛着一桶，以及最近一桶还没捡的油在哪。
+   *
+   * `nearest` 存在的理由：全图九桶散在 220×220 上，而我们**没有小地图**
+   * （矮屏上它本来就 display:none）。不给方位的话，"猥琐找油"这条路线
+   * 会退化成地毯式搜索。给一个粗方位 + 距离，它才是"规划一趟出门"。
+   */
+  getFuelProgress(): {
+    loaded: number;
+    required: number;
+    carrying: boolean;
+    truckDistance: number;
+    nearest: { distance: number; bearing: number; guarded: boolean } | null;
+  } {
+    let nearest: { distance: number; bearing: number; guarded: boolean } | null = null;
+    if (!this.carriedBarrel) {
+      for (const barrel of this.barrels) {
+        if (barrel.placement !== "ground") continue;
+        const value = distance(this.player, barrel);
+        if (nearest && value >= nearest.distance) continue;
+        nearest = {
+          distance: value,
+          bearing: screenBearing(this.player, barrel),
+          // 「有没有狗看着」按**现场还活着的守卫**算，不是按出生时的标记 ——
+          // 打完之后这条提示要自己变干净，否则玩家不知道自己已经把路打开了。
+          guarded: this.wolves.some((wolf) => wolf.role === "guard" && wolf.mode !== "dead"
+            && distanceSquared(wolf, barrel) < 14 * 14),
+        };
+      }
+    }
     return {
-      kills: this.player.kills,
-      required: ALPHA_KILL_REQUIREMENT,
-      spawned: this.alphaSpawned,
-      slain: this.alphaSlain,
-      minDay: ALPHA_MIN_DAY,
+      loaded: this.truck.loaded,
+      required: FUEL_REQUIRED,
+      carrying: this.carriedBarrel !== null,
+      truckDistance: distance(this.player, this.truck),
+      nearest,
     };
+  }
+
+  /** 把 {@link screenBearing} 的角度换成八个方位之一：0 = 正上方 = 北，顺时针数。 */
+  private bearingKey(bearing: number): string {
+    const sector = Math.round(((bearing % TAU) + TAU) % TAU / (TAU / 8)) % 8;
+    return ["compass.n", "compass.ne", "compass.e", "compass.se",
+      "compass.s", "compass.sw", "compass.w", "compass.nw"][sector];
   }
 
   /** 剑线连击的当前层数与上限，供 HUD 在攻击按钮上画进度弧。 */
@@ -1416,6 +1647,7 @@ export class GameSimulation {
   }
 
   getObjective(): LocalizedText {
+    if (this.departTimer > 0) return loc("sim.departing");
     if (!this.clockStarted) return loc("sim.7");
     if (this.player.gatherTimer > 0) return loc("sim.8");
 
@@ -1427,15 +1659,24 @@ export class GameSimulation {
     if (this.player.condition === "heatstroke") return loc("sim.12");
 
     if (this.player.resting) return loc("sim.13");
+    // 扛着桶的时候只说一件事：车在哪。扛桶期间打不了架、跑不快，
+    // 别的提示这时全是噪音 —— 而且手上占着东西，E 只能放下或装车。
+    const fuel = this.getFuelProgress();
+    if (fuel.carrying) {
+      return loc("sim.fuelCarrying", {
+        metres: Math.round(fuel.truckDistance),
+        bearing: loc(this.bearingKey(screenBearing(this.player, this.truck))),
+      });
+    }
     // 枯木现在进背包，所以指引从"往哪搬"变成"够不够、去哪烧"。
-    // 同样要让过 requestInteraction 的优先级：脚边有东西可捡时 E 不会去添柴，
-    // 这里就不能喊"按互动键添柴"。
-    if (this.getInventoryCount("wood") > 0) {
+    // 同样要让过 requestInteraction 的优先级：手上占着东西、或者脚边有东西可捡时，
+    // E 都不会去添柴，这里就不能喊"按互动键添柴"。
+    if (this.getInventoryCount("wood") > 0 && !this.player.carrying) {
       const hearth = this.findNearestHearth(FIRE_WARMTH_RADIUS);
       if (hearth && !this.hasNearerTarget(hearth.distance)) return loc("sim.14");
     }
-    // 头狼死了但天还没亮 —— 这是全局最紧张的一段，目标行必须只说这一件事。
-    if (this.alphaSlain) return loc("sim.15", { v0: Math.max(0, Math.ceil(this.phaseTime)) });
+    if (fuel.loaded >= fuel.required) return loc("sim.fuelReady", { metres: Math.round(fuel.truckDistance) });
+
     const alpha = this.getAlpha();
     if (alpha) return loc("sim.16", { v0: Math.max(0, Math.ceil(alpha.health)), v1: alpha.maxHealth });
 
@@ -1445,28 +1686,34 @@ export class GameSimulation {
       if (!lit) return loc("sim.18");
       if (lit.fuel < 25) return loc("sim.19", { v0: Math.round(lit.fuel) });
       if (this.day === 1 && this.phaseTime > 60) return loc("sim.20");
-      // 击杀数攒满但天数没到时，目标行得说清在等什么 —— 否则玩家会以为卡住了。
-      if (this.player.kills >= ALPHA_KILL_REQUIREMENT && this.day < ALPHA_MIN_DAY) {
-        return loc("sim.21", { v0: ALPHA_MIN_DAY });
-      }
-      return loc("sim.22", { v0: this.player.kills, v1: ALPHA_KILL_REQUIREMENT });
+      // 夜里不指路去搬油 —— 巢口就在那三桶旁边，夜袭犬正从那里往外涌。
+      return loc("sim.nightHold", { loaded: fuel.loaded, required: fuel.required });
     }
 
     if (this.phase === "day" && this.day === 1 && this.phaseTime <= 14) return loc("sim.23");
     if (this.player.warmth > 78) return loc("sim.24");
-    const retreatingWolves = this.wolves.filter((wolf) => wolf.mode === "retreating").length;
-    if (retreatingWolves > 0) return loc("sim.25", { v0: retreatingWolves });
     if (this.objectiveStage === 0) return loc("sim.26", { v0: STAMINA_COST_WOOD });
     if (this.objectiveStage === 1) return loc("sim.27");
     if (this.objectiveStage === 2) return loc("sim.28");
     if (this.getInventoryCount("water") === 0 && this.getInventoryCount("cactus-juice") === 0) return loc("sim.29");
+    //
+    // 下面这一段的顺序改过一次，值得记一笔。
+    //
+    // 通关目标（去搬油）原先排在**所有**装备提示之后，而那些提示的条件宽到几乎常真：
+    // "没穿甲 + 地图上有野狗" 在前三天里一直成立。实测跑到第 2 天白天，目标行说的是
+    // "沙海上有 5 只野狗 · 兽皮只从野狗和长角羚身上来" —— 玩家**从头到尾看不到自己在为什么活着**。
+    //
+    // 现在只有"现在就能做完的一步"能排在通关目标前面：手上已经有皮了（走两步就能穿上）、
+    // 或者卡在三阶的最后一样材料上。其余的提示要么收紧到"真的还没入门"，要么删掉。
     if (this.getEquipped("armor").line === "none" && this.getInventoryCount("hide") > 0) return loc("sim.30");
-    const wildWolves = this.wolves.filter((wolf) => wolf.role === "wild" && wolf.mode !== "dead").length;
-    if (this.getEquipped("armor").line === "none" && wildWolves > 0) return loc("sim.31", { v0: wildWolves });
     // 三阶卡在狼牙上，而狼牙只有白天的大狼掉 —— 这条线索不给的话玩家找不到。
     if (this.getEquipped("weapon").tier === 2 && this.getInventoryCount("wolf-fang") < 3) {
       return loc("sim.32", { v0: this.getInventoryCount("wolf-fang") });
     }
+    // 「沙海上有 N 只野狗 · 兽皮只从野狗和长角羚身上来」这一条删掉了。
+    // 它的触发条件是"没穿甲 + 地图上有野狗"，前两三天一直成立，等于常年占着目标行；
+    // 而它说的事已经有三个地方在说：开场卡的玩法三条、拿到第一张皮后的 sim.30、
+    // 以及通关目标里"最近一桶有大狼守着"那半句。
     // 体力是恒定流失的轴，而烤肉是唯一的大额补给。身上有生肉却在掉血时，
     // 目标行直接把这条路指出来 —— 比等玩家自己翻背包发现要快得多。
     if (this.player.health < 62 && this.getInventoryCount("cooked-meat") === 0
@@ -1476,12 +1723,28 @@ export class GameSimulation {
         ? loc("sim.cookNearby", { metres: Math.round(lit.distance), health: COOKED_HEALTH })
         : loc("sim.cookAnywhere");
     }
-    if (this.getInventoryCount("raw-meat") === 0 && this.getInventoryCount("cooked-meat") === 0) {
+    // "缺肉"这条只在真的开始饿的时候压过通关目标。肚子还有一半就喊缺肉，
+    // 会把整个白天都占成采集提示，玩家永远看不到自己到底在为什么活着。
+    if (this.player.hunger < 50
+      && this.getInventoryCount("raw-meat") === 0 && this.getInventoryCount("cooked-meat") === 0) {
       const oryx = this.critters.find((critter) => critter.kind === "oryx" && critter.mode !== "dead");
       if (oryx) return loc("sim.33");
       return loc("sim.34");
     }
-    return loc("sim.35");
+    return this.describeFuelHunt(fuel);
+  }
+
+  /** 白天的常驻目标：还差几桶、最近一桶在哪个方向多远。 */
+  private describeFuelHunt(fuel: ReturnType<GameSimulation["getFuelProgress"]>): LocalizedText {
+    if (!fuel.nearest) return loc("sim.fuelNone", { loaded: fuel.loaded, required: fuel.required });
+    // 最近的一桶往往就是巢边那三桶（离起点营地 41 米，比任何野外桶都近）。
+    // 只报距离等于把拿着匕首的第 2 天玩家一头指进三只大狼里 —— 得说清那儿有狗看着，
+    // 打还是绕才是玩家自己的选择。
+    return loc(fuel.nearest.guarded ? "sim.fuelHuntGuarded" : "sim.fuelHunt", {
+      left: fuel.required - fuel.loaded,
+      metres: Math.round(fuel.nearest.distance),
+      bearing: loc(this.bearingKey(fuel.nearest.bearing)),
+    });
   }
 
   private updatePlayerMovement(delta: number, rawMovement: Vec2, isMoving: boolean): void {
@@ -1798,8 +2061,8 @@ export class GameSimulation {
     }
 
     if (wolf.mode === "retreating") wolf.lostTimer += delta;
-    // 夜袭狼靠视野主动锁定；白天的野狼只有被激怒后才会追击；头狼昼夜都在猎杀。
-    const hunting = wolf.kind === "alpha" ? true
+    // 夜袭狼靠视野主动锁定；白天的野狼只有被激怒后才会追击；头狼与守巢犬昼夜都在猎杀。
+    const hunting = wolf.kind === "alpha" || wolf.role === "guard" ? true
       : wolf.role === "wild" ? wolf.provoked
         : this.phase === "night";
     const canSeePlayer = hunting && wolf.mode !== "retreating" && this.wolfCanSeePlayer(wolf);
@@ -1808,7 +2071,11 @@ export class GameSimulation {
       wolf.lostTimer = 0;
     } else if (wolf.mode === "chase") {
       wolf.lostTimer += delta;
-      const beyondLeash = distance(wolf, wolf.anchor) > 38;
+      // 守巢犬的绳子短得多（20 米对 38 米）：它们的职责是看住那三桶油，
+      // 不是满图追人。绳子短，"把它们引开再回来偷桶"才有可能不成立 ——
+      // 想要那三桶就得真打赢，这正是这条路线该有的价格。
+      const leash = wolf.role === "guard" ? GUARD_LEASH : 38;
+      const beyondLeash = distance(wolf, wolf.anchor) > leash;
       if ((wolf.lostTimer > 4.5 && distance(wolf, this.player) > 13) || beyondLeash) {
         wolf.mode = "patrol";
         wolf.lostTimer = 0;
@@ -2050,17 +2317,27 @@ export class GameSimulation {
     if (wolf.kind === "alpha") {
       this.createDrop(wolf, "raw-meat", -0.65, 3);
       this.createDrop(wolf, "hide", 0.65, 4);
+      // 狼牙是四条三阶线的共同门槛，平时只有白天的大狼一颗一颗地掉。
+      // 头狼一次给 3 颗 = 一件三阶装备的整份门票。
+      this.createDrop(wolf, "wolf-fang", 0, 3);
       this.events.push({ type: "wolf-killed", wolfId: wolf.id });
-      // 杀死头狼**不再直接通关** —— 还得撑到天亮。
+      // **头狼不再是通关条件。** 通关是把卡车加满油开出去。
       //
-      // 原先它一倒下就结算胜利，于是整局游戏的终点是一次 DPS 检查：走过去按住攻击。
-      // 而剑三阶满层 220 DPS 打 836 血只要 3.8 秒，这个终点会短到不存在。
-      // 改成"击杀 + 活到天亮"之后，头狼从终点变成高潮 —— 它倒下时你正站在
-      // 四五十只狼中间、劳力见底，后面还有一整段残局要打，三阶装备也才有用武之地。
-      // 这同时和 docs/survival-systems.md §0.1 为生化篇写好的胜利条件对齐了。
-      this.alphaSlain = true;
+      // 它曾经是"击杀 40 只 → 头狼登场 → 杀掉它 → 撑到天亮"，
+      // 那条链子的问题不在长短，在于它和这张图上所有别的东西都不发生关系：
+      // 你在哪过夜、去不去狗巢、装备升到几阶，对它都只是同一个 DPS 检查的前置。
+      // 现在它退回成一场**可以躲开**的硬仗 —— 打赢的回报是三阶材料，
+      // 而三阶装备是"打穿守巢犬吃近路"那条线的门票。它从终点变成了一条支线。
       this.events.push({ type: "message", key: "msg.39" });
       return;
+    }
+
+    // 守巢犬和白天的野狼掉一样的东西 —— 它们本来就是大狼，
+    // 而且打赢它们的即时回报是那三桶油，掉落只是顺带。
+    if (wolf.role === "guard") {
+      this.createDrop(wolf, "raw-meat", -0.65, 2);
+      this.createDrop(wolf, "hide", 0.65, 2);
+      this.createDrop(wolf, "wolf-fang", 0, 1);
     }
 
     // 夜袭狼**什么都不掉**（原图：Player(11) 的狼不触发掉落表）。
@@ -2219,7 +2496,8 @@ export class GameSimulation {
     // 现在分成两处：攻营的锚在被攻营地外围，其余的守在**巢边**。
     // 于是狗巢不只是一根出怪管子，它是一个看得见、有狗在活动、可以主动去打的地方 ——
     // 玩家从营地望过去就知道今晚还剩多少没上来。
-    const anchor = role === "wild"
+    // 守巢犬就地生根：锚点即出生点，也就是那三桶油旁边。
+    const anchor = role === "wild" || role === "guard"
       ? this.findNearestWalkablePoint({ x: spawn.x, z: spawn.z })
       : raider
         ? this.findNearestWalkablePoint({
@@ -2245,7 +2523,7 @@ export class GameSimulation {
       maxHealth,
       attack,
       defense,
-      mode: role === "wild" ? "patrol" : raider ? "raid" : "entering",
+      mode: role === "wild" || role === "guard" ? "patrol" : raider ? "raid" : "entering",
       raider,
       provoked: false,
       anchor,
@@ -2432,6 +2710,13 @@ export class GameSimulation {
   }
 
   private wolfCanSeePlayer(wolf: WolfState): boolean {
+    // 守巢犬**没有视野盲区**：它们在看着三桶油，绕到背后不该算偷袭成功。
+    // 半径收到 12 米作为交换 —— 比别的狼看得近，但看得全。
+    // 视线遮挡照旧生效，所以隔着土垄靠近仍然是有效的接近方式。
+    if (wolf.role === "guard") {
+      if (distanceSquared(wolf, this.player) > GUARD_AGGRO_RADIUS * GUARD_AGGRO_RADIUS) return false;
+      return !this.lineOfSightBlocked(wolf, this.player);
+    }
     const maxDistance = wolf.raider ? 17.5 : 14.5;
     if (distanceSquared(wolf, this.player) > maxDistance * maxDistance) return false;
     const towardPlayer = direction(wolf, this.player);
@@ -2587,11 +2872,6 @@ export class GameSimulation {
       });
       // 白天打满击杀数的话，头狼会在入夜的这一刻登场。
       this.maybeSpawnAlpha();
-      return;
-    }
-    // 头狼死了、而你撑到了天亮 —— 这才是通关。
-    if (this.alphaSlain) {
-      this.endGameWithVictory();
       return;
     }
     this.phase = "day";
@@ -2794,6 +3074,21 @@ export class GameSimulation {
       x: this.player.x + this.player.facing.x * 2.05,
       z: this.player.z + this.player.facing.z * 2.05,
     };
+    if (kind === "fuel") {
+      const barrel = this.carriedBarrel;
+      if (!barrel) {
+        this.player.carrying = null;
+        return;
+      }
+      barrel.x = dropPosition.x;
+      barrel.z = dropPosition.z;
+      barrel.rotation = Math.atan2(this.player.facing.z, this.player.facing.x);
+      barrel.placement = "ground";
+      this.carriedBarrel = null;
+      this.player.carrying = null;
+      this.events.push({ type: "drop", kind });
+      return;
+    }
     if (kind === "stake") {
       const structure = this.carriedStructure;
       if (!structure) {

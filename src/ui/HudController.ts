@@ -312,16 +312,21 @@ export class HudController {
       : t("hud.drain.hint");
   }
 
+  /**
+   * 通关进度 = 车里的油。
+   *
+   * 这块常驻的小字以前写的是"猎杀 12/40"，也就是**目标行说什么它就重复什么**。
+   * 现在两者分工：目标行说"此刻该干嘛"（会被口渴、失温、扛着桶一路抢走），
+   * 这块只说"离赢还有多远"—— 无论目标行正在喊什么，它都不变。
+   * 头狼在场时例外：那一刻确实没有别的事需要知道。
+   */
   private updateHuntProgress(): void {
     const alpha = this.simulation.getAlpha();
-    const progress = this.simulation.getAlphaProgress();
+    const fuel = this.simulation.getFuelProgress();
     this.huntProgress.classList.toggle("alpha", Boolean(alpha));
-    // 头狼在场时血量由顶部 BOSS 条负责，这里只说进度，不重复报血。
     this.huntProgress.textContent = alpha
       ? t("hunt.alphaHere")
-      : progress.spawned
-        ? t("hunt.kills", { kills: progress.kills })
-        : t("hunt.progress", { kills: progress.kills, required: progress.required });
+      : t("hunt.fuel", { loaded: fuel.loaded, required: fuel.required });
   }
 
   handle(event: GameEvent): void {
@@ -338,6 +343,13 @@ export class HudController {
       this.showToast(t(event.kind === "oryx" ? "toast.huntBig" : "toast.hunt", { name: label }), 1.8);
     }
     if (event.type === "alpha-spawned") this.showToast(t("toast.alphaSpawned"), 4);
+    if (event.type === "fuel-loaded") {
+      this.showToast(t("toast.fuelLoaded", { loaded: event.loaded, required: event.required }), 2.6);
+    }
+    if (event.type === "truck-depart") {
+      this.closeInventory();
+      this.showToast(t("toast.truckDepart"), 5);
+    }
     if (event.type === "victory") {
       this.closeInventory();
       this.showVictory();
@@ -370,9 +382,7 @@ export class HudController {
       slot.innerHTML = `<span class="item-glyph">${itemGlyph(stack.kind)}</span><span class="item-name">${itemName(stack.kind)}</span><b class="item-count">${stack.count}</b>`;
       slot.setAttribute("aria-label", t("pack.slot.filled", { name: itemName(stack.kind), count: stack.count }));
     });
-    this.handsStatus.textContent = player.carrying === "stone"
-      ? t("carry.stone")
-      : player.carrying === "stake" ? t("carry.stake") : t("carry.empty");
+    this.handsStatus.textContent = player.carrying ? t(`carry.${player.carrying}`) : t("carry.empty");
     this.coatStatus.textContent = t(`equip.${player.armor}.hud`);
     this.weaponStatus.textContent = t(`equip.${player.weapon}.hud`);
     this.statHealth.textContent = `${Math.round(player.health)}/${player.maxHealth}`;

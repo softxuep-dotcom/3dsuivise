@@ -5,6 +5,7 @@ import type {
   CampKind,
   CampDefinition,
   CircleObstacle,
+  FuelBarrelDefinition,
   GroundItem,
   HillDefinition,
   IronNode,
@@ -12,6 +13,7 @@ import type {
   LandmarkDefinition,
   TerrainStyle,
   TreeDefinition,
+  TruckDefinition,
   Vec2,
   WorldDefinition,
   DenDefinition,
@@ -64,6 +66,93 @@ function awayFromCamps(point: Vec2, camps: CampDefinition[], padding: number): b
   return camps.every((camp) => distance(point, camp) > camp.radius + padding);
 }
 
+/** 卡车的占地半径；同时进 walls，所以它对玩家、狗和寻路都是一堵实墙。 */
+const TRUCK_RADIUS = 2.4;
+/** 巢边那一组油桶离巢心多远。巢的土垄半径 8，12 米刚好落在垄外的平地上。 */
+const DEN_BARREL_RADIUS = 12;
+/** 卡车离巢心多远。33 米开外守巢犬看不见（它们视野 14.5 米）。 */
+const TRUCK_DEN_DISTANCE = 22;
+const DEN_BARREL_COUNT = 3;
+const FIELD_BARREL_COUNT = 6;
+
+type TerrainWorld = Parameters<typeof isTerrainWalkable>[0];
+
+/**
+ * 卡车与九桶汽油。
+ *
+ * 位置关系是这套目标的全部设计：
+ *
+ *   巢边 3 桶 ──(33 m)── 卡车
+ *      ↑                    ↑
+ *   守巢的三只大狼        安全，没有守卫
+ *
+ * 卡车放在**巢的背面**（mouthAngle + π），于是走到车边不会惊动趴在巢口那侧的守卫；
+ * 而巢边三桶就在守卫脚下 —— 想吃这条近路就得先打赢。
+ *
+ * 野外六桶按"离巢远、彼此也远"散布，逼出真正的长途搬运：扛桶移速只有 0.54 倍。
+ */
+function placeTruckAndBarrels(
+  den: DenDefinition | null,
+  camps: CampDefinition[],
+  terrainWorld: TerrainWorld,
+  walls: CircleObstacle[],
+  random: () => number,
+  size: number,
+): { truck: TruckDefinition; barrels: FuelBarrelDefinition[] } {
+  const origin: Vec2 = den ?? { x: 36, z: -42 };
+  const mouthAngle = den?.mouthAngle ?? 2.62;
+  const truckAngle = mouthAngle + Math.PI;
+  const truckPoint = {
+    x: origin.x + Math.cos(truckAngle) * TRUCK_DEN_DISTANCE,
+    z: origin.z + Math.sin(truckAngle) * TRUCK_DEN_DISTANCE,
+  };
+  // 驶出方向取最近的一条边：横向近就往横里开，纵向近就往纵里开。
+  const half = size / 2;
+  const exit: Vec2 = half - Math.abs(truckPoint.x) <= half - Math.abs(truckPoint.z)
+    ? { x: Math.sign(truckPoint.x) || 1, z: 0 }
+    : { x: 0, z: Math.sign(truckPoint.z) || 1 };
+  const truck: TruckDefinition = {
+    ...truckPoint,
+    rotation: Math.atan2(exit.z, exit.x),
+    exit,
+  };
+
+  const barrels: FuelBarrelDefinition[] = [];
+  // 巢边三桶：沿巢口方向张开 ±0.45 弧度的一小段弧，三桶彼此隔着四五米，
+  // 所以一次只能扛走一桶 —— 打完守卫还得往返三趟。
+  for (let index = 0; index < DEN_BARREL_COUNT; index += 1) {
+    const spread = (index - (DEN_BARREL_COUNT - 1) / 2) * 0.45;
+    const angle = mouthAngle + spread;
+    barrels.push({
+      id: barrels.length,
+      x: origin.x + Math.cos(angle) * DEN_BARREL_RADIUS,
+      z: origin.z + Math.sin(angle) * DEN_BARREL_RADIUS,
+      rotation: random() * TAU,
+      guarded: true,
+    });
+  }
+
+  // 野外六桶。约束按重要性排序：可走 > 离巢远 > 彼此远 > 不压在营地/墙上。
+  // 找不到位置时逐步放松彼此的间距，保证六桶一定放得下。
+  for (let index = 0; index < FIELD_BARREL_COUNT; index += 1) {
+    let separation = 46;
+    let placed = false;
+    for (let attempt = 0; attempt < 900 && !placed; attempt += 1) {
+      if (attempt > 0 && attempt % 300 === 0) separation -= 9;
+      const point = { x: (random() - 0.5) * 186, z: (random() - 0.5) * 186 };
+      if (distance(point, origin) < 55) continue;
+      if (!awayFromCamps(point, camps, 10)) continue;
+      if (!isTerrainWalkable(terrainWorld, point) || terrainSlopeAt(terrainWorld, point) > 0.4) continue;
+      if (walls.some((wall) => distance(point, wall) < wall.radius + 2.4)) continue;
+      if (barrels.some((barrel) => distance(point, barrel) < separation)) continue;
+      barrels.push({ id: barrels.length, ...point, rotation: random() * TAU, guarded: false });
+      placed = true;
+    }
+  }
+
+  return { truck, barrels };
+}
+
 export function createWorld(seed = 71291): WorldDefinition {
   const random = mulberry32(seed);
   const size = BLUEPRINT.size;
@@ -84,22 +173,13 @@ export function createWorld(seed = 71291): WorldDefinition {
   const hills: HillDefinition[] = BLUEPRINT.ridges.map((ridge, id) => ({ id, ...ridge }));
   const terrainWorld = { camps, hills, terrain };
 
-  const trees: TreeDefinition[] = [];
-  let attempts = 0;
-  while (trees.length < 18 && attempts < 450) {
-    attempts += 1;
-    const point = { x: (random() - 0.5) * 192, z: (random() - 0.5) * 192 };
-    if (!awayFromCamps(point, camps, 3)) continue;
-    if (!isTerrainWalkable(terrainWorld, point) || terrainSlopeAt(terrainWorld, point) > 0.42) continue;
-    if (trees.some((tree) => distance(point, tree) < 8)) continue;
-    trees.push({ id: trees.length, ...point, rotation: random() * TAU, scale: 0.75 + random() * 0.55 });
-    walls.push({ ...point, radius: 1.05, kind: "tree" });
-  }
-
   /**
    * 狗巢。位置在蓝图里，地形烘焙时会照着它刻出土垄与缺口
    * （见 authoring/terrain/generate_heightfield.py 的 shape_dens）。
    * 这里只把它翻译成运行时结构，并算出巢口的世界坐标。
+   *
+   * 它现在还多了一个职责：**卡车与巢边三桶油都以它为原点定位**，
+   * 所以这一段必须排在树/地标之前 —— 卡车要先占住位置，后面的散布才会避开它。
    */
   const dens: DenDefinition[] = (BLUEPRINT.dens ?? []).map((source) => ({
     id: source.id,
@@ -113,6 +193,21 @@ export function createWorld(seed = 71291): WorldDefinition {
       z: source.z + Math.sin(source.mouthAngle) * source.radius * 0.82,
     },
   }));
+
+  const { truck, barrels } = placeTruckAndBarrels(dens[0] ?? null, camps, terrainWorld, walls, random, size);
+  walls.push({ x: truck.x, z: truck.z, radius: TRUCK_RADIUS, kind: "landmark" });
+
+  const trees: TreeDefinition[] = [];
+  let attempts = 0;
+  while (trees.length < 18 && attempts < 450) {
+    attempts += 1;
+    const point = { x: (random() - 0.5) * 192, z: (random() - 0.5) * 192 };
+    if (!awayFromCamps(point, camps, 3)) continue;
+    if (!isTerrainWalkable(terrainWorld, point) || terrainSlopeAt(terrainWorld, point) > 0.42) continue;
+    if (trees.some((tree) => distance(point, tree) < 8)) continue;
+    trees.push({ id: trees.length, ...point, rotation: random() * TAU, scale: 0.75 + random() * 0.55 });
+    walls.push({ ...point, radius: 1.05, kind: "tree" });
+  }
 
   const initialItems: GroundItem[] = [];
   const addItem = (kind: GroundItem["kind"], x: number, z: number): void => {
@@ -233,6 +328,8 @@ export function createWorld(seed = 71291): WorldDefinition {
     initialItems,
     initialCacti,
     dens,
+    barrels,
+    truck,
     ironNodes,
     wells,
     landmarks,

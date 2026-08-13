@@ -4,7 +4,7 @@ import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import type { GameSimulation } from "../game/simulation/GameSimulation";
 import { clamp, lerp, mulberry32 } from "../game/simulation/geometry";
 import type { CampDefinition, CritterState, GroundItem, Vec2, WeaponKind, WolfState, WorldDefinition, WorldDrop } from "../game/simulation/types";
-import { CRITTER_SPECS } from "../game/simulation/types";
+import { CRITTER_SPECS, FUEL_REQUIRED } from "../game/simulation/types";
 import { distanceToCampApproach, terrainHeightAt, terrainMoistureAt, terrainSaltAt, terrainSlopeAt } from "../game/terrain/TerrainModel";
 import { createWildDogRig, type WildDogRig } from "./WildDogModel";
 import { createCritterMesh } from "./CritterModels";
@@ -63,6 +63,29 @@ interface CritterView {
 const makeMaterial = (color: THREE.ColorRepresentation, roughness = 0.9): THREE.MeshStandardMaterial => (
   new THREE.MeshStandardMaterial({ color, roughness, flatShading: true })
 );
+
+/**
+ * 汽油桶。**整张图上唯一的锈红色**——沙丘、砾石、枯木、铁矿全是黄褐到灰的
+ * 一族，所以这个色相在远处就是一个"那边有东西"的信号。没有小地图，
+ * 桶能不能被看见完全取决于它在沙色里跳不跳得出来。
+ */
+function createBarrelView(): THREE.Group {
+  const group = new THREE.Group();
+  const shell = makeMaterial(0xb43a24, 0.65);
+  const band = makeMaterial(0x6f2416, 0.6);
+  const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.44, 0.44, 1.18, 12), shell);
+  drum.castShadow = true;
+  group.add(drum);
+  for (const y of [-0.3, 0.3]) {
+    const hoop = new THREE.Mesh(new THREE.CylinderGeometry(0.47, 0.47, 0.1, 12), band);
+    hoop.position.y = y;
+    group.add(hoop);
+  }
+  const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.14, 8), band);
+  cap.position.set(0.2, 0.62, 0);
+  group.add(cap);
+  return group;
+}
 
 interface BladeVisual {
   name: string;
@@ -172,6 +195,11 @@ export class GameRenderer {
   private readonly carriedWood: THREE.Object3D;
   private readonly carriedStone: THREE.Object3D;
   private readonly carriedStake: THREE.Object3D;
+  private readonly carriedFuel: THREE.Object3D;
+  private readonly truckGroup: THREE.Group;
+  /** 车斗上那一排已装的油桶，按 loaded 逐个点亮。 */
+  private readonly truckLoadViews: THREE.Object3D[] = [];
+  private readonly barrelViews = new Map<number, THREE.Object3D>();
   private readonly weaponMount: THREE.Group;
   private readonly blades: Map<WeaponKind, THREE.Group>;
   private readonly playerCoat: THREE.Group;
@@ -253,6 +281,8 @@ export class GameRenderer {
     this.buildCacti();
     this.buildIronNodes();
     this.buildWells();
+    this.truckGroup = this.buildTruck();
+    this.buildBarrels();
     this.playerBodyMaterial = makeMaterial(0x2f7b8d, 0.75);
     const player = this.buildPlayer();
     this.playerGroup = player.group;
@@ -260,6 +290,7 @@ export class GameRenderer {
     this.carriedWood = player.carriedWood;
     this.carriedStone = player.carriedStone;
     this.carriedStake = player.carriedStake;
+    this.carriedFuel = player.carriedFuel;
     this.weaponMount = player.weaponMount;
     this.blades = player.blades;
     this.playerCoat = player.coat;
@@ -288,6 +319,7 @@ export class GameRenderer {
     this.time += delta;
     this.syncPlayer(delta);
     this.syncItems(delta);
+    this.syncBarrels();
     this.syncCacti();
     this.syncIronNodes();
     this.syncWells(delta);
@@ -742,6 +774,92 @@ export class GameRenderer {
     }
   }
 
+  /**
+   * 卡车。用的是 wreck 地标那套零件的"完好版"—— 同一种视觉语言，
+   * 但它是唯一一辆车斗完整、有驾驶室、有油箱口的车，玩家一眼能认出这台不一样。
+   */
+  private buildTruck(): THREE.Group {
+    const group = new THREE.Group();
+    const body = makeMaterial(0x8a6236, 1);
+    const iron = makeMaterial(0x5e554a, 0.95);
+    const glass = makeMaterial(0x3d5560, 0.4);
+
+    const chassis = new THREE.Mesh(new THREE.BoxGeometry(6.2, 0.55, 2.5), iron);
+    chassis.position.y = 0.95;
+    chassis.castShadow = true;
+    group.add(chassis);
+
+    const cab = new THREE.Mesh(new THREE.BoxGeometry(1.9, 1.5, 2.35), body);
+    cab.position.set(1.9, 1.95, 0);
+    cab.castShadow = true;
+    group.add(cab);
+    const windscreen = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.75, 1.9), glass);
+    windscreen.position.set(2.86, 2.15, 0);
+    group.add(windscreen);
+
+    // 车斗四面挡板：装了几桶油要从外面看得见，所以侧板留矮。
+    for (const [dx, dz, sx, sz] of [[-3.05, 0, 0.16, 2.4], [0.85, 0, 0.16, 2.4],
+      [-1.1, 1.2, 4, 0.16], [-1.1, -1.2, 4, 0.16]] as const) {
+      const panel = new THREE.Mesh(new THREE.BoxGeometry(sx, 0.9, sz), body);
+      panel.position.set(dx, 1.68, dz);
+      panel.castShadow = true;
+      group.add(panel);
+    }
+
+    for (const dx of [2.05, -1.15, -2.75]) {
+      for (const dz of [-1.28, 1.28]) {
+        const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.82, 0.82, 0.42, 12), iron);
+        wheel.rotation.x = Math.PI / 2;
+        wheel.position.set(dx, 0.82, dz);
+        wheel.castShadow = true;
+        group.add(wheel);
+      }
+    }
+
+    // 车斗里五个油桶位，装一桶亮一个。
+    for (let index = 0; index < FUEL_REQUIRED; index += 1) {
+      const slot = createBarrelView();
+      slot.position.set(-2.45 + (index % 3) * 1.15, 1.5, index < 3 ? -0.6 : 0.62);
+      slot.scale.setScalar(0.82);
+      slot.visible = false;
+      group.add(slot);
+      this.truckLoadViews.push(slot);
+    }
+
+    this.scene.add(group);
+    return group;
+  }
+
+  private buildBarrels(): void {
+    for (const barrel of this.simulation.barrels) {
+      const view = createBarrelView();
+      view.rotation.y = barrel.rotation;
+      this.scene.add(view);
+      this.barrelViews.set(barrel.id, view);
+    }
+  }
+
+  /** 地上的油桶跟着地形贴地；被扛走或装了车的那些直接隐藏。 */
+  private syncBarrels(): void {
+    for (const barrel of this.simulation.barrels) {
+      const view = this.barrelViews.get(barrel.id);
+      if (!view) continue;
+      view.visible = barrel.placement === "ground";
+      if (!view.visible) continue;
+      view.position.set(barrel.x, this.worldHeight(barrel.x, barrel.z) + 0.62, barrel.z);
+      view.rotation.y = barrel.rotation;
+    }
+    const truck = this.simulation.truck;
+    this.truckGroup.position.set(truck.x, this.worldHeight(truck.x, truck.z), truck.z);
+    this.truckGroup.rotation.y = -truck.rotation;
+    this.truckLoadViews.forEach((slot, index) => {
+      slot.visible = index < truck.loaded;
+    });
+    // 驶离时玩家在车里。模拟层把人的坐标锁在车心，所以直接把人藏掉 ——
+    // 否则最后 5 秒会看到一个人站在车斗中央被拖出地图。
+    this.playerGroup.visible = !this.simulation.isDeparting();
+  }
+
   private buildIronNodes(): void {
     const rockMaterial = makeMaterial(0x7d6a52, 1);
     const oreMaterial = new THREE.MeshStandardMaterial({
@@ -998,6 +1116,7 @@ export class GameRenderer {
     carriedWood: THREE.Object3D;
     carriedStone: THREE.Object3D;
     carriedStake: THREE.Object3D;
+    carriedFuel: THREE.Object3D;
     weaponMount: THREE.Group;
     blades: Map<WeaponKind, THREE.Group>;
     coat: THREE.Group;
@@ -1075,7 +1194,12 @@ export class GameRenderer {
     carriedStake.scale.setScalar(0.75);
     carriedStake.visible = false;
     group.add(carriedStake);
-    return { group, fallback, carriedWood, carriedStone, carriedStake, weaponMount, blades, coat };
+    const carriedFuel = createBarrelView();
+    carriedFuel.position.set(-0.1, 1.5, 0.8);
+    carriedFuel.scale.setScalar(0.85);
+    carriedFuel.visible = false;
+    group.add(carriedFuel);
+    return { group, fallback, carriedWood, carriedStone, carriedStake, carriedFuel, weaponMount, blades, coat };
   }
 
   /**
@@ -1349,6 +1473,7 @@ export class GameRenderer {
     this.carriedWood.visible = false;
     this.carriedStone.visible = player.carrying === "stone";
     this.carriedStake.visible = player.carrying === "stake";
+    this.carriedFuel.visible = player.carrying === "fuel";
     this.playerCoat.visible = player.armor !== "none" && !this.playerModel;
     if (this.playerCape) this.playerCape.visible = player.armor !== "none";
     const hurt = player.hurtFlash > 0;
