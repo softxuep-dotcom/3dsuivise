@@ -1809,7 +1809,7 @@ export class GameSimulation {
     } else if (wolf.mode === "chase") {
       target = this.player;
     } else if (wolf.mode === "raid") {
-      target = this.getRaidTarget(wolf);
+      target = this.getRaidTarget();
       if (distanceSquared(wolf, this.player) < 15 * 15) wolf.mode = "chase";
     } else {
       wolf.patrolAngle += delta * (0.22 + (wolf.id % 5) * 0.015);
@@ -1854,7 +1854,15 @@ export class GameSimulation {
     }
 
     let desired = direction(wolf, target);
-    if (wolf.mode === "chase" && this.lineOfSightBlocked(wolf, this.player)) desired = this.navigation.directionFrom(wolf);
+    // 攻营犬**始终**跟流场走；追击犬在直线被挡时才切过去。
+    //
+    // 差别在于攻营是长途（狗巢到营地 53 米，中间要翻一道沙脊、再爬一条回头弯坡道），
+    // 而"直线被挡"这个判定只看两点之间，走到崖脚前它一直是 false —— 狼于是笔直
+    // 撞上崖壁，等判定终于变 true 时它已经贴死在坡面上，流场也拉不动了。
+    if (wolf.mode === "raid") desired = this.navigation.directionFrom(wolf);
+    else if (wolf.mode === "chase" && this.lineOfSightBlocked(wolf, this.player)) {
+      desired = this.navigation.directionFrom(wolf);
+    }
     // Retreats always follow a terrain-aware flow field. A straight line to the
     // edge can look clear while still crossing an unwalkable heightfield slope.
     if (wolf.mode === "retreating") desired = this.getRetreatNavigation(wolf).directionFrom(wolf);
@@ -2155,7 +2163,9 @@ export class GameSimulation {
     // 配额只决定"这一夜总共放出多少条狗"，而这一条决定"其中多少条会走到你门口"。
     const raiderChance = Math.min(0.35, 0.16 + (this.day - 1) * 0.06);
     const raider = role === "raider" && (tutorialWolf || kind === "alpha" || this.random() < raiderChance);
-    const assaultCamp = den ? this.world.camps[this.world.startCampId] : camp;
+    // 攻营犬直接进 raid 模式（见下方 mode 字段），目标每帧由 getRaidTarget() 重算，
+    // 所以锚点只在它们被打退、退回 patrol 时才用得上 —— 落在玩家当前位置附近即可。
+    const assaultCamp = den ? (this.getPlayerShelter() ?? this.player) : camp;
 
     const anchorAngle = this.random() * TAU;
     const anchorDistance = 12 + this.random() * 10;
@@ -2407,23 +2417,50 @@ export class GameSimulation {
     return false;
   }
 
-  private getRaidTarget(wolf: WolfState): Vec2 {
-    let nearest: CampDefinition | null = null;
-    let nearestDistance = Number.POSITIVE_INFINITY;
+  /**
+   * 夜袭犬奔向哪里。
+   *
+   * 围的是**玩家**，不是地图上任何一座亮着火的营地。原先这里找的是离**狼**最近
+   * 的亮火营地 —— 玩家一旦离开营地在野外过夜，整队狗就会march 到那座空营地
+   * 门口打转，而 raider 的视野只有 17.5 米，它们永远发现不了 50 米外的玩家。
+   * 屏幕上的表现就是一条从狗巢排到空营地的长队。
+   *
+   * 现在只有玩家**确实躲在某座亮火营地里**时才改打那座营地的入口 ——
+   * 那种情况下"堵门"才是有意义的；其余时候直接扑向玩家本人。
+   */
+  /**
+   * 夜袭犬奔向哪里 —— 答案就是**玩家**，没有别的。
+   *
+   * 这里曾经有两版更聪明的写法，都错了：
+   *   一版找"离狼最近的亮火营地"，于是玩家在野外过夜时整队狗去围一座空营地；
+   *   一版沿 approach 折线手搓路点爬坡，但折线的直线段切在烘焙曲线内侧，
+   *   狼照样蹭在崖壁上。
+   *
+   * 真正的路本来就有：NavigationGrid 每 0.65 秒朝玩家重建一次流场，
+   * 它认得营地那条回头弯坡道（实测从巢口沿流场 49 步走到平台）。
+   * 所以攻营犬只要"朝玩家"并**始终跟着流场走**就够了 ——
+   * 围门这件事不需要脚本，地形自己就只留了一条路，狼会自然挤在那条坡上。
+   */
+  private getRaidTarget(): Vec2 {
+    return this.player;
+  }
+
+  /**
+   * 玩家此刻躲在哪座亮着火的营地里；在野外则返回 null。
+   * 判定放宽到营地半径 + 6 米：站在台地边缘也算"在营地里"，
+   * 免得玩家贴着边走一步就让整队狗改变目标、来回抽搐。
+   */
+  private getPlayerShelter(): CampDefinition | null {
+    let best: CampDefinition | null = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
     for (const camp of this.world.camps) {
       if (this.camps[camp.id].fuel <= 0) continue;
-      const value = distanceSquared(wolf, camp);
-      if (value < nearestDistance) {
-        nearest = camp;
-        nearestDistance = value;
-      }
+      const value = distanceSquared(this.player, camp);
+      if (value > (camp.radius + 6) ** 2 || value >= bestDistance) continue;
+      best = camp;
+      bestDistance = value;
     }
-    if (!nearest) return this.player;
-    const entrance = {
-      x: nearest.x + Math.cos(nearest.entranceAngle) * (nearest.radius + 3),
-      z: nearest.z + Math.sin(nearest.entranceAngle) * (nearest.radius + 3),
-    };
-    return distanceSquared(wolf, entrance) > 3.2 * 3.2 ? entrance : nearest;
+    return best;
   }
 
   /** 挡在狼前进方向上的放置物。 */

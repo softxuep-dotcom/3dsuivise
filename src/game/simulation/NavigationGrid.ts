@@ -5,7 +5,15 @@ import type { Vec2, WorldDefinition } from "./types";
 const UNREACHABLE = 0xffff;
 
 export class NavigationGrid {
-  private readonly cellSize = 3;
+  /**
+   * 3 → 1.5。营地坡道是一条宽约 2.5 米的回头弯，而 buildStaticObstacles 只采样
+   * 格子中心 —— 3 米的格子里，弯道那几格的中心正好落在崖壁上，整条坡道在流场里
+   * 是断的。狼因此只能退化成直线奔向目标，一头撞在崖上原地磨一整夜。
+   *
+   * 加密到 1.5 米：格数从 74² = 5476 涨到 147² = 21609，一次 BFS 约 17 万次邻居
+   * 访问，每 0.65 秒一次 —— 相对于每帧几十只狼的移动计算可以忽略。
+   */
+  private readonly cellSize = 1.5;
   private readonly width: number;
   private readonly blocked: Uint8Array;
   private readonly flow: Uint16Array;
