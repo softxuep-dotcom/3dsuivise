@@ -94,6 +94,17 @@ export class NavigationGrid {
         const nx = x + dx;
         const nz = z + dz;
         if (nx < 0 || nz < 0 || nx >= this.width || nz >= this.width) continue;
+        /*
+         * 对角必须两条边都通 —— 和 rebuild() 里 BFS 的判定**逐字一致**。
+         *
+         * 少了这一条，给出的方向会指向一个 BFS 自己从没走过的对角：那条直线要斜着
+         * 削过被阻挡格的角。实体一步踏进去就落到 flow=UNREACHABLE 的格子里，
+         * 被上面的 escape 弹回来，下一帧又被指向同一个对角 —— 来回抖。
+         * 实测营地 4 的攻营犬就卡在这上面：每秒走 2.11 米的路程，净位移 0.00 米，
+         * 流场值在 10 和 UNREACHABLE 之间反复横跳，一整夜停在离玩家 19.6 米的地方。
+         */
+        if (dx !== 0 && dz !== 0
+          && (this.blocked[z * this.width + nx] || this.blocked[nz * this.width + x])) continue;
         const neighbor = nz * this.width + nx;
         if (this.flow[neighbor] < bestDistance) {
           best = neighbor;

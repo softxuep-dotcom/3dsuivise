@@ -1935,29 +1935,47 @@ export class GameSimulation {
       return;
     }
 
-    const steered = this.getSteeredDirection(wolf, desired);
+    let steered = this.getSteeredDirection(wolf, desired);
+    /*
+     * 最后一道兜底：选定的方向迈不动，就在它左右张开找一个迈得动的。
+     *
+     * 巡逻犬**不走流场**（它绕的是自己的锚点，不是玩家），所以一旦被地形卡住
+     * 就没有任何恢复手段 —— 上面那些流场修复一条都轮不到它。实测岩壁洞窟外
+     * 有四只狗以 flow=UNREACHABLE 的姿态一动不动站到天亮，就是这一类。
+     * 撤退犬不走这里：它自己有一套逐步放宽坡度的解卡机制。
+     */
+    if (wolf.mode !== "retreating" && !this.canStepToward(wolf, steered)) {
+      steered = this.findSteppableDirection(wolf, steered) ?? steered;
+    }
     wolf.facing = steered;
     const pace = wolf.mode === "retreating" ? wolf.speed * 1.45 : wolf.mode === "chase" ? wolf.speed * 1.2 : wolf.speed;
     const beforeX = wolf.x;
     const beforeZ = wolf.z;
-    // Wolves may cross slightly steeper ground while fleeing. If one still
-    // stalls, the allowance increases gradually instead of leaving it pinned
-    // against the same heightfield cell until the hard despawn timer fires.
-    const retreatSlopeAllowance = wolf.mode === "retreating"
+    /*
+     * 卡住就逐步放宽坡度限制 —— 撤退一直有这个机制，现在**所有模式**都有。
+     *
+     * 为什么非要有：pushOutsideCircle 完全不看地形，被墙推一下就可能把狗放到
+     * 一个四面都迈不出去的点上（连上面那圈扇形试探也一个方向都找不到）。
+     * 那时它不是"被崖壁挡住"，是**掉进地形里出不来**，会一直站到天亮。
+     *
+     * 追击/巡逻的上限压到 1.9，远低于撤退的 3.2：这只够它挪回可走地面，
+     * 不足以让它顺着崖壁爬上营地台面 —— 回归测试里玩家和狗都仍然上不去。
+     * 而且它只在"这一帧确实没挪动"时才累积，一旦动起来立刻归零，
+     * 所以正常情况下永远是 1。
+     */
+    const stuckAllowance = wolf.mode === "retreating"
       ? Math.min(3.2, 1.55 + wolf.retreatStuckTimer * 0.9)
-      : 1;
+      : Math.min(1.9, 1 + wolf.retreatStuckTimer * 0.6);
     this.moveEntity(
       wolf,
       steered.x * pace * delta,
       steered.z * pace * delta,
       WOLF_RADIUS,
       wolf.mode !== "retreating",
-      retreatSlopeAllowance,
+      stuckAllowance,
     );
-    if (wolf.mode === "retreating") {
-      const advanced = Math.hypot(wolf.x - beforeX, wolf.z - beforeZ);
-      wolf.retreatStuckTimer = advanced < pace * delta * 0.12 ? wolf.retreatStuckTimer + delta : 0;
-    }
+    const advanced = Math.hypot(wolf.x - beforeX, wolf.z - beforeZ);
+    wolf.retreatStuckTimer = advanced < pace * delta * 0.12 ? wolf.retreatStuckTimer + delta : 0;
   }
 
   private beginRetreat(wolf: WolfState): void {
@@ -2879,6 +2897,20 @@ export class GameSimulation {
         this.pushOutsideCircle(entity, radius, structure, STRUCTURE_SPECS[structure.kind].radius);
       }
     }
+  }
+
+  /**
+   * 以 desired 为中心向两侧张开，找第一个迈得动的方向；一圈都不行返回 null。
+   * 先试小角度，让它尽量还朝着原来想去的地方走，而不是掉头。
+   */
+  private findSteppableDirection(from: Vec2, desired: Vec2): Vec2 | null {
+    const base = Math.atan2(desired.z, desired.x);
+    for (const offset of [0.6, -0.6, 1.2, -1.2, 1.8, -1.8, 2.4, -2.4, Math.PI]) {
+      const angle = base + offset;
+      const candidate = { x: Math.cos(angle), z: Math.sin(angle) };
+      if (this.canStepToward(from, candidate)) return candidate;
+    }
+    return null;
   }
 
   /**
