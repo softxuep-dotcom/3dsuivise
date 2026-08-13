@@ -1,5 +1,5 @@
-import { distance, mulberry32, TAU } from "../simulation/geometry";
-import { campGatePosition, isTerrainWalkable, terrainSlopeAt } from "../terrain/TerrainModel";
+import { distance, mulberry32, normalize, TAU } from "../simulation/geometry";
+import { campGatePosition, campLocalToWorld, isTerrainWalkable, terrainSlopeAt } from "../terrain/TerrainModel";
 import type {
   CactusPatch,
   CampKind,
@@ -70,52 +70,132 @@ function awayFromCamps(point: Vec2, camps: CampDefinition[], padding: number): b
 const TRUCK_RADIUS = 2.4;
 /** 巢边那一组油桶离巢心多远。巢的土垄半径 8，12 米刚好落在垄外的平地上。 */
 const DEN_BARREL_RADIUS = 12;
-/** 卡车离巢心多远。33 米开外守巢犬看不见（它们视野 14.5 米）。 */
-const TRUCK_DEN_DISTANCE = 22;
 const DEN_BARREL_COUNT = 3;
-const FIELD_BARREL_COUNT = 6;
+
+/**
+ * 卡车停在**出生营地大门外**：出门就看得见它，它就是"我在为什么忙活"的实体答案。
+ *
+ * 之前卡车停在狗巢背面 22 米 —— 玩家要跑过大半张图才第一次见到通关目标，
+ * 而巢边那三桶油离车只有 33 米，于是最优解永远是"清掉守卫、原地搬三趟"，
+ * 野外那六桶几乎没人碰。把车挪到家门口之后，九桶油对卡车的距离第一次拉开了梯度。
+ */
+const TRUCK_GATE_MIN = 6;
+const TRUCK_GATE_MAX = 22;
+/**
+ * 卡车所在地的坡度上限。比井（0.34）更严 —— 井只要人站得住，
+ * 车还要能**开出去**：太陡的话发车动画会把车推进坡里。
+ */
+const TRUCK_MAX_SLOPE = 0.26;
+/**
+ * 发车方向的采样步长。**一路验到图外**，不是验个二三十米就算数 ——
+ * 营地崖壁能在四十米外横在路中间（camp0 的崖坡度 0.99），
+ * 而"停得下、开不出去"是玩家在通关那一刻才会撞上的死局。
+ */
+const TRUCK_EXIT_STEP = 3;
 
 type TerrainWorld = Parameters<typeof isTerrainWalkable>[0];
 
 /**
- * 卡车与九桶汽油。
+ * 卡车选址：沿出生营地的大门朝向往外扫，取第一个**车开得出去**的点。
  *
- * 位置关系是这套目标的全部设计：
- *
- *   巢边 3 桶 ──(33 m)── 卡车
- *      ↑                    ↑
- *   守巢的五只大狼        安全，没有守卫
- *
- * 卡车放在**巢的背面**（mouthAngle + π），于是走到车边不会惊动趴在巢口那侧的守卫；
- * 而巢边三桶就在守卫脚下 —— 想吃这条近路就得先打赢。
- *
- * 野外六桶按"离巢远、彼此也远"散布，逼出真正的长途搬运：扛桶移速只有 0.54 倍。
+ * 不写死坐标 —— 地形是烘焙出来的，一旦重烘或换出生营地，写死的点就会落进坡里，
+ * 而"卡在地形里发不了车"是没法从存档里救回来的那种 bug。所以这里用游戏自己的
+ * `isTerrainWalkable` / `terrainSlopeAt` 逐点验，并且**连发车方向也一起验**。
  */
-function placeTruckAndBarrels(
+function placeTruck(
+  startCamp: CampDefinition,
+  camps: CampDefinition[],
+  terrainWorld: TerrainWorld,
+  walls: CircleObstacle[],
+  size: number,
+): TruckDefinition {
+  /*
+   * 锚点用**坡道末端**而不是大门。
+   *
+   * 营地建在 11.8 米高的台地上，大门只是坡顶；玩家真正"走出来"的那一刻是在坡底，
+   * 而坡道是拐弯的（camp1 从大门 (-0.3,-19.5) 绕到坡底 (-0.3,-34.5)）。
+   * 按大门方向放车，车会落在坡的侧面 —— 下坡时它在你身后。
+   * 按坡底 + 出坡方向放，下坡走完抬头正好看见。
+   */
+  const approach = startCamp.approach.map((local) => campLocalToWorld(startCamp, local));
+  const rampEnd = approach[approach.length - 1] ?? campGatePosition(startCamp);
+  const rampPrev = approach[approach.length - 2] ?? startCamp;
+  const outward = normalize({ x: rampEnd.x - rampPrev.x, z: rampEnd.z - rampPrev.z });
+  const gate = rampEnd;
+  const half = size / 2;
+
+  /** 这条边一路开到图外是否畅通。车宽 2.4，所以左右各偏一个车身也要能过。 */
+  const exitClear = (point: Vec2, exit: Vec2): boolean => {
+    const side = { x: -exit.z, z: exit.x };
+    const limit = half - (Math.abs(exit.x) > 0 ? Math.abs(point.x) : Math.abs(point.z));
+    for (let step = TRUCK_EXIT_STEP; step <= limit + TRUCK_EXIT_STEP; step += TRUCK_EXIT_STEP) {
+      for (const lateral of [0, TRUCK_RADIUS, -TRUCK_RADIUS]) {
+        const ahead = {
+          x: point.x + exit.x * step + side.x * lateral,
+          z: point.z + exit.z * step + side.z * lateral,
+        };
+        if (Math.abs(ahead.x) > half || Math.abs(ahead.z) > half) continue;
+        if (!isTerrainWalkable(terrainWorld, ahead)) return false;
+        if (terrainSlopeAt(terrainWorld, ahead) > TRUCK_MAX_SLOPE + 0.16) return false;
+      }
+    }
+    return true;
+  };
+
+  /** 四条边都试，返回第一条真正通到图外的；一条都不通就返回 null。 */
+  const findExit = (point: Vec2): Vec2 | null => {
+    const candidates: Vec2[] = [
+      { x: 0, z: -1 }, { x: 0, z: 1 }, { x: -1, z: 0 }, { x: 1, z: 0 },
+    ];
+    // 优先离得最近的那条边，纯粹是为了动画短一点。
+    candidates.sort((a, b) => {
+      const da = a.x !== 0 ? half - a.x * point.x : half - a.z * point.z;
+      const db = b.x !== 0 ? half - b.x * point.x : half - b.z * point.z;
+      return da - db;
+    });
+    return candidates.find((exit) => exitClear(point, exit)) ?? null;
+  };
+
+  const usable = (point: Vec2): Vec2 | null => {
+    if (Math.abs(point.x) > half - 12 || Math.abs(point.z) > half - 12) return null;
+    if (!isTerrainWalkable(terrainWorld, point)) return null;
+    if (terrainSlopeAt(terrainWorld, point) > TRUCK_MAX_SLOPE) return null;
+    // 车身是实心的，别让它和营地崖壁或已有障碍互相嵌进去。
+    if (!awayFromCamps(point, camps, TRUCK_RADIUS + 2)) return null;
+    if (walls.some((wall) => distance(point, wall) < wall.radius + TRUCK_RADIUS + 1.5)) return null;
+    return findExit(point);
+  };
+
+  // 从坡底往外推，同时左右摆 —— 坡底正前方常常还在坡的影响区里。
+  for (let distanceOut = TRUCK_GATE_MIN; distanceOut <= TRUCK_GATE_MAX; distanceOut += 2) {
+    for (const sweep of [0, 0.3, -0.3, 0.6, -0.6, 0.9, -0.9]) {
+      const angle = Math.atan2(outward.z, outward.x) + sweep;
+      const point = {
+        x: gate.x + Math.cos(angle) * distanceOut,
+        z: gate.z + Math.sin(angle) * distanceOut,
+      };
+      const exit = usable(point);
+      if (!exit) continue;
+      return { ...point, rotation: Math.atan2(exit.z, exit.x), exit };
+    }
+  }
+
+  // 兜底：扫不到就贴着坡底放，并且仍然挑一条最不坏的边。
+  const fallback = { x: gate.x + outward.x * TRUCK_GATE_MIN, z: gate.z + outward.z * TRUCK_GATE_MIN };
+  const exit = findExit(fallback) ?? { x: 0, z: Math.sign(fallback.z) || 1 };
+  return { ...fallback, rotation: Math.atan2(exit.z, exit.x), exit };
+}
+
+function placeBarrels(
   den: DenDefinition | null,
+  truck: TruckDefinition,
   camps: CampDefinition[],
   terrainWorld: TerrainWorld,
   walls: CircleObstacle[],
   random: () => number,
-  size: number,
-): { truck: TruckDefinition; barrels: FuelBarrelDefinition[] } {
+): FuelBarrelDefinition[] {
   const origin: Vec2 = den ?? { x: 36, z: -42 };
   const mouthAngle = den?.mouthAngle ?? 2.62;
-  const truckAngle = mouthAngle + Math.PI;
-  const truckPoint = {
-    x: origin.x + Math.cos(truckAngle) * TRUCK_DEN_DISTANCE,
-    z: origin.z + Math.sin(truckAngle) * TRUCK_DEN_DISTANCE,
-  };
-  // 驶出方向取最近的一条边：横向近就往横里开，纵向近就往纵里开。
-  const half = size / 2;
-  const exit: Vec2 = half - Math.abs(truckPoint.x) <= half - Math.abs(truckPoint.z)
-    ? { x: Math.sign(truckPoint.x) || 1, z: 0 }
-    : { x: 0, z: Math.sign(truckPoint.z) || 1 };
-  const truck: TruckDefinition = {
-    ...truckPoint,
-    rotation: Math.atan2(exit.z, exit.x),
-    exit,
-  };
 
   const barrels: FuelBarrelDefinition[] = [];
   // 巢边三桶：沿巢口方向张开 ±0.45 弧度的一小段弧，三桶彼此隔着四五米，
@@ -132,25 +212,50 @@ function placeTruckAndBarrels(
     });
   }
 
-  // 野外六桶。约束按重要性排序：可走 > 离巢远 > 彼此远 > 不压在营地/墙上。
-  // 找不到位置时逐步放松彼此的间距，保证六桶一定放得下。
-  for (let index = 0; index < FIELD_BARREL_COUNT; index += 1) {
-    let separation = 46;
-    let placed = false;
-    for (let attempt = 0; attempt < 900 && !placed; attempt += 1) {
-      if (attempt > 0 && attempt % 300 === 0) separation -= 9;
-      const point = { x: (random() - 0.5) * 186, z: (random() - 0.5) * 186 };
-      if (distance(point, origin) < 55) continue;
-      if (!awayFromCamps(point, camps, 10)) continue;
-      if (!isTerrainWalkable(terrainWorld, point) || terrainSlopeAt(terrainWorld, point) > 0.4) continue;
-      if (walls.some((wall) => distance(point, wall) < wall.radius + 2.4)) continue;
-      if (barrels.some((barrel) => distance(point, barrel) < separation)) continue;
-      barrels.push({ id: barrels.length, ...point, rotation: random() * TAU, guarded: false });
-      placed = true;
+  /*
+   * 野外六桶。卡车挪到出生营地门口之后，"离巢远"不再等于"离车远"，
+   * 所以约束改成**按到卡车的距离分档**：近、中、远各两桶。
+   *
+   * 这样第一趟一定拿得到（最近的一桶 30~55 米），而最后一两桶必须走远门 ——
+   * 九桶油对卡车第一次有了梯度，而不是"要么巢边三桶、要么满图乱找"。
+   */
+  const bands: Array<[number, number]> = [[30, 55], [55, 85], [85, 125]];
+  for (const [near, far] of bands) {
+    for (let slot = 0; slot < 2; slot += 1) {
+      let separation = 34;
+      let placed = false;
+      for (let attempt = 0; attempt < 900 && !placed; attempt += 1) {
+        if (attempt > 0 && attempt % 300 === 0) separation -= 8;
+        const point = { x: (random() - 0.5) * 186, z: (random() - 0.5) * 186 };
+        const toTruck = distance(point, truck);
+        if (toTruck < near || toTruck > far) continue;
+        // 别贴着狗巢 —— 那三桶是"守卫版"，野外桶必须是真的没人看着。
+        if (distance(point, origin) < 34) continue;
+        if (!awayFromCamps(point, camps, 10)) continue;
+        if (!isTerrainWalkable(terrainWorld, point) || terrainSlopeAt(terrainWorld, point) > 0.4) continue;
+        if (walls.some((wall) => distance(point, wall) < wall.radius + 2.4)) continue;
+        if (barrels.some((barrel) => distance(point, barrel) < separation)) continue;
+        barrels.push({ id: barrels.length, ...point, rotation: random() * TAU, guarded: false });
+        placed = true;
+      }
+      // 该档实在放不下就放宽到全图随便找一个合法点，保证总数永远是 9 桶。
+      if (!placed) {
+        for (let attempt = 0; attempt < 600; attempt += 1) {
+          const point = { x: (random() - 0.5) * 186, z: (random() - 0.5) * 186 };
+          if (distance(point, origin) < 34) continue;
+          if (distance(point, truck) < 26) continue;
+          if (!awayFromCamps(point, camps, 10)) continue;
+          if (!isTerrainWalkable(terrainWorld, point) || terrainSlopeAt(terrainWorld, point) > 0.4) continue;
+          if (walls.some((wall) => distance(point, wall) < wall.radius + 2.4)) continue;
+          if (barrels.some((barrel) => distance(point, barrel) < 18)) continue;
+          barrels.push({ id: barrels.length, ...point, rotation: random() * TAU, guarded: false });
+          break;
+        }
+      }
     }
   }
 
-  return { truck, barrels };
+  return barrels;
 }
 
 export function createWorld(seed = 71291): WorldDefinition {
@@ -194,8 +299,10 @@ export function createWorld(seed = 71291): WorldDefinition {
     },
   }));
 
-  const { truck, barrels } = placeTruckAndBarrels(dens[0] ?? null, camps, terrainWorld, walls, random, size);
+  // 卡车先定 —— 它挂进 walls，后面所有撒点都要绕开它。
+  const truck = placeTruck(camps[BLUEPRINT.startCampId], camps, terrainWorld, walls, size);
   walls.push({ x: truck.x, z: truck.z, radius: TRUCK_RADIUS, kind: "landmark" });
+  const barrels = placeBarrels(dens[0] ?? null, truck, camps, terrainWorld, walls, random);
 
   const trees: TreeDefinition[] = [];
   let attempts = 0;

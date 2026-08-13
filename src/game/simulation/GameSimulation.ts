@@ -530,10 +530,15 @@ export class GameSimulation {
       placement: "ground" as const,
     }));
     this.truck = { x: world.truck.x, z: world.truck.z, rotation: world.truck.rotation, loaded: 0 };
+    // 开局站在营地中心偏大门一侧，并且**面朝大门**。
+    // 之前是写死的 (0.7,0.7)，和营地朝向无关 —— 换出生营地就会变成面壁，
+    // 而出门第一眼该看到的是停在门口的卡车（通关目标的实体答案）。
+    const startGate = campGatePosition(startCamp);
+    const startFacing = normalize({ x: startGate.x - startCamp.x, z: startGate.z - startCamp.z });
     this.player = {
-      x: startCamp.x,
-      z: startCamp.z + 1.5,
-      facing: { x: 0.7, z: 0.7 },
+      x: startCamp.x + startFacing.x * 1.5,
+      z: startCamp.z + startFacing.z * 1.5,
+      facing: startFacing,
       health: 100,
       maxHealth: 100,
       warmth: WARMTH_INITIAL,
@@ -2391,7 +2396,10 @@ export class GameSimulation {
       defense = 7;
       speed = (4.2 + this.random() * 0.65) * scaling.speed;
     } else {
-      maxHealth = 58 + scaling.health;
+      // 小狗 58 → 72 血：初始匕首（攻 30 − 防 1 = 29）从**两刀**变成三刀。
+      // 每只多挨一刀，交火时间拉长 50%，被咬的次数才真正上去 ——
+      // 这比加数量更省算力，也不会把第一夜变成一堵狗墙。
+      maxHealth = 72 + scaling.health;
       attack = 10 + scaling.attack;
       defense = 1;
       speed = (3.65 + this.random() * 0.75) * scaling.speed;
@@ -2402,9 +2410,24 @@ export class GameSimulation {
       attack = Math.max(6, Math.round(attack * 0.8));
     }
 
-    // 攻营的比例逐夜爬升：16% → 35%。这是夜晚压力真正的成长曲线，
-    // 配额只决定"这一夜总共放出多少条狗"，而这一条决定"其中多少条会走到你门口"。
-    const raiderChance = Math.min(0.35, 0.16 + (this.day - 1) * 0.06);
+    /*
+     * 攻营的比例逐夜爬升。这是夜晚压力真正的成长曲线 ——
+     * 配额只决定"这一夜总共放出多少条狗"，而这一条决定"其中多少条会走到你门口"。
+     *
+     * 原先第一夜是 0.16：配额 40 只 × 0.16 = **只有 6.4 只真的来攻营**，
+     * 剩下 34 只在别的营地外围绕圈到天亮 —— 既没有压力，又白烧了 34 个
+     * SkinnedMesh 的算力。实测第一夜这 6 只被初始匕首砍完只掉三分之一血。
+     *
+     * 只修第一夜，后面收敛回原曲线 —— 因为小狗血量已经从 58 抬到 72
+     * （匕首两刀变三刀，交火时长 +50%），数量再叠上去中后期会过载：
+     *
+     *        原 0.16+0.06   现 0.20+0.05
+     *   第一夜   6.4            8.0     ← 唯一实质提升
+     *   第二夜  12.1           13.8
+     *   第三夜  19.6           21.0
+     *   第四夜  28.9           29.8     ← 基本回到原值
+     */
+    const raiderChance = Math.min(0.35, 0.2 + (this.day - 1) * 0.05);
     const raider = role === "raider" && (tutorialWolf || this.random() < raiderChance);
     // 攻营犬直接进 raid 模式（见下方 mode 字段），目标每帧由 getRaidTarget() 重算，
     // 所以锚点只在它们被打退、退回 patrol 时才用得上 —— 落在玩家当前位置附近即可。
