@@ -3,6 +3,7 @@ import { t, tx } from "../i18n";
 import { clamp } from "../game/simulation/geometry";
 import { describeRecords, formatDuration, loadRecords, submitRun } from "./Records";
 import { STRUCTURE_SPECS } from "../game/simulation/types";
+import { itemIcon } from "./ItemIcons";
 import type {
   GameEvent,
   InventoryItemKind,
@@ -38,8 +39,6 @@ const LINE_COLORS: Record<string, string> = {
   hide: "#c08a5a",
 };
 
-/** 物品格里的单字图标。字形本身也要翻译：英文用两个字母，中文用一个汉字。 */
-const itemGlyph = (kind: InventoryItemKind): string => t(`item.${kind}.glyph`);
 const itemName = (kind: InventoryItemKind): string => t(`item.${kind}.name`);
 
 export class HudController {
@@ -412,7 +411,7 @@ export class HudController {
       }
       slot.classList.remove("empty");
       slot.disabled = false;
-      slot.innerHTML = `<span class="item-glyph">${itemGlyph(stack.kind)}</span><span class="item-name">${itemName(stack.kind)}</span><b class="item-count">${stack.count}</b>`;
+      slot.innerHTML = `${itemIcon(stack.kind)}<span class="item-name">${itemName(stack.kind)}</span><b class="item-count">${stack.count}</b>`;
       slot.setAttribute("aria-label", t("pack.slot.filled", { name: itemName(stack.kind), count: stack.count }));
     });
     this.handsStatus.textContent = player.carrying ? t(`carry.${player.carrying}`) : t("carry.empty");

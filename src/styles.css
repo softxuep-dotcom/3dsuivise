@@ -661,7 +661,7 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
 
 .inventory-slot:not(:empty):hover { border-color: rgba(255, 168, 79, .65); background: rgba(255, 146, 57, .08); }
 .inventory-slot.empty { cursor: default; opacity: .56; }
-.inventory-slot .item-glyph { display: block; margin-bottom: 3px; color: #ffb35c; font-size: 24px; font-weight: 900; }
+.inventory-slot .item-icon { display: block; width: 30px; height: 30px; margin: 0 auto 3px; }
 .inventory-slot .item-name { display: block; color: #bcd0d6; font-size: 10px; }
 .inventory-slot .item-count { position: absolute; right: 8px; bottom: 6px; font-size: 13px; font-weight: 900; }
 
@@ -1000,7 +1000,7 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
   .stat-row { gap: 5px; margin-bottom: 8px; }
   .inventory-grid { gap: 6px; }
   .inventory-slot { min-height: 52px; padding: 5px; }
-  .inventory-slot .item-glyph { font-size: 19px; }
+  .inventory-slot .item-icon { width: 24px; height: 24px; }
   .craft-button { margin-top: 8px; padding: 8px; }
   .craft-list { gap: 5px; }
   .inventory-help { margin-top: 6px; line-height: 1.35; }

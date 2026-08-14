@@ -29,6 +29,12 @@ const SAMPLE_FILES: Record<SampleKey, readonly string[]> = {
 };
 
 const MASTER_VOLUME = 0.22;
+/**
+ * 步距 = BASE + PER_SPEED × 移速。见 updateFootsteps —— 固定步距会让频率
+ * 和速度严格线性，满速跑出 5.7 步/秒，那是真人冲刺的近两倍。
+ */
+const FOOTSTEP_STRIDE_BASE = 1.04;
+const FOOTSTEP_STRIDE_PER_SPEED = 0.21;
 
 /**
  * 真实采样负责动作质感，短合成音负责状态和连击等抽象反馈。
@@ -48,6 +54,10 @@ export class SynthAudio {
   private readonly lastSampleAt = new Map<SampleKey, number>();
   /** 闷响的节流表，按截止频率分桶，见 thudThrottled。 */
   private readonly lastThudAt = new Map<number, number>();
+  private previousPlayerPosition: { x: number; z: number } | null = null;
+  private footstepTravel = 0;
+  private footstepLeft = false;
+  private lastFootstepCheck = 0;
   private loadPromise: Promise<void> | null = null;
   private readonly samples = new Map<SampleKey, AudioBuffer[]>();
 
@@ -106,21 +116,67 @@ export class SynthAudio {
   /**
    * 距离驱动脚步，距离火堆越近篝火声越响。这里读取模拟快照，不改任何游戏状态。
    */
-  /**
-   * 每帧的持续音。现在只剩篝火 —— 脚步采样删掉了。
-   *
-   * 脚步是**跑起来就一直响**的声音，四个变体轮换也掩盖不了它的密度；
-   * 而这个游戏的白天基本就是一路小跑，它等于给全程铺了一层底噪。
-   * `movementActive` 保留在签名里，调用方不用改，篝火以后可能会用到。
-   */
+  /** 每帧的持续音：脚步与篝火。 */
   update(
     player: PlayerState,
     camps: readonly CampState[],
     campDefinitions: readonly CampDefinition[],
     movementActive: boolean,
   ): void {
-    void movementActive;
+    this.updateFootsteps(player, movementActive);
     this.updateCampfire(player, camps, campDefinitions);
+  }
+
+  /**
+   * 脚步。合成的一记闷响，不用采样。
+   *
+   * ## 步距随速度增长，不是固定值
+   *
+   * 旧实现用固定步距 1.45，于是频率和速度**严格线性**：满速 8.2 就是
+   * 5.7 步/秒 —— 真人冲刺才 2.7~3.0 步/秒（160~180 步/分），
+   * 快了近一倍，听起来就是"哒哒哒哒"的机枪声。
+   *
+   * 现实里人走快时**步幅也变大**，所以频率增长是次线性的。
+   * 这里用 `步距 = 1.04 + 0.21 × 移速` 拟合：
+   *
+   *     满速 8.2  → 3.0 步/秒      扛油桶 4.4 → 2.2 步/秒
+   *     中暑 3.3  → 1.9 步/秒      失温   2.1 → 1.4 步/秒
+   *
+   * 全部落在真人区间里，而各种减速状态仍然听得出差别 —— 压缩了但没抹平。
+   * 这一条顺带让脚步成了**移速的听觉表**：扛着桶跑起来节奏明显变沉，
+   * 玩家不用看数值就知道自己慢了。
+   *
+   * ## 为什么音量压得很低
+   *
+   * 手机端只有 25~40% 的玩家开着声音，脚步因此**不能承载任何信息**，
+   * 它只是质感垫底。沙地本来也是软的：低通 260 Hz、55 毫秒、音量 0.09，
+   * 左右脚交替微调音高，避免听成同一个音在复读。
+   */
+  private updateFootsteps(player: PlayerState, movementActive: boolean): void {
+    const previous = this.previousPlayerPosition;
+    this.previousPlayerPosition = { x: player.x, z: player.z };
+    if (!previous || !movementActive || player.resting || !this.context) {
+      this.footstepTravel = 0;
+      return;
+    }
+    const now = this.context.currentTime;
+    const elapsed = now - this.lastFootstepCheck;
+    this.lastFootstepCheck = now;
+    const distance = Math.hypot(player.x - previous.x, player.z - previous.z);
+    if (distance <= 0 || elapsed <= 0 || elapsed > 0.5) return;
+
+    const speed = distance / elapsed;
+    const stride = FOOTSTEP_STRIDE_BASE + FOOTSTEP_STRIDE_PER_SPEED * speed;
+    this.footstepTravel += distance;
+    if (this.footstepTravel < stride) return;
+    this.footstepTravel %= stride;
+
+    // 左右脚交替：右脚略沉一点，两只脚不完全一样才不像复读。
+    this.footstepLeft = !this.footstepLeft;
+    const cutoff = this.footstepLeft ? 280 : 240;
+    // 扛着东西时脚更重：低一档、响一点。
+    const laden = player.carrying !== null;
+    this.thud(0.055, laden ? 0.12 : 0.09, laden ? cutoff * 0.8 : cutoff);
   }
 
   handle(event: GameEvent): void {
