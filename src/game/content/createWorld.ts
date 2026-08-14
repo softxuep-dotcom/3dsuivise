@@ -92,6 +92,13 @@ const TRUCK_MAX_SLOPE = 0.26;
  * 而"停得下、开不出去"是玩家在通关那一刻才会撞上的死局。
  */
 const TRUCK_EXIT_STEP = 3;
+/** 卡车模型的车身长度（buildTruck 的底盘 BoxGeometry 是 6.2 长）。 */
+const TRUCK_LENGTH = 6.2;
+/** 想让卡车在画面上比坡底靠右几个车身。 */
+const TRUCK_RIGHT_LENGTHS = 2.5;
+/** 为此在坡底邻域里搜多大范围、多密。 */
+const TRUCK_SHIFT_RANGE = 22;
+const TRUCK_SHIFT_STEP = 2;
 
 type TerrainWorld = Parameters<typeof isTerrainWalkable>[0];
 
@@ -176,6 +183,34 @@ function placeTruck(
       };
       const exit = usable(point);
       if (!exit) continue;
+      /*
+       * 找到位置之后，在邻域里挑一个**在画面上更靠右**的落点。
+       *
+       * 不能只沿屏幕右方直线推：实测那条线正好穿过一条山脊，
+       * +8~16 米可走、+18~22 米是 0.28~0.44 的陡坡，而且推过去之后**四个方向的
+       * 驶出通道全被堵死**（北 15 米不可走、西 18 米坡度 0.44…）。
+       * 只推不搜的结果是每一档都被 usable() 否掉、车静默地回到原位。
+       *
+       * 所以改成扫一小片：允许它在纵向也挪一点来绕开山脊，
+       * 评分只要求「屏幕右位移接近目标」且「屏幕上下漂移尽量小」。
+       * 一个都找不到就退回原点 —— 宁可不挪，也不能把车放到开不出去的地方。
+       */
+      const targetRight = TRUCK_RIGHT_LENGTHS * TRUCK_LENGTH;
+      let best: { point: Vec2; exit: Vec2; score: number } | null = null;
+      for (let dx = -TRUCK_SHIFT_RANGE; dx <= TRUCK_SHIFT_RANGE; dx += TRUCK_SHIFT_STEP) {
+        for (let dz = -TRUCK_SHIFT_RANGE; dz <= TRUCK_SHIFT_RANGE; dz += TRUCK_SHIFT_STEP) {
+          // 屏幕右 = 世界 (+x, −z)/√2，屏幕上 = 世界 (−x, −z)/√2。
+          const right = (dx - dz) / Math.SQRT2;
+          const up = -(dx + dz) / Math.SQRT2;
+          const score = Math.abs(right - targetRight) + Math.abs(up) * 0.8;
+          if (best && score >= best.score) continue;
+          const candidate = { x: point.x + dx, z: point.z + dz };
+          const candidateExit = usable(candidate);
+          if (!candidateExit) continue;
+          best = { point: candidate, exit: candidateExit, score };
+        }
+      }
+      if (best) return { ...best.point, rotation: Math.atan2(best.exit.z, best.exit.x), exit: best.exit };
       return { ...point, rotation: Math.atan2(exit.z, exit.x), exit };
     }
   }

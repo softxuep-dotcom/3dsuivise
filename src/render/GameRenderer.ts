@@ -44,6 +44,10 @@ interface WolfView {
  * 直接拿去乘血条，头犬的血条会跟着长到近三倍宽、飘到头顶两米以上。
  * 这里保留接近原来的那组倍率，只留下"越大的狗血条越宽"这一点。
  */
+/** 相机距离系数。竖屏拉远补视野，横屏拉近补可读性 —— 见 updateCamera。 */
+const PORTRAIT_CAMERA_SCALE = 1.18;
+const LANDSCAPE_CAMERA_SCALE = 0.92;
+
 /** 可搬运物的本色，以及被啃到快碎时染向的暗红。 */
 const STONE_COLOR = 0x748084;
 const WOOD_COLOR = 0x65432d;
@@ -2133,7 +2137,15 @@ export class GameRenderer {
     this.cameraFocus.x = lerp(this.cameraFocus.x, player.x, smoothing);
     this.cameraFocus.z = lerp(this.cameraFocus.z, player.z, smoothing);
     this.cameraFocus.y = lerp(this.cameraFocus.y, this.worldHeight(player.x, player.z), smoothing);
-    const distanceScale = window.innerWidth < 760 && window.innerWidth < window.innerHeight ? 1.18 : 1;
+    /*
+     * 竖屏（小屏且高大于宽）拉远到 1.18：那个比例下横向只剩一条窄缝，不拉远看不到两侧。
+     * 其余一律是横屏 —— 拉近到 0.92，手机上物体原先偏小。
+     *
+     * 这两档是**分开调的**：竖屏的 1.18 是为了补视野，横屏的 0.92 是为了补可读性，
+     * 合成一个系数的话动一个必然弄坏另一个。
+     */
+    const portrait = window.innerWidth < 760 && window.innerWidth < window.innerHeight;
+    const distanceScale = portrait ? PORTRAIT_CAMERA_SCALE : LANDSCAPE_CAMERA_SCALE;
     const shakeX = (Math.random() - 0.5) * this.cameraShake;
     const shakeZ = (Math.random() - 0.5) * this.cameraShake;
     this.camera.position.set(
