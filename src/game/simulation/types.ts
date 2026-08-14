@@ -128,6 +128,18 @@ export interface CritterSpec {
   sprintSeconds: number;
   /** 冲刺回满需要多少秒的平静。 */
   sprintRecovery: number;
+  /**
+   * 转向速率上限（弧度/秒）。**这不是装饰参数，它同时是外观和手感。**
+   *
+   * 逃跑方向是"背对玩家"，也就是以玩家为原点算出来的 —— 贴身时这条向量转得极快
+   * （玩家 8.2 m/s 从 1 米外擦过，方向一秒扫过 470°）。不限速的话大型猎物会原地甩头，
+   * 而且因为它能瞬间掉头，跑得比你快就等于永远追不到。
+   *
+   * 限了速之后，猎物必须**画弧**才能转向，于是"抄近路截它"成为可行的追猎技巧 ——
+   * 长角羚 (10.5 移速) 比玩家快得多这件事，第一次有了解法。
+   * 体型越大转得越慢：铠甲虫几乎能原地转，长角羚要跑一个大弯。
+   */
+  turnRate: number;
   meat: number;
   hide: number;
   water: number;
@@ -512,41 +524,41 @@ export interface InteractionHint {
  * 设计意图是拉开一条「好抓但不值钱 ←→ 难抓但一顿管饱」的谱：
  *   铠甲虫  几乎不跑，一刀一块肉
  *   跳鼠    比玩家快，但冲 2 秒就没劲，绕两下能追到
- *   长角羚  比玩家快得多、冲 4.5 秒、90 血，但一头顶得上四块肉外加两份水
+ *   长角羚  比玩家快得多、冲 4.5 秒、90 血，但一头能提供两块肉、两张皮和两份水
  */
 export const CRITTER_SPECS: Record<CritterKind, CritterSpec> = {
   beetle: {
     maxHealth: 8, fleeSpeed: 2.6, grazeSpeed: 0.7, alertRadius: 3.5,
-    sprintSeconds: 99, sprintRecovery: 1, meat: 1, hide: 0, water: 0, population: 9, scale: 0.5,
+    sprintSeconds: 99, sprintRecovery: 1, turnRate: 11, meat: 1, hide: 0, water: 0, population: 9, scale: 0.5,
   },
   sandeel: {
     // 钻沙脱离用「极短的冲刺 + 极快的速度」近似：一眨眼就没影，但只跑得动 1.4 秒。
     maxHealth: 6, fleeSpeed: 7.4, grazeSpeed: 0.5, alertRadius: 5,
-    sprintSeconds: 1.4, sprintRecovery: 3, meat: 1, hide: 0, water: 0, population: 8, scale: 0.55,
+    sprintSeconds: 1.4, sprintRecovery: 3, turnRate: 10, meat: 1, hide: 0, water: 0, population: 8, scale: 0.55,
   },
   gerbil: {
     maxHealth: 12, fleeSpeed: 7.6, grazeSpeed: 1.1, alertRadius: 7,
-    sprintSeconds: 2.4, sprintRecovery: 3.5, meat: 1, hide: 0, water: 0, population: 7, scale: 0.6,
+    sprintSeconds: 2.4, sprintRecovery: 3.5, turnRate: 9, meat: 1, hide: 0, water: 0, population: 7, scale: 0.6,
   },
   rat: {
     maxHealth: 14, fleeSpeed: 7, grazeSpeed: 1.1, alertRadius: 6.5,
-    sprintSeconds: 2.6, sprintRecovery: 3.5, meat: 1, hide: 0, water: 0, population: 6, scale: 0.65,
+    sprintSeconds: 2.6, sprintRecovery: 3.5, turnRate: 9, meat: 1, hide: 0, water: 0, population: 6, scale: 0.65,
   },
   lizard: {
     maxHealth: 16, fleeSpeed: 6.2, grazeSpeed: 0.9, alertRadius: 6,
-    sprintSeconds: 3, sprintRecovery: 3, meat: 1, hide: 0, water: 0, population: 7, scale: 0.7,
+    sprintSeconds: 3, sprintRecovery: 3, turnRate: 8, meat: 1, hide: 0, water: 0, population: 7, scale: 0.7,
   },
   jerboa: {
     maxHealth: 10, fleeSpeed: 9.6, grazeSpeed: 1.3, alertRadius: 9,
-    sprintSeconds: 2, sprintRecovery: 4, meat: 2, hide: 0, water: 0, population: 6, scale: 0.7,
+    sprintSeconds: 2, sprintRecovery: 4, turnRate: 7.5, meat: 2, hide: 0, water: 0, population: 6, scale: 0.7,
   },
   corvid: {
     maxHealth: 10, fleeSpeed: 5.2, grazeSpeed: 0.8, alertRadius: 8,
-    sprintSeconds: 2.6, sprintRecovery: 3, meat: 2, hide: 0, water: 0, population: 5, scale: 0.85,
+    sprintSeconds: 2.6, sprintRecovery: 3, turnRate: 7, meat: 2, hide: 0, water: 0, population: 5, scale: 0.85,
   },
   oryx: {
     maxHealth: 90, fleeSpeed: 10.5, grazeSpeed: 1.4, alertRadius: 11,
-    sprintSeconds: 4.5, sprintRecovery: 6, meat: 4, hide: 2, water: 2, population: 4, scale: 1.5,
+    sprintSeconds: 4.5, sprintRecovery: 6, turnRate: 2.6, meat: 2, hide: 2, water: 2, population: 4, scale: 1.5,
   },
 };
 

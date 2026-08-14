@@ -34,6 +34,28 @@ export function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
 }
 
+/**
+ * 把 `current` 朝 `target` 转过去，一次最多转 `maxRadians`。
+ *
+ * 用来给"朝向"装一个转向速率上限。没有它的话，任何**以玩家为原点**算出来的方向
+ * （比如猎物的"背对玩家逃"）在贴身距离上都会疯转：玩家 8.2 m/s 从 1 米外擦过去，
+ * 那条方向向量一秒能扫过 470°，模型每帧被硬设成新角度，看上去就是在原地甩头。
+ */
+export function rotateToward(current: Vec2, target: Vec2, maxRadians: number): Vec2 {
+  const from = normalize(current);
+  const to = normalize(target);
+  if (from.x === 0 && from.z === 0) return to;
+  if (to.x === 0 && to.z === 0) return from;
+  const currentAngle = Math.atan2(from.z, from.x);
+  const targetAngle = Math.atan2(to.z, to.x);
+  let delta = (targetAngle - currentAngle) % TAU;
+  if (delta > Math.PI) delta -= TAU;
+  if (delta < -Math.PI) delta += TAU;
+  const step = clamp(delta, -maxRadians, maxRadians);
+  const angle = currentAngle + step;
+  return { x: Math.cos(angle), z: Math.sin(angle) };
+}
+
 export function angleDifference(a: number, b: number): number {
   let value = (a - b) % TAU;
   if (value > Math.PI) value -= TAU;

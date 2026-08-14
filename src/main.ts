@@ -91,6 +91,8 @@ async function bootstrap(): Promise<void> {
   document.addEventListener("keydown", unlockAudio, true);
 
   const hud = new HudController(simulation);
+  // 开场页要立刻显示上一局的高度，不能等到这一局结束才刷。
+  hud.refreshRecordsLine();
 
   if (import.meta.env.DEV) {
     // 开发期调试句柄：用来在浏览器控制台里快进模拟、检查五轴状态。

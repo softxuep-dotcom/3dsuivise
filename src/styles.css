@@ -428,6 +428,19 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
 .intro-card .eyebrow { color: var(--ember); }
 .tagline { margin: 13px 0 22px; color: #bcd0d7; font-size: 17px; }
 
+.records-line {
+  margin: 14px 0 0;
+  padding: 7px 12px;
+  border: 1px solid rgba(242, 210, 158, .28);
+  border-radius: 999px;
+  background: rgba(242, 210, 158, .08);
+  color: #f2d29e;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .02em;
+  text-align: center;
+}
+
 .verb-row {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

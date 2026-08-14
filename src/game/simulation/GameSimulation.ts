@@ -6,6 +6,7 @@ import {
   dot,
   mulberry32,
   normalize,
+  rotateToward,
   segmentIntersectsCircle,
   TAU,
 } from "./geometry";
@@ -198,6 +199,8 @@ interface WeaponStat {
   /** 剑线连击：每段加多少伤害。0 表示这把武器吃不到连击。 */
   comboStep: number;
   comboMax: number;
+  /** 一次挥砍只要命中至少一个目标，就恢复固定体力；群攻不会按目标数叠加。 */
+  healthOnHit: number;
 }
 
 /**
@@ -213,15 +216,15 @@ interface WeaponStat {
  * 以及给剑线一个**刀线结构上吃不到**的机制 —— 连击。刀每一刀都换目标，永远停在 0 段。
  */
 const WEAPON_STATS: Record<WeaponKind, WeaponStat> = {
-  "survival-knife": { range: 3.1, arcDot: 0.174, stamina: 4, pierce: 0, critChance: 0, critMult: 1, moveScale: 1.00, knockback: 0, knockbackStun: 0, comboStep: 0, comboMax: 0 },
+  "survival-knife": { range: 3.1, arcDot: 0.174, stamina: 4, pierce: 0, critChance: 0, critMult: 1, moveScale: 1.00, knockback: 0, knockbackStun: 0, comboStep: 0, comboMax: 0, healthOnHit: 0 },
 
-  "saber-1": { range: 3.4, arcDot: -0.342, stamina: 5, pierce: 2, critChance: 0, critMult: 1, moveScale: 0.98, knockback: 0.35, knockbackStun: 0.20, comboStep: 0, comboMax: 0 },
-  "saber-2": { range: 3.6, arcDot: -0.574, stamina: 6, pierce: 5, critChance: 0.12, critMult: 1.8, moveScale: 0.95, knockback: 0.50, knockbackStun: 0.30, comboStep: 0, comboMax: 0 },
-  "saber-3": { range: 3.8, arcDot: -0.766, stamina: 7, pierce: 8, critChance: 0.15, critMult: 2.0, moveScale: 0.92, knockback: 0.70, knockbackStun: 0.40, comboStep: 0, comboMax: 0 },
+  "saber-1": { range: 3.4, arcDot: -0.342, stamina: 5, pierce: 2, critChance: 0, critMult: 1, moveScale: 0.98, knockback: 0.35, knockbackStun: 0.20, comboStep: 0, comboMax: 0, healthOnHit: 3 },
+  "saber-2": { range: 3.6, arcDot: -0.574, stamina: 6, pierce: 5, critChance: 0.12, critMult: 1.8, moveScale: 0.95, knockback: 0.50, knockbackStun: 0.30, comboStep: 0, comboMax: 0, healthOnHit: 5 },
+  "saber-3": { range: 3.8, arcDot: -0.766, stamina: 7, pierce: 8, critChance: 0.15, critMult: 2.0, moveScale: 0.92, knockback: 0.70, knockbackStun: 0.40, comboStep: 0, comboMax: 0, healthOnHit: 10 },
 
-  "sword-1": { range: 3.2, arcDot: 0.643, stamina: 5, pierce: 0, critChance: 0.20, critMult: 1.8, moveScale: 1.00, knockback: 0, knockbackStun: 0, comboStep: 0.10, comboMax: 3 },
-  "sword-2": { range: 3.3, arcDot: 0.643, stamina: 6, pierce: 0, critChance: 0.30, critMult: 2.0, moveScale: 1.03, knockback: 0, knockbackStun: 0, comboStep: 0.12, comboMax: 4 },
-  "sword-3": { range: 3.4, arcDot: 0.574, stamina: 7, pierce: 0, critChance: 0.40, critMult: 2.2, moveScale: 1.06, knockback: 0, knockbackStun: 0, comboStep: 0.15, comboMax: 4 },
+  "sword-1": { range: 3.2, arcDot: 0.643, stamina: 5, pierce: 0, critChance: 0.20, critMult: 1.8, moveScale: 1.00, knockback: 0, knockbackStun: 0, comboStep: 0.10, comboMax: 3, healthOnHit: 3 },
+  "sword-2": { range: 3.3, arcDot: 0.643, stamina: 6, pierce: 0, critChance: 0.30, critMult: 2.0, moveScale: 1.03, knockback: 0, knockbackStun: 0, comboStep: 0.12, comboMax: 4, healthOnHit: 5 },
+  "sword-3": { range: 3.4, arcDot: 0.574, stamina: 7, pierce: 0, critChance: 0.40, critMult: 2.2, moveScale: 1.06, knockback: 0, knockbackStun: 0, comboStep: 0.15, comboMax: 4, healthOnHit: 10 },
 };
 
 interface ArmorStat {
@@ -230,7 +233,7 @@ interface ArmorStat {
   /** 把狼**未经防御削减**的原始攻击力的这个比例弹回去。只有铁甲线有。 */
   thorns: number;
   moveScale: number;
-  /** 乘在三档劳力回复上。皮甲把防御换成产出，铁甲反过来。 */
+  /** 乘在三档劳力回复上。皮甲提供加成，铁甲保持基础回复速度。 */
   staminaScale: number;
 }
 
@@ -238,8 +241,8 @@ const ARMOR_STATS: Record<ArmorKind, ArmorStat> = {
   none: { dodge: 0, thorns: 0, moveScale: 1.00, staminaScale: 1.00 },
 
   "scale-1": { dodge: 0, thorns: 0.12, moveScale: 0.97, staminaScale: 1.00 },
-  "scale-2": { dodge: 0, thorns: 0.22, moveScale: 0.93, staminaScale: 0.92 },
-  "scale-3": { dodge: 0, thorns: 0.35, moveScale: 0.88, staminaScale: 0.85 },
+  "scale-2": { dodge: 0, thorns: 0.22, moveScale: 0.93, staminaScale: 1.00 },
+  "scale-3": { dodge: 0, thorns: 0.35, moveScale: 0.88, staminaScale: 1.00 },
 
   "hide-1": { dodge: 0.12, thorns: 0, moveScale: 1.02, staminaScale: 1.12 },
   "hide-2": { dodge: 0.24, thorns: 0, moveScale: 1.05, staminaScale: 1.22 },
@@ -1032,6 +1035,14 @@ export class GameSimulation {
       if (critter.health <= 0) this.killCritter(critter);
     }
 
+    if (hit && stats.healthOnHit > 0) {
+      this.player.health = clamp(
+        this.player.health + stats.healthOnHit,
+        0,
+        this.player.maxHealth,
+      );
+    }
+
     if (this.phase === "night") {
       for (const wolf of this.wolves) {
         if (wolf.mode !== "dead" && distanceSquared(this.player, wolf) < 17 * 17) {
@@ -1727,7 +1738,7 @@ export class GameSimulation {
 
     // --- 劳力回复：休息最快，静止其次，移动最慢 ---
     // 护甲整体缩放这三档：皮甲把防御换成产出（×1.35 时一个白天多回 99 点劳力
-    // ≈ 6.6 次挖矿），铁甲反过来收税。
+    // ≈ 6.6 次挖矿）；铁甲保持基础回复速度，不再额外扣减。
     const staminaRegen = (this.player.resting
       ? STAMINA_REST_REGEN
       : this.player.idleTime > 0.4
@@ -2557,11 +2568,15 @@ export class GameSimulation {
   private spawnCritter(kind: CritterKind, origin: Vec2): void {
     const spec = CRITTER_SPECS[kind];
     const spawn = this.findNearestWalkablePoint(origin);
+    const facingAngle = this.random() * TAU;
     this.critters.push({
       id: this.critterId++,
       kind,
       ...spawn,
-      facing: { x: Math.cos(this.random() * TAU), z: Math.sin(this.random() * TAU) },
+      // 一个角度、一次取样。原先是 `{ cos(random()), sin(random()) }` —— **两次**取样，
+      // 出来的根本不是单位向量（实测长度 0.68）。渲染只看 atan2(z, x) 所以一直没露馅，
+      // 直到朝向开始参与转向限速的插值：非单位向量会让第一步的转角算错。
+      facing: { x: Math.cos(facingAngle), z: Math.sin(facingAngle) },
       health: spec.maxHealth,
       maxHealth: spec.maxHealth,
       mode: "graze",
@@ -2612,9 +2627,15 @@ export class GameSimulation {
       pace = spec.grazeSpeed;
     }
 
+    // 转向限速，**而且移动跟着限速后的朝向走**，不是跟着 desired 走。
+    //
+    // 分开的话（朝向平滑、位移瞬时）动物会侧着身子滑行，比甩头还怪。
+    // 合起来之后逃跑变成画弧：长角羚 2.6 rad/s 掉个头要 1.2 秒，
+    // 这 1.2 秒就是玩家抄近路截它的窗口 —— 它 10.5 的移速比玩家 8.2 快，
+    // 但快不代表甩得掉。
     const steered = this.getSteeredDirection(critter, desired);
-    critter.facing = steered;
-    this.moveEntity(critter, steered.x * pace * delta, steered.z * pace * delta, 0.4, false);
+    critter.facing = rotateToward(critter.facing, steered, spec.turnRate * delta);
+    this.moveEntity(critter, critter.facing.x * pace * delta, critter.facing.z * pace * delta, 0.4, false);
   }
 
   private killCritter(critter: CritterState): void {

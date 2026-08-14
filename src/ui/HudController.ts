@@ -1,7 +1,7 @@
 import type { EquipTier, GameSimulation } from "../game/simulation/GameSimulation";
 import { t, tx } from "../i18n";
 import { clamp } from "../game/simulation/geometry";
-import { submitRun } from "./Records";
+import { describeRecords, formatDuration, loadRecords, submitRun } from "./Records";
 import { STRUCTURE_SPECS } from "../game/simulation/types";
 import type {
   GameEvent,
@@ -110,6 +110,7 @@ export class HudController {
   private readonly restIndicator = required<HTMLElement>("rest-indicator");
   private readonly gatherIndicator = required<HTMLElement>("gather-indicator");
   private readonly actionButton = required<HTMLButtonElement>("action-button");
+  private readonly recordsLine = required<HTMLElement>("records-line");
   private readonly toast = required<HTMLElement>("toast");
   private readonly resultCopy = required<HTMLElement>("result-copy");
   private readonly victoryCopy = required<HTMLElement>("victory-copy");
@@ -551,15 +552,33 @@ export class HudController {
    * 破了纪录就只报破的那几项 —— 平局时再念一遍旧纪录只会冲淡成就感。
    */
   private submitAndDescribe(won: boolean): string {
-    const { records, brokeDay, brokeKills } = submitRun({
+    const fuel = this.simulation.getFuelProgress();
+    const { records, brokeEscape, brokeFuel } = submitRun({
       day: this.simulation.day,
-      kills: this.simulation.player.kills,
+      seconds: this.simulation.elapsed,
+      fuel: fuel.loaded,
       won,
     });
-    if (brokeDay && brokeKills) return t("records.bothNew", { day: records.bestDay, kills: records.bestKills });
-    if (brokeDay) return t("records.dayNew", { day: records.bestDay });
-    if (brokeKills) return t("records.killsNew", { kills: records.bestKills });
-    return t("records.best", { day: records.bestDay, kills: records.bestKills });
+    this.refreshRecordsLine();
+    // 破了纪录就只报破的那一项 —— 平局时再念一遍旧纪录只会冲淡成就感。
+    if (brokeEscape) {
+      return t("records.escapeNew", { time: formatDuration(records.bestEscapeSeconds), day: records.bestEscapeDay });
+    }
+    if (brokeFuel) return t("records.fuelNew", { fuel: records.bestFuel });
+    if (records.bestEscapeSeconds > 0) {
+      return t("records.bestEscapeLong", {
+        time: formatDuration(records.bestEscapeSeconds),
+        day: records.bestEscapeDay,
+      });
+    }
+    return t("records.bestFuelLong", { fuel: records.bestFuel });
+  }
+
+  /** 开场页那一行；没玩过时整行隐藏，不占版面。 */
+  refreshRecordsLine(): void {
+    const text = describeRecords(loadRecords());
+    this.recordsLine.textContent = text ?? "";
+    this.recordsLine.classList.toggle("hidden", text === null);
   }
 
   private showGameOver(): void {
