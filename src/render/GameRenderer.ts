@@ -238,6 +238,7 @@ const wolfScale = (wolf: WolfState): number => (
 /** 腹面与口鼻的浅色。跟主色同色相、抬明度，模型自带的 Main_Light 槽正好吃这个。 */
 const wolfBellyColor = (wolf: WolfState): number => {
   if (wolf.kind === "elite") return 0x7d5a3f;
+  if (wolf.role === "guard") return 0x8e8f86;
   if (wolf.kind === "large") return 0xc98d55;
   return 0xf0d3a0;
 };
@@ -250,6 +251,10 @@ const wolfBellyColor = (wolf: WolfState): number => {
  */
 const wolfBodyColor = (wolf: WolfState): number => {
   if (wolf.kind === "elite") return 0x4a2f1e;
+  // 守巢犬单独一个色：它和白天的壮犬同为 large，但玩家要学会的是
+  // "巢边那三只不一样、碰它就得打完"。走**冷灰褐**而不是继续在暖褐里分深浅 ——
+  // 全场只有它们不是沙漠色系，远远一眼就能认出来那圈是谁在守着。
+  if (wolf.role === "guard") return 0x5b5f57;
   if (wolf.kind === "large") return 0x8f5228;
   if (wolf.role === "wild") return 0xd9a95f;
   return wolf.raider ? 0xc07a34 : 0xcf9a56;
@@ -1402,6 +1407,7 @@ export class GameRenderer {
     ] as Array<[string, (asset: AnimalAsset) => void]>).map(async ([name, assign]) => {
       try {
         assign(await loadAnimal(loader, `${animalRoot}/${name}`));
+        this.rebuildAnimalViews();
       } catch (error) {
         console.warn(`${name} failed to load; keeping the procedural fallback.`, error);
       }
@@ -1787,9 +1793,7 @@ export class GameRenderer {
     }
     for (const [id, view] of this.critterViews) {
       if (liveIds.has(id)) continue;
-      this.scene.remove(view.group);
-      view.animal?.dispose();
-      view.bodyMaterial.dispose();
+      this.disposeCritterView(view);
       this.critterViews.delete(id);
     }
   }
@@ -1880,11 +1884,7 @@ export class GameRenderer {
     }
     for (const [id, view] of this.wolfViews) {
       if (liveIds.has(id)) continue;
-      this.scene.remove(view.group);
-      this.scene.remove(view.bar);
-      view.animal?.dispose();
-      for (const material of view.tinted) material.dispose();
-      for (const child of view.bar.children) (child as THREE.Sprite).material.dispose();
+      this.disposeWolfView(view);
       this.wolfViews.delete(id);
     }
   }
@@ -1967,6 +1967,36 @@ export class GameRenderer {
     bone.position.y = 0.08;
     group.add(bone);
     return group;
+  }
+
+  private disposeWolfView(view: WolfView): void {
+    this.scene.remove(view.group);
+    this.scene.remove(view.bar);
+    view.animal?.dispose();
+    for (const material of view.tinted) material.dispose();
+    for (const child of view.bar.children) (child as THREE.Sprite).material.dispose();
+  }
+
+  private disposeCritterView(view: CritterView): void {
+    this.scene.remove(view.group);
+    view.animal?.dispose();
+    view.bodyMaterial.dispose();
+  }
+
+  /**
+   * 素材到位之后，把**已经用替身建好的视图**全部丢掉，下一帧自然会用真模型重建。
+   *
+   * 不做这一步的话，开局就存在的东西会永久停在替身上：`main.ts` 里有一次
+   * 故意的着色器预热 `renderer.render(0)`，它跑在 `whenPlayerAssetReady()` **之前**，
+   * 而那一刻模拟层里已经有 4 只长角羚（seedCritters）和 5 只守巢犬（seedDenGuards）——
+   * 它们的视图就在那一帧被建好并缓存，之后再也不会重建。
+   * 现象是"守油桶的狗是丑方块、羊还是老样子，而后面出生的狼都是对的"。
+   */
+  private rebuildAnimalViews(): void {
+    for (const view of this.wolfViews.values()) this.disposeWolfView(view);
+    this.wolfViews.clear();
+    for (const view of this.critterViews.values()) this.disposeCritterView(view);
+    this.critterViews.clear();
   }
 
   private createWolfView(wolf: WolfState): WolfView {
