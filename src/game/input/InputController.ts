@@ -7,6 +7,8 @@ import type { PlayerState, Vec2 } from "../simulation/types";
  * 又把最不该占地方的右上角占满了。
  */
 interface InputCallbacks {
+  /** Poki 要求 gameplayStart 必须发生在真正开始游玩的首次输入里。 */
+  onGameplayIntent: () => void;
   onAction: () => void;
   onAttack: () => void;
   onThermal: () => void;
@@ -35,7 +37,10 @@ export class InputController {
     canvas.addEventListener("pointerdown", (event) => {
       if (event.pointerType === "touch") return;
       const target = screenToWorld(event.clientX, event.clientY);
-      if (target) this.moveTarget = target;
+      if (target) {
+        this.callbacks.onGameplayIntent();
+        this.moveTarget = target;
+      }
     });
   }
 
@@ -73,11 +78,13 @@ export class InputController {
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     // Escape 不进这张表：浏览器的全屏退出等原生行为要留给它，我们只是**顺带**监听。
     const gameKeys = ["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "KeyE", "KeyQ", "KeyB", "Tab", "Space"];
+    const gameplayKeys = ["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "KeyE", "KeyQ", "Space"];
     if (gameKeys.includes(event.code)) event.preventDefault();
     if (event.repeat) {
       this.keys.add(event.code);
       return;
     }
+    if (gameplayKeys.includes(event.code)) this.callbacks.onGameplayIntent();
     this.keys.add(event.code);
     if (event.code === "KeyE") this.callbacks.onAction();
     if (event.code === "Space") this.callbacks.onAttack();
@@ -100,6 +107,7 @@ export class InputController {
   private bindButton(id: string, callback: () => void): void {
     document.getElementById(id)?.addEventListener("pointerdown", (event) => {
       event.preventDefault();
+      this.callbacks.onGameplayIntent();
       callback();
     });
   }
@@ -134,6 +142,7 @@ export class InputController {
     };
 
     base.addEventListener("pointerdown", (event) => {
+      this.callbacks.onGameplayIntent();
       activePointer = event.pointerId;
       base.setPointerCapture(event.pointerId);
       update(event);

@@ -35,6 +35,20 @@ button { font: inherit; }
   background: radial-gradient(circle at 50% 35%, #7592a2, #1c2a34 75%);
 }
 
+.version-label {
+  position: fixed;
+  z-index: 30;
+  left: max(8px, env(safe-area-inset-left));
+  bottom: max(6px, env(safe-area-inset-bottom));
+  color: rgba(232, 240, 243, 0.58);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  line-height: 1;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, .72);
+  pointer-events: none;
+}
+
 #hud {
   position: fixed;
   inset: 0;

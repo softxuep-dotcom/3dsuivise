@@ -1,4 +1,7 @@
 import { defineConfig } from "vite";
+import packageJson from "./package.json" with { type: "json" };
+
+const displayVersion = packageJson.version;
 
 /**
  * `mode` 就是平台开关，不再走 `.env.*` 文件。
@@ -10,10 +13,15 @@ import { defineConfig } from "vite";
  */
 export default defineConfig(({ mode }) => ({
   base: "./",
+  plugins: [{
+    name: "inject-app-version",
+    transformIndexHtml: (html) => html.replaceAll("%APP_VERSION%", displayVersion),
+  }],
   define: {
     "import.meta.env.VITE_PLATFORM": JSON.stringify(mode === "poki" ? "poki" : ""),
   },
   build: {
+    outDir: mode === "poki" ? "dist-poki" : "dist",
     target: "es2022",
     sourcemap: false,
   },

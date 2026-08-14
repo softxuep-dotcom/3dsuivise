@@ -76,6 +76,10 @@ const LATER_DAY_DURATION = 180;
 const SECOND_NIGHT_DURATION = 180;
 const LATER_NIGHT_DURATION = 180;
 const MAX_WOLVES = 120;
+/** 前三夜总放出量；第 4 夜起回到后期公式。 */
+const EARLY_NIGHT_WOLF_TARGETS = [30, 45, 60] as const;
+/** 前三夜真正扑向玩家/营地的固定配额，避免独立抽签造成难度尖峰。 */
+const EARLY_NIGHT_RAID_TARGETS = [5, 9, 14] as const;
 /** 地形拒绝整步移动时依次尝试的缩短比例，见 stepAxis()。 */
 const MOVE_STEP_FALLBACKS = [1, 0.5, 0.25];
 /** 挨打后多少秒内不能休息（原本是"附近有狼"，夜里几乎恒为真）。 */
@@ -494,6 +498,7 @@ export class GameSimulation {
   private dropId = 0;
   private spawnCountdown = 3;
   private spawnedThisNight = 0;
+  private raidersSpawnedThisNight = 0;
   private navigationCountdown = 0;
   private wildRespawnCountdown = 0;
   /** 剑线连击：当前层数、锁定的目标、以及还剩多久清零。 */
@@ -1259,8 +1264,9 @@ export class GameSimulation {
     if (stats.knockback <= 0 || wolf.kind === "elite") return;
     wolf.attackCooldown += stats.knockbackStun;
     const away = direction(this.player, wolf);
-    // 走正常的碰撞与地形回退：直接改坐标会把狼推进崖壁里卡住抽搐。
-    this.moveEntity(wolf, away.x * stats.knockback, away.z * stats.knockback, WOLF_RADIUS, false);
+    // 击退也必须走完整路障碰撞。旧代码把 collideWithItems 关掉，刀一挥就能把狼
+    // 推进石头或树桩内部，下一帧的“推出重叠”再把它弹到路障另一侧，看起来就是穿墙。
+    this.moveEntity(wolf, away.x * stats.knockback, away.z * stats.knockback, WOLF_RADIUS, true);
     this.events.push({ type: "knockback", wolfId: wolf.id });
   }
 
@@ -1819,7 +1825,10 @@ export class GameSimulation {
     if (this.player.hunger < 50
       && this.getInventoryCount("raw-meat") === 0 && this.getInventoryCount("cooked-meat") === 0) {
       const oryx = this.critters.find((critter) => critter.kind === "oryx" && critter.mode !== "dead");
-      if (oryx) return loc("sim.33");
+      if (oryx) return loc("sim.33", {
+        meat: CRITTER_SPECS.oryx.meat,
+        water: CRITTER_SPECS.oryx.water,
+      });
       return loc("sim.34");
     }
     return this.describeFuelHunt(fuel);
@@ -2102,7 +2111,7 @@ export class GameSimulation {
       }
       if (distanceSquared(this.player, drop) > 1.8 * 1.8) continue;
       // 装得下多少拿多少，剩下的**留在地上并从堆里扣掉**。
-      // 长角羚一次掉 4 块肉，背包常常只剩两格位置 —— 全有或全无的话玩家只能眼睁睁
+      // 长角羚一次会掉多组资源，背包常常只剩两格位置 —— 全有或全无的话玩家只能眼睁睁
       // 看着一头长角羚烂在沙子里；而不扣数量就等于允许同一堆反复领取。
       const taken = Math.min(drop.count, this.getInventorySpace(drop.kind));
       if (taken <= 0) continue;
@@ -2117,8 +2126,7 @@ export class GameSimulation {
   private updateWolves(delta: number): void {
     this.updateWildWolves(delta);
     const livingCount = this.wolves.filter((wolf) => wolf.mode !== "dead").length;
-    // 每夜目标狼数大幅上调：D1 26→40，D2 36→55，D3+ 46→70，压力明显增强
-    const target = Math.min(90, 40 + (this.day - 1) * 15);
+    const target = this.getNightWolfTarget();
     if (this.phase === "night" && livingCount < MAX_WOLVES && this.spawnedThisNight < target) {
       this.spawnCountdown -= delta;
       if (this.spawnCountdown <= 0) {
@@ -2267,7 +2275,7 @@ export class GameSimulation {
       if (wolf.attackCooldown <= 0) {
         wolf.attackCooldown = 0.95;
         blockingStructure.hp -= this.getBarrierDamage(wolf, STRUCTURE_SPECS[blockingStructure.kind].armor);
-        this.events.push({ type: "barrier-hit", itemId: -1 - blockingStructure.id });
+        this.events.push({ type: "barrier-hit", itemId: -1 - blockingStructure.id, material: "wood" });
         if (blockingStructure.hp <= 0) {
           blockingStructure.active = false;
           this.events.push({ type: "structure-destroyed", kind: blockingStructure.kind });
@@ -2304,7 +2312,11 @@ export class GameSimulation {
         wolf.attackCooldown = 0.95;
         const barrierDamage = this.getBarrierDamage(wolf, BARRIER_STATS[blockingItem.kind].armor);
         blockingItem.hp -= barrierDamage;
-        this.events.push({ type: "barrier-hit", itemId: blockingItem.id });
+        this.events.push({
+          type: "barrier-hit",
+          itemId: blockingItem.id,
+          material: blockingItem.kind === "stone" ? "stone" : "wood",
+        });
         if (blockingItem.hp <= 0) blockingItem.active = false;
       }
       return;
@@ -2485,13 +2497,17 @@ export class GameSimulation {
    * 因为不封顶的话第 10 夜的小狼咬伤 36，已经超过第 1 夜的大狼（20）——
    * 玩家攒到三阶装备之后反而越打越吃力，努力方向是反的。
    *
-   * 封顶之后夜晚仍然会变难，只是换了个来源：配额还在涨（40 → 90，第 5 夜封顶）、
+   * 封顶之后夜晚仍然会变难，只是换了个来源：配额还在涨（30 → 90，第 5 夜封顶）、
    * 大狼占比还在涨（22% → 58%）、精英狼从第 ELITE_MIN_DAY 夜开始出现且**不封顶**。
    * 也就是"来得更多、成分更凶"，而不是"每一只都变成海绵"。
    */
   private getNightScaling(maxNights = Number.POSITIVE_INFINITY): { attack: number; health: number; speed: number } {
     const nights = Math.min(Math.max(0, this.day - 1), maxNights);
     return { attack: nights * 3, health: nights * 12, speed: 1 + nights * 0.04 };
+  }
+
+  private getNightWolfTarget(): number {
+    return EARLY_NIGHT_WOLF_TARGETS[this.day - 1] ?? Math.min(90, 40 + (this.day - 1) * 15);
   }
 
   private spawnWolf(options: { role?: WolfRole; forceKind?: WolfKind; origin?: Vec2 } = {}): void {
@@ -2574,24 +2590,22 @@ export class GameSimulation {
     }
 
     /*
-     * 攻营的比例逐夜爬升。这是夜晚压力真正的成长曲线 ——
-     * 配额只决定"这一夜总共放出多少条狗"，而这一条决定"其中多少条会走到你门口"。
+     * 前三夜使用固定攻营配额 5 / 9 / 14。每次生成时按“剩余名额 ÷ 剩余生成数”
+     * 抽签，相当于不放回抽样：顺序仍然随机，但整夜最终不会超过配额，也不会因为
+     * 连续命中概率而突然扑来一大批。第一夜教学犬占第一个攻营名额。
      *
-     * 原先第一夜是 0.16：配额 40 只 × 0.16 = **只有 6.4 只真的来攻营**，
-     * 剩下 34 只在别的营地外围绕圈到天亮 —— 既没有压力，又白烧了 34 个
-     * SkinnedMesh 的算力。实测第一夜这 6 只被初始匕首砍完只掉三分之一血。
-     *
-     * 只修第一夜，后面收敛回原曲线 —— 因为小狗血量已经从 58 抬到 72
-     * （匕首两刀变三刀，交火时长 +50%），数量再叠上去中后期会过载：
-     *
-     *        原 0.16+0.06   现 0.20+0.05
-     *   第一夜   6.4            8.0     ← 唯一实质提升
-     *   第二夜  12.1           13.8
-     *   第三夜  19.6           21.0
-     *   第四夜  28.9           29.8     ← 基本回到原值
+     * 第 4 夜以后继续沿用原来的 35% 攻营概率，保留后期压力。
      */
-    const raiderChance = Math.min(0.35, 0.2 + (this.day - 1) * 0.05);
+    const earlyRaidTarget = EARLY_NIGHT_RAID_TARGETS[this.day - 1];
+    const remainingSpawns = Math.max(1, this.getNightWolfTarget() - this.spawnedThisNight);
+    const remainingRaiders = earlyRaidTarget === undefined
+      ? 0
+      : Math.max(0, earlyRaidTarget - this.raidersSpawnedThisNight);
+    const raiderChance = earlyRaidTarget === undefined
+      ? Math.min(0.35, 0.2 + (this.day - 1) * 0.05)
+      : remainingRaiders / remainingSpawns;
     const raider = role === "raider" && (tutorialWolf || this.random() < raiderChance);
+    if (raider) this.raidersSpawnedThisNight += 1;
     // 攻营犬直接进 raid 模式（见下方 mode 字段），目标每帧由 getRaidTarget() 重算，
     // 所以锚点只在它们被打退、退回 patrol 时才用得上 —— 落在玩家当前位置附近即可。
     const assaultCamp = den ? (this.getPlayerShelter() ?? this.player) : camp;
@@ -2600,7 +2614,7 @@ export class GameSimulation {
     const anchorDistance = 12 + this.random() * 10;
     // 锚点决定这只狗整夜待在哪。
     //
-    // **不是所有夜狗都来攻营** —— raiderChance 只让 16%~35%（逐夜递增）挂上
+    // **不是所有夜狗都来攻营** —— 前三夜按固定配额、之后按 35% 概率挂上
     // raider 标记去打营地，其余的在自己的锚点附近巡逻。这个分流机制本来就有，
     // 但原先所有夜狗的锚点都挑一座**随机营地**，于是巡逻的那批也漫无目的地
     // 在五座营地之间晃。
@@ -2870,7 +2884,8 @@ export class GameSimulation {
       if (terrainHeightAt(this.world, point) > sightHeight + 0.35) return true;
     }
     for (const item of this.items) {
-      if (item.active && item.placed && segmentIntersectsCircle(start, end, item, item.kind === "stone" ? 1.48 : 0.65)) return true;
+      if (this.isBlockingGroundItem(item)
+        && segmentIntersectsCircle(start, end, item, item.kind === "stone" ? 1.48 : 0.65)) return true;
     }
     return false;
   }
@@ -2954,7 +2969,7 @@ export class GameSimulation {
     let closest: GroundItem | null = null;
     let closestDistance = Number.POSITIVE_INFINITY;
     for (const item of this.items) {
-      if (!item.active || !item.placed) continue;
+      if (!this.isBlockingGroundItem(item)) continue;
       const itemDistance = distance(wolf, item);
       // Acquire the barrier before the 3.2 m generic avoidance radius. Once
       // acquired, updateWolf deliberately approaches it until bite range.
@@ -2970,6 +2985,14 @@ export class GameSimulation {
     return closest;
   }
 
+  /**
+   * 天然石头从生成时就是实体障碍；枯木只有被玩家放下后才组成路障。
+   * `placed` 表示“被玩家布置过”，不能再被误用成“有没有碰撞”。
+   */
+  private isBlockingGroundItem(item: GroundItem): boolean {
+    return item.active && (item.kind === "stone" || item.placed);
+  }
+
   private getSteeredDirection(entity: Vec2, desired: Vec2): Vec2 {
     let steerX = desired.x;
     let steerZ = desired.z;
@@ -2983,7 +3006,7 @@ export class GameSimulation {
       steerZ += away.z * strength * 2.6;
     }
     for (const item of this.items) {
-      if (!item.active || !item.placed || distanceSquared(entity, item) > 3.2 * 3.2) continue;
+      if (!this.isBlockingGroundItem(item) || distanceSquared(entity, item) > 3.2 * 3.2) continue;
       const away = direction(item, entity);
       steerX += away.x * 1.8;
       steerZ += away.z * 1.8;
@@ -2997,6 +3020,7 @@ export class GameSimulation {
       this.phaseTime = this.day === 1 ? FIRST_NIGHT_DURATION : this.day === 2 ? SECOND_NIGHT_DURATION : LATER_NIGHT_DURATION;
       this.spawnCountdown = 0.45;
       this.spawnedThisNight = 0;
+      this.raidersSpawnedThisNight = 0;
       this.objectiveStage = 3;
       this.events.push({ type: "phase", phase: "night", day: this.day });
       const litAtDusk = this.getNearestLitCamp();
@@ -3282,12 +3306,20 @@ export class GameSimulation {
    * 没有这个回退的话，贴着坡沿走会在"整步 0.14m"和"原地不动"之间反复横跳
    * —— 那正是走路发卡的手感。有了回退，玩家会平滑地贴到坡沿再停住。
    */
-  private stepAxis(entity: Vec2, axis: "x" | "z", amount: number, terrainSlopeAllowance = 1): void {
+  private stepAxis(
+    entity: Vec2,
+    axis: "x" | "z",
+    amount: number,
+    radius: number,
+    collideWithItems: boolean,
+    terrainSlopeAllowance = 1,
+  ): void {
     const origin = entity[axis];
     for (const scale of MOVE_STEP_FALLBACKS) {
       entity[axis] = origin + amount * scale;
       const from = axis === "x" ? { x: origin, z: entity.z } : { x: entity.x, z: origin };
-      if (this.canTraverseTerrain(from, entity, terrainSlopeAllowance)) return;
+      if (this.canTraverseTerrain(from, entity, terrainSlopeAllowance)
+        && !this.stepCrossesCollision(from, entity, radius, collideWithItems)) return;
     }
     entity[axis] = origin;
   }
@@ -3301,9 +3333,9 @@ export class GameSimulation {
     terrainSlopeAllowance = 1,
   ): void {
     // 分轴推进本身就提供了沿墙滑行：一轴被挡时另一轴仍然生效。
-    this.stepAxis(entity, "x", dx, terrainSlopeAllowance);
+    this.stepAxis(entity, "x", dx, radius, collideWithItems, terrainSlopeAllowance);
     this.resolveCollisions(entity, radius, collideWithItems);
-    this.stepAxis(entity, "z", dz, terrainSlopeAllowance);
+    this.stepAxis(entity, "z", dz, radius, collideWithItems, terrainSlopeAllowance);
     this.resolveCollisions(entity, radius, collideWithItems);
     const half = this.world.size / 2 - radius;
     entity.x = clamp(entity.x, -half, half);
@@ -3315,7 +3347,7 @@ export class GameSimulation {
       for (const obstacle of this.world.walls) this.pushOutsideCircle(entity, radius, obstacle, obstacle.radius);
       if (!collideWithItems) continue;
       for (const item of this.items) {
-        if (!item.active || !item.placed) continue;
+        if (!this.isBlockingGroundItem(item)) continue;
         this.pushOutsideCircle(entity, radius, item, item.kind === "stone" ? 1.48 : 0.62);
       }
       for (const structure of this.structures) {
@@ -3323,6 +3355,45 @@ export class GameSimulation {
         this.pushOutsideCircle(entity, radius, structure, STRUCTURE_SPECS[structure.kind].radius);
       }
     }
+  }
+
+  /**
+   * 连续碰撞：检查这一小步的整条线段，而不只检查落点。
+   *
+   * 原来的 resolveCollisions 只能修正“走完以后还压在圆里”的情况。如果一步从圆的一侧
+   * 走到另一侧，或多个路障依次把实体推出，落点可能已经在圆外，于是完全检测不到。
+   * 石头和树桩因此看着有碰撞，快速追击或击退时却能偶发穿过。
+   */
+  private stepCrossesCollision(from: Vec2, to: Vec2, radius: number, collideWithItems: boolean): boolean {
+    for (const wall of this.world.walls) {
+      if (this.stepEntersCircle(from, to, wall, radius + wall.radius)) return true;
+    }
+    if (!collideWithItems) return false;
+    for (const item of this.items) {
+      if (!this.isBlockingGroundItem(item)) continue;
+      const obstacleRadius = item.kind === "stone" ? 1.48 : 0.62;
+      if (this.stepEntersCircle(from, to, item, radius + obstacleRadius)) return true;
+    }
+    for (const structure of this.structures) {
+      if (!structure.active) continue;
+      if (this.stepEntersCircle(from, to, structure, radius + STRUCTURE_SPECS[structure.kind].radius)) return true;
+    }
+    return false;
+  }
+
+  private stepEntersCircle(from: Vec2, to: Vec2, obstacle: Vec2, expandedRadius: number): boolean {
+    const startDistance = distanceSquared(from, obstacle);
+    const endDistance = distanceSquared(to, obstacle);
+    const radiusSquared = expandedRadius * expandedRadius;
+
+    // 如果放置物刚好生成在实体脚下，允许实体往外脱离，但不许继续往深处走。
+    if (startDistance < radiusSquared - 0.0001) return endDistance < startDistance;
+
+    const moveX = to.x - from.x;
+    const moveZ = to.z - from.z;
+    const toward = moveX * (obstacle.x - from.x) + moveZ * (obstacle.z - from.z);
+    if (toward <= 0) return false;
+    return segmentIntersectsCircle(from, to, obstacle, expandedRadius);
   }
 
   /**

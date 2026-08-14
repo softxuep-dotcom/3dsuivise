@@ -6,9 +6,9 @@ node_modules/
 
 # Production and test output
 dist/
-# 平台版构建产物与上传包（npm run build:poki）
+# 平台版构建产物与上传包（npm run package:poki）
 dist-poki/
-*-poki.zip
+*-poki*.zip
 coverage/
 .vite/
 .cache/

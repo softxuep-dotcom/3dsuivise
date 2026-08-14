@@ -85,10 +85,10 @@
 | 蜥蜴 | 16 | 6.2 | 6 | 3.0s | 肉×1 |
 | 野兔 | 10 | **9.6** | 9 | 2.0s | 肉×2 |
 | 秃鹰 | 10 | 5.2 | 8 | 2.6s | 肉×2 |
-| **骆驼** | **90** | **10.5** | 11 | **4.5s** | **肉×4 + 兽皮×2 + 水×2** |
+| **长角羚** | **90** | **10.5** | 11 | **4.5s** | **肉×2 + 兽皮×2 + 水×2** |
 
-玩家移速 8.2 —— 野兔和骆驼都比你快，正面追不上，只能等它冲刺耗尽。
-骆驼是唯一会掉水的猎物（对应原图杀骆驼掉「骆驼水」）。
+玩家移速 8.2 —— 野兔和长角羚都比你快，正面追不上，只能等它冲刺耗尽。
+长角羚是唯一会掉水的猎物。
 
 长角羚用 **Quaternius 的 Deer 模型**（CC0，带骨骼动画，站立高度 2.3），其余七种猎物仍是
 程序化几何 —— 它是唯一一个玩家会专门去追、也是唯一大到能看清动作的猎物。
@@ -207,8 +207,13 @@ index.ts          createPlatform()：按构建期常量选，永远 resolve
 
 ```bash
 npm run build        # 默认：不接任何平台（GitHub Pages / itch.io 走这个）
-npm run build:poki   # Poki 版（= vite build --mode poki）
+npm run build:poki   # Poki 版，输出 dist-poki/
+npm run package:poki # Poki 上传包，输出 desert-survivor-poki-1.0.0.zip
 ```
+
+版本号以 `package.json` 为唯一来源：游戏左下角和 Poki 上传包文件名都使用完整版本 `1.0.0`。
+GitHub Pages 工作流执行的是普通 `npm run build`，上传 `dist/`；
+它不会接入 Poki SDK，也不会生成 ZIP。
 
 平台适配器是 `await import()` 进来的，而且 `createPlatform` 里的判断**故意把两个构建期常量
 摊开写、不套函数** —— 只有这样打包器才能把整支判成死代码。实测：藏进 `resolvePlatformId()`
@@ -227,13 +232,14 @@ npm run build:poki   # Poki 版（= vite build --mode poki）
 | --- | --- |
 | `init` | 重资源加载**之前**（要先有 SDK 才能报加载完成） |
 | `loadingFinished` | 进度条走到 1 |
-| `gameplayStart` / `Stop` | **HudController 每帧自查 `isGameplayBlocked()`，翻转时回调** |
+| `gameplayStart` / `Stop` | 首次 Start 由真实游戏输入同步触发；之后由 **HudController 每帧自查 `isGameplayBlocked()`** |
 | `commercialBreak` | 点了"再来一局"之后，不是死亡那一刻 |
 | `rewardedBreak` | 暂无调用点（见下） |
 
-`gameplayStart/Stop` 特意没有逐个调用点去报：`inventoryOpen` 有五条改法（背包键、关闭键、
-建造完成、死亡、通关），漏掉任何一条平台那边的时长统计就错了。改成每帧自查一次全覆盖，
-代价是最多晚一帧。以后再加什么会暂停游戏的 UI，平台信号自动跟着对。
+第一次 `gameplayStart()` 是例外：Poki 要求它必须直接发生在玩家首次输入里，不能由加载完成
+或下一帧自动触发。因此移动、地面点击、摇杆、攻击和场景行动会同步启动游戏；开背包、暂停
+不算开始。开始之后的 `gameplayStart/Stop` 仍由 HUD 每帧自查：`inventoryOpen` 有五条改法
+（背包键、关闭键、建造完成、死亡、通关），集中检查才不会漏报。
 
 ### 暂停
 
@@ -276,14 +282,16 @@ Poki Requirements 第 15 条要求键盘游戏提供 **ESC 或空格**的暂停/
 
 ## 开场：没有开始按钮
 
-**进页面即加载，加载完直接进场。** 开场页不是一道门，只是加载期间看到的东西。
+**进页面即加载，加载完直接展示场景。** 开场页不是一道门，只是加载期间看到的东西；
+模拟层和 Poki `gameplayStart()` 会等到第一次实际游戏输入才启动。
 
 代价是没有了那一次点击，而 `AudioContext` 与横屏锁**只能在用户手势里发起**。两者因此
 改挂在「第一次任何点击或按键」上：进场后第一件必须做的事就是移动，所以那次手势一定会来，
 只是比原先晚几秒 —— 在那之前静音。监听注册在 `index.html` 的内联脚本里而不是主包里，
 因为加载期间玩家不耐烦戳屏幕的那一下，主包往往还没到。
 
-自动进场不会让生存时钟空转：它本来就等玩家第一次移动才起跑（`GameSimulation.clockStarted`）。
+场景提前展示不会让生存时钟空转：模拟层还没启动，而且生存时钟本身仍会等玩家第一次移动
+才起跑（`GameSimulation.clockStarted`）。
 
 HUD 的分工是**状态栏只读、拇指区操作**：左上目标条与通关进度、右上五条状态轴 + 随身补给
 计数（只读）、左下摇杆、右下 [体温][背包] + [攻击][行动]。

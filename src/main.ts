@@ -149,7 +149,25 @@ async function bootstrap(): Promise<void> {
     if (!hud.isGameplayBlocked()) action();
   };
 
+  let started = false;
+  let previousTime = performance.now();
+  let hiddenAt = 0;
+
+  /**
+   * Poki 把第一次 gameplayStart 当作“玩家真的开始玩了”的转化点，必须直接发生在
+   * 玩家输入的调用栈里，不能在加载完成或下一帧自动触发。InputController 只会在
+   * 移动、点击地面、摇杆、攻击和场景行动这些真正的游戏输入上调用这里；开背包和
+   * 暂停不算开始游戏。
+   */
+  const enterGame = (): void => {
+    if (started || hud.isGameplayBlocked()) return;
+    started = true;
+    simulation.start();
+    platform.gameplayStart();
+  };
+
   const input = new InputController({
+    onGameplayIntent: enterGame,
     onAction: () => runGameplayAction(() => simulation.requestInteraction()),
     onAttack: () => runGameplayAction(() => simulation.requestAttack()),
     onThermal: () => runGameplayAction(() => simulation.requestThermalAction()),
@@ -157,10 +175,6 @@ async function bootstrap(): Promise<void> {
     onPause: () => hud.togglePause(),
   });
   input.bindCanvas(renderer.canvas, (x, y) => renderer.screenToWorld(x, y));
-
-  let started = false;
-  let previousTime = performance.now();
-  let hiddenAt = 0;
 
   /*
    * "可玩 / 不可玩"的唯一报点。
@@ -201,16 +215,6 @@ async function bootstrap(): Promise<void> {
     if (blocked) platform.gameplayStop();
     else if (started && simulation.running && !document.hidden) platform.gameplayStart();
   });
-
-  // 音频不在这里解锁：进场已经不由用户手势触发，此刻 resume 必然被浏览器拒掉。
-  // 交给上面的 unlockAudio。
-  const enterGame = (): void => {
-    if (started) return;
-    started = true;
-    simulation.start();
-    hud.showGame();
-    platform.gameplayStart();
-  };
 
   /*
    * 重开前插一次插屏广告。
@@ -273,6 +277,12 @@ async function bootstrap(): Promise<void> {
         if (event.type === "game-over" || event.type === "victory") platform.gameplayStop();
         if (event.type === "game-over") offerRevive();
       }
+      audio.update(
+        simulation.player,
+        simulation.camps,
+        world.camps,
+        started && simulation.running && !hud.isGameplayBlocked(),
+      );
       hud.update(delta);
       renderer.render(delta);
     }
@@ -282,9 +292,9 @@ async function bootstrap(): Promise<void> {
 
   setProgress(1, t("boot.ready"));
   platform.loadingFinished();
-  // 加载完直接进场，不再等一次点击。
-  // 生存时钟不会因此空转 —— 它等玩家第一次移动才起跑（GameSimulation.clockStarted）。
-  enterGame();
+  // 场景可以先展示，但 gameplayStart 与模拟层都必须等玩家第一次实际游戏输入。
+  // HUD 已经提示“移动或拿起枯木，开始第一天”，无需重新加一层开始按钮。
+  hud.showGame();
 }
 
 void bootstrap().catch((error) => console.error("Bootstrap failed", error));

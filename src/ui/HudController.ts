@@ -280,10 +280,11 @@ export class HudController {
     this.syncThermalButton(player.warmth);
     this.bagUsage.textContent = `${player.inventory.filter(Boolean).length}/8`;
     this.objective.textContent = tx(this.simulation.getObjective());
+    const dogCount = this.simulation.wolves.filter((wolf) => wolf.mode !== "dead").length;
     this.dayLabel.textContent = t("hud.dayLine", {
       day: this.simulation.day,
       place: tx(this.simulation.getCurrentLocationLabel()),
-      dogs: this.simulation.wolves.filter((wolf) => wolf.mode !== "dead").length,
+      count: dogCount,
     });
     this.phaseLabel.textContent = t(this.simulation.phase === "day" ? "phase.day" : "phase.night");
     this.clock.classList.toggle("night", this.simulation.phase === "night");
@@ -649,7 +650,7 @@ export class HudController {
   showReviveOffer(remaining: number, onRevive: () => void): void {
     this.reviveButton.classList.remove("hidden");
     this.reviveButton.disabled = false;
-    this.reviveButton.textContent = t("revive.offer", { remaining });
+    this.reviveButton.textContent = t("revive.offer", { count: remaining });
     this.reviveButton.onclick = () => {
       this.reviveButton.disabled = true;
       onRevive();
@@ -680,7 +681,7 @@ export class HudController {
         ? t("death.note.hypothermia")
         : "";
     this.resultCopy.textContent = [
-      t("over.summary", { day: this.simulation.day, kills: this.simulation.player.kills }),
+      t("over.summary", { day: this.simulation.day, count: this.simulation.player.kills }),
       causeText,
       conditionText,
       t("over.remaining", { count: wolfCount }),
@@ -692,7 +693,7 @@ export class HudController {
   private showVictory(): void {
     const player = this.simulation.player;
     this.victoryCopy.textContent = [
-      t("win.summary", { day: this.simulation.day, kills: player.kills }),
+      t("win.summary", { day: this.simulation.day, count: player.kills }),
       this.submitAndDescribe(true),
     ].filter(Boolean).join(" ");
     this.victory.classList.remove("hidden");

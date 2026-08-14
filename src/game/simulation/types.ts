@@ -505,7 +505,7 @@ export type GameEvent =
   /** 油加满、玩家上车，卡车开始驶离。之后只剩结算动画。 */
   | { type: "truck-depart" }
   | { type: "player-hit"; amount: number }
-  | { type: "barrier-hit"; itemId: number }
+  | { type: "barrier-hit"; itemId: number; material: "stone" | "wood" }
   | { type: "build"; kind: StructureKind }
   | { type: "structure-destroyed"; kind: StructureKind }
   | { type: "phase"; phase: Phase; day: number }

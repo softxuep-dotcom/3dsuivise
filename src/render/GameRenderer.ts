@@ -1642,10 +1642,11 @@ export class GameRenderer {
       // 除数取真实上限：石头 1500、枯木 70。原先石头写死 220，
       // 于是它掉到最后 15% 血才开始变色，前面 85% 挨打毫无反馈。
       const health = clamp(item.hp / BARRIER_STATS[item.kind].hp, 0, 1);
-      view.scale.setScalar(item.placed ? 0.55 + health * 0.45 : 1);
+      const isBarrier = item.kind === "stone" || item.placed;
+      view.scale.setScalar(isBarrier ? 0.55 + health * 0.45 : 1);
       // 缩放在小屏上读不出来（看着像透视），颜色才是能读的信号：
       // 越残破越暗越发红，挨打的瞬间还会亮一下。
-      if (item.placed) {
+      if (isBarrier) {
         const flash = this.barrierFlash.get(item.id) ?? 0;
         const base = view.userData.baseColor as number;
         view.traverse((child) => {
@@ -1656,8 +1657,8 @@ export class GameRenderer {
            *
            * 原先写的是 `setRGB(0.28 + health*0.72, …)`，满血时算出来正好是纯白 ——
            * 石头本色 0x748084 是灰蓝、枯木是褐色，一放下就全变白。
-           * 地图初始的石头 placed=false 不走这段，所以只有"搬过一次"的会变，
-           * 看着就像"拿起石头会变色"。
+           * 天然石头和玩家放下的路障都要走这段，否则天然石头挨咬时没有任何反馈、
+           * 直到耐久归零才突然消失。
            */
           material.color.setHex(base).lerp(BARRIER_DAMAGE_TINT, 1 - health);
           material.emissive.setRGB(flash * 3.2, flash * 1.1, flash * 0.6);

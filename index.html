@@ -10,6 +10,7 @@
   <body>
     <div id="game-root">
       <div id="render-root" data-i18n-attr="aria-label:hud.render.aria"></div>
+      <div class="version-label" aria-label="Game version %APP_VERSION%">%APP_VERSION%</div>
 
       <div id="hud" class="hidden" aria-live="polite">
         <div class="left-stack">
@@ -95,12 +96,11 @@
           <!-- 上一局的高度。没玩过时整行隐藏（HudController.refreshRecordsLine），不占版面。 -->
           <p id="records-line" class="records-line hidden"></p>
           <!--
-            没有开始按钮：一进页面就开始加载，加载完直接进场。
+            没有开始按钮：一进页面就开始加载，加载完直接展示场景。
             这一页因此不再是一道门，只是加载期间看到的东西。
 
-            代价是没有那次点击了，而 AudioContext 与横屏锁只能在用户手势里发起 ——
-            它们改挂在下面的"第一次任何手势"上。生存时钟不受影响：它本来就等
-            玩家第一次移动才起跑（GameSimulation.clockStarted）。
+            AudioContext 挂在第一次手势上；Poki gameplayStart 与模拟层则只认第一次
+            实际游戏输入（移动、地面点击、摇杆、攻击或场景行动），不会在加载时误报。
           -->
           <div id="boot-progress" class="boot-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
             <i><b id="boot-bar"></b></i>
