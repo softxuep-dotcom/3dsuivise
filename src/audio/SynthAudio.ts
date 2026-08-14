@@ -5,50 +5,30 @@ import type {
   PlayerState,
 } from "../game/simulation/types";
 
-type SampleKey =
-  | "build"
-  | "cloth"
-  | "confirm"
-  | "fire-loop"
-  | "flesh-hit"
-  | "flesh-hit-heavy"
-  | "footstep"
-  | "metal-hit"
-  | "pickup-soft"
-  | "stone-hit"
-  | "warning"
-  | "weapon-swing"
-  | "wolf-growl"
-  | "wolf-howl"
-  | "wood-hit";
+/**
+ * 只留四个采样。
+ *
+ * 一度铺满了 15 组真实采样（脚步、挥砍、各种材质撞击、皮革、狼吠…），
+ * 结果是战斗里同时有五六种敲击声在响 —— 铁甲反伤每挨一口就"当"一记金属，
+ * 玩下来像在打铁铺。真实采样在这种密度下互相打架，反而不如合成音干净。
+ *
+ * 判断标准变成一条：**这个声音是不是"一直在响"的？**
+ *   - `fire-loop` 与 `wolf-howl` 是**氛围**，各自一个，永远不会撞在一起；
+ *   - `confirm` / `warning` 是 **UI 反馈**，玩家主动操作才出现，天然稀疏。
+ * 其余高频的战斗与采集反馈全部退回合成音：短、闷、音量小，叠在一起也不刺耳。
+ */
+type SampleKey = "confirm" | "fire-loop" | "warning" | "wolf-howl";
 
 const sampleUrl = (name: string): string => `${import.meta.env.BASE_URL}audio/sfx/${name}.mp3`;
 
 const SAMPLE_FILES: Record<SampleKey, readonly string[]> = {
-  build: [sampleUrl("build-1"), sampleUrl("build-2")],
-  cloth: [sampleUrl("cloth-1"), sampleUrl("cloth-2")],
   confirm: [sampleUrl("confirm")],
   "fire-loop": [sampleUrl("fire-loop")],
-  "flesh-hit": [sampleUrl("flesh-hit-1"), sampleUrl("flesh-hit-2")],
-  "flesh-hit-heavy": [sampleUrl("flesh-hit-heavy")],
-  footstep: [
-    sampleUrl("footstep-1"),
-    sampleUrl("footstep-2"),
-    sampleUrl("footstep-3"),
-    sampleUrl("footstep-4"),
-  ],
-  "metal-hit": [sampleUrl("metal-hit-1"), sampleUrl("metal-hit-2")],
-  "pickup-soft": [sampleUrl("pickup-soft-1"), sampleUrl("pickup-soft-2")],
-  "stone-hit": [sampleUrl("stone-hit-1"), sampleUrl("stone-hit-2")],
   warning: [sampleUrl("warning")],
-  "weapon-swing": [sampleUrl("weapon-swing-1"), sampleUrl("weapon-swing-2")],
-  "wolf-growl": [sampleUrl("wolf-growl-1"), sampleUrl("wolf-growl-2")],
   "wolf-howl": [sampleUrl("wolf-howl")],
-  "wood-hit": [sampleUrl("wood-hit-1"), sampleUrl("wood-hit-2")],
 };
 
 const MASTER_VOLUME = 0.22;
-const FOOTSTEP_STRIDE = 1.45;
 
 /**
  * 真实采样负责动作质感，短合成音负责状态和连击等抽象反馈。
@@ -64,11 +44,12 @@ export class SynthAudio {
   private ambienceBus: GainNode | null = null;
   private fireGain: GainNode | null = null;
   private fireSource: AudioBufferSourceNode | null = null;
+  /** 每个音色上次播放的时刻，供 playSample 的节流用。 */
+  private readonly lastSampleAt = new Map<SampleKey, number>();
+  /** 闷响的节流表，按截止频率分桶，见 thudThrottled。 */
+  private readonly lastThudAt = new Map<number, number>();
   private loadPromise: Promise<void> | null = null;
   private readonly samples = new Map<SampleKey, AudioBuffer[]>();
-  private previousPlayerPosition: { x: number; z: number } | null = null;
-  private footstepTravel = 0;
-  private lastGrowlAt = -Infinity;
 
   /**
    * AudioContext 必须在用户手势里创建（iOS 上手势外创建出来的一律是 suspended，
@@ -125,34 +106,43 @@ export class SynthAudio {
   /**
    * 距离驱动脚步，距离火堆越近篝火声越响。这里读取模拟快照，不改任何游戏状态。
    */
+  /**
+   * 每帧的持续音。现在只剩篝火 —— 脚步采样删掉了。
+   *
+   * 脚步是**跑起来就一直响**的声音，四个变体轮换也掩盖不了它的密度；
+   * 而这个游戏的白天基本就是一路小跑，它等于给全程铺了一层底噪。
+   * `movementActive` 保留在签名里，调用方不用改，篝火以后可能会用到。
+   */
   update(
     player: PlayerState,
     camps: readonly CampState[],
     campDefinitions: readonly CampDefinition[],
     movementActive: boolean,
   ): void {
-    this.updateFootsteps(player, movementActive);
+    void movementActive;
     this.updateCampfire(player, camps, campDefinitions);
   }
 
   handle(event: GameEvent): void {
     if (!this.enabled || this.adMuted || !this.context || !this.master) return;
     switch (event.type) {
+      /*
+       * 材质靠**低通截止**区分，不靠不同的采样：石头亮、木头中、金属稍高、
+       * 软物最闷。全部落在同一个原语上，同时响也只是叠成一记更厚的闷响。
+       */
       case "pickup":
-        if (event.kind === "stone") this.playSample("stone-hit", 0.24, 1.25);
-        else if (event.kind === "wood" || event.kind === "stake") this.playSample("wood-hit", 0.28, 1.2);
-        else if (event.kind === "iron-ore" || event.kind === "fuel") this.playSample("metal-hit", 0.3, 1.12);
-        else if (!this.playSample("pickup-soft", 0.32, 1.08)) {
-          this.tone(event.kind === "cactus-juice" ? 620 : 360, 0.08, "sine", 0.6, 1.25);
+        this.thud(0.07, 0.2, event.kind === "stone" ? 900
+          : event.kind === "wood" || event.kind === "stake" ? 620
+            : event.kind === "iron-ore" || event.kind === "fuel" ? 1100 : 420);
+        if (event.kind === "cactus-juice" || event.kind === "water") {
+          this.tone(event.kind === "cactus-juice" ? 620 : 520, 0.07, "sine", 0.18, 1.25);
         }
         break;
       case "drop":
-        if (event.kind === "stone") this.playSample("stone-hit", 0.58, 0.9);
-        else if (event.kind === "stake") this.playSample("wood-hit", 0.52, 0.92);
-        else this.playSample("metal-hit", 0.48, 0.82);
+        this.thud(0.13, 0.34, event.kind === "stone" ? 420 : event.kind === "stake" ? 320 : 500);
         break;
       case "fuel-loaded":
-        this.playSample("metal-hit", 0.4, 0.84);
+        this.thud(0.12, 0.3, 560);
         window.setTimeout(() => this.playSample("confirm", 0.42, 0.95 + event.loaded * 0.035), 80);
         break;
       case "truck-depart":
@@ -160,25 +150,24 @@ export class SynthAudio {
         window.setTimeout(() => this.tone(105, 0.9, "square", 0.55, 1.5), 240);
         break;
       case "feed-fire":
-        this.playSample("wood-hit", 0.38, 0.92);
-        this.noise(0.28, 0.46);
+        this.noise(0.28, 0.34);
         break;
       case "eat":
-        if (!this.playSample("pickup-soft", 0.2, 0.72)) this.tone(480, 0.11, "sine", 0.4, 1.2);
+        this.tone(480, 0.11, "sine", 0.3, 1.2);
         break;
       case "drink":
-        this.tone(680, 0.14, "sine", 0.32, 0.55);
+        this.tone(680, 0.14, "sine", 0.28, 0.55);
         break;
       case "draw-water":
-        this.noise(0.22, 0.22);
+        this.noise(0.22, 0.2);
         break;
       case "exhausted":
-        if (!this.playSample("warning", 0.34, 0.9)) this.tone(140, 0.13, "triangle", 0.3, 0.6);
+        this.playSample("warning", 0.3, 0.9, 900);
         break;
       case "condition":
-        if (event.condition === "heatstroke") this.tone(300, 0.4, "sawtooth", 0.4, 1.9);
-        else if (event.condition === "hypothermia") this.tone(300, 0.5, "sine", 0.45, 0.35);
-        else this.tone(430, 0.22, "sine", 0.3, 1.15);
+        if (event.condition === "heatstroke") this.tone(300, 0.4, "sawtooth", 0.34, 1.9);
+        else if (event.condition === "hypothermia") this.tone(300, 0.5, "sine", 0.38, 0.35);
+        else this.tone(430, 0.22, "sine", 0.26, 1.15);
         break;
       case "victory":
         this.playSample("confirm", 0.58, 0.9);
@@ -187,78 +176,88 @@ export class SynthAudio {
         window.setTimeout(() => this.tone(720, 0.6, "sine", 0.5, 1.2), 380);
         break;
       case "loot-drop":
-        this.playSample(event.kind === "iron-ore" ? "metal-hit" : "pickup-soft", 0.22, 1.18);
+        this.thud(0.06, 0.14, event.kind === "iron-ore" ? 1000 : 460);
         break;
       case "cook":
-        this.noise(0.18, 0.3);
+        this.noise(0.18, 0.24);
         this.playSample("confirm", 0.24, 0.8);
         break;
       case "craft-coat":
-        this.playSample("cloth", 0.5, 0.95);
+        this.noise(0.16, 0.22);
         window.setTimeout(() => this.playSample("confirm", 0.34, 0.9), 110);
         break;
       case "craft-weapon":
-        this.playSample("metal-hit", 0.55, 0.9);
+        this.thud(0.1, 0.3, 900);
         window.setTimeout(() => this.playSample("confirm", 0.38, 1.02), 100);
         break;
       case "build":
-        this.playSample("build", 0.62, 0.92);
+        this.thud(0.11, 0.34, 540);
+        window.setTimeout(() => this.thud(0.09, 0.24, 460), 90);
         break;
       case "structure-destroyed":
-        this.playSample("wood-hit", 0.78, 0.72);
-        window.setTimeout(() => this.playSample("build", 0.48, 0.7), 75);
+        this.thud(0.26, 0.42, 380);
+        this.tone(180, 0.24, "triangle", 0.3, 0.5);
         break;
       case "thermal":
-        this.tone(event.direction === "warm" ? 240 : 560, 0.16, "sine", 0.26,
+        this.tone(event.direction === "warm" ? 240 : 560, 0.16, "sine", 0.24,
           event.direction === "warm" ? 1.45 : 0.72);
         break;
       case "rest":
         if (event.active) this.tone(210, 0.14, "sine", 0.16, 0.85);
         break;
+      /*
+       * 挥砍：带通白噪 + 频率下扫（见 swoosh）。每次随机一点起手频率，
+       * 连挥不会听成复读；0.55 秒的冷却下这个长度（0.15 秒）刚好不重叠。
+       */
       case "attack":
-        if (!this.playSample("weapon-swing", 0.52, 0.94 + Math.random() * 0.12)) this.noise(0.08, 0.38);
+        this.swoosh(0.15, 0.26, 1700 + Math.random() * 500, 380);
         break;
       case "wolf-hit":
-        this.playSample("flesh-hit", 0.64, 0.9 + Math.random() * 0.12);
-        this.maybeGrowl(0.32);
+        this.thud(0.09, 0.34, 340);
         break;
       case "crit":
-        this.playSample("metal-hit", 0.58, 1.18);
-        this.tone(880, 0.09, "square", 0.5, 2.4);
-        window.setTimeout(() => this.tone(1320, 0.11, "triangle", 0.34, 1.9), 45);
+        // 重创的签名就是这两个上扬音。原先在它们下面还垫了一记亮金属敲击，
+        // 而剑三阶 40% 的触发率意味着那一记几乎每秒都来 —— 现在只留音。
+        this.tone(880, 0.09, "square", 0.42, 2.4);
+        window.setTimeout(() => this.tone(1320, 0.11, "triangle", 0.3, 1.9), 45);
         break;
       case "combo":
-        if (event.stacks > 0) this.tone(420 + event.stacks * 110, 0.07, "sine", 0.26, 1.5);
+        if (event.stacks > 0) this.tone(420 + event.stacks * 110, 0.07, "sine", 0.24, 1.5);
         break;
       case "knockback":
-        this.playSample("flesh-hit-heavy", 0.62, 0.88);
-        this.tone(90, 0.1, "sine", 0.34, 0.6);
+        this.thud(0.14, 0.34, 260);
+        this.tone(90, 0.1, "sine", 0.3, 0.6);
         break;
       case "dodge":
-        this.playSample("weapon-swing", 0.26, 1.32);
-        this.tone(640, 0.09, "sine", 0.22, 1.8);
+        // 闪避是"擦身而过"，用更短更高的一记风声，和挥砍区分开。
+        this.swoosh(0.09, 0.16, 2600, 900, 1.6);
         break;
       case "thorns":
-        this.playSample("metal-hit", 0.42, 1.32);
+        /*
+         * 反伤**每挨一口就触发**，是持续状态而不是事件。原先它是一记明亮的金属敲击，
+         * 穿铁甲守夜时每口咬击都"当"一声 —— 这是"打铁铺"感的主要来源。
+         * 现在压成一记很轻的低频闷响，再加 260 ms 间隔：一群狗同时咬只响一次。
+         */
+        this.thudThrottled(0.08, 0.14, 200, 260);
         break;
       case "wolf-killed":
-        this.playSample("flesh-hit-heavy", 0.68, 0.74);
-        this.maybeGrowl(0.58, true);
+        this.thud(0.2, 0.4, 260);
+        this.tone(140, 0.18, "triangle", 0.26, 0.55);
         break;
       case "critter-hit":
-        this.playSample("flesh-hit", 0.48, 1.12);
+        this.thud(0.07, 0.22, 420);
         break;
       case "critter-killed":
-        this.playSample("flesh-hit-heavy", event.kind === "oryx" ? 0.68 : 0.48,
-          event.kind === "oryx" ? 0.76 : 1.05);
+        this.thud(event.kind === "oryx" ? 0.2 : 0.1, event.kind === "oryx" ? 0.36 : 0.22,
+          event.kind === "oryx" ? 280 : 460);
         break;
       case "player-hit":
-        this.playSample("flesh-hit-heavy", 0.78, 0.78);
-        this.tone(75, 0.2, "sawtooth", 0.62, 0.45);
+        // 夜里常有三五只同时咬到，节流成一记，否则糊成一坨。
+        this.thudThrottled(0.16, 0.4, 240, 90);
+        this.tone(75, 0.2, "sawtooth", 0.5, 0.45);
         break;
       case "barrier-hit":
-        this.playSample(event.material === "stone" ? "stone-hit" : "wood-hit", 0.54,
-          0.88 + Math.random() * 0.12);
+        this.thud(0.1, 0.26, event.material === "stone" ? 700 : 480);
         break;
       case "phase":
         this.phaseCue(event.phase === "night");
@@ -298,10 +297,24 @@ export class SynthAudio {
     return this.loadPromise;
   }
 
-  private playSample(key: SampleKey, volume = 1, playbackRate = 1): boolean {
+  /**
+   * 放一个采样。`minGapMs` 是**同一个音色的最小间隔**。
+   *
+   * 没有它的时候，五只狗同时咬就是五声一模一样的金属响叠在一起 ——
+   * 铁甲的反伤（thorns）每挨一口就响一次，夜里几十只狗轮流上，
+   * 整局听起来像在打铁铺。`maybeGrowl` 早就自己做了 1.1 秒的节流，
+   * 只是没推广到别处；这里把它变成所有采样的公共能力。
+   *
+   * 默认 45 ms 只合并"同一帧里同时触发"的那种重叠，不改变任何现有节奏；
+   * 高频事件在调用处各自给更大的间隔。
+   */
+  private playSample(key: SampleKey, volume = 1, playbackRate = 1, minGapMs = 45): boolean {
     if (!this.enabled || this.adMuted || !this.context || !this.effectsBus) return false;
     const variants = this.samples.get(key);
     if (!variants?.length) return false;
+    const now = this.context.currentTime;
+    if (now - (this.lastSampleAt.get(key) ?? -Infinity) < minGapMs / 1000) return true;
+    this.lastSampleAt.set(key, now);
     const source = this.context.createBufferSource();
     const gain = this.context.createGain();
     source.buffer = variants[Math.floor(Math.random() * variants.length)];
@@ -310,26 +323,6 @@ export class SynthAudio {
     source.connect(gain).connect(this.effectsBus);
     source.start();
     return true;
-  }
-
-  private updateFootsteps(player: PlayerState, movementActive: boolean): void {
-    const previous = this.previousPlayerPosition;
-    this.previousPlayerPosition = { x: player.x, z: player.z };
-    if (!previous || !movementActive) {
-      this.footstepTravel = 0;
-      return;
-    }
-    const distance = Math.hypot(player.x - previous.x, player.z - previous.z);
-    // 复活、传送或掉帧后的大跳不能被误听成一串脚步。
-    if (distance > 2) {
-      this.footstepTravel = 0;
-      return;
-    }
-    this.footstepTravel += distance;
-    if (this.footstepTravel < FOOTSTEP_STRIDE) return;
-    this.footstepTravel %= FOOTSTEP_STRIDE;
-    this.playSample("footstep", player.carrying ? 0.34 : 0.28,
-      (player.carrying ? 0.9 : 1) * (0.94 + Math.random() * 0.12));
   }
 
   private updateCampfire(
@@ -364,14 +357,6 @@ export class SynthAudio {
     this.fireSource.start();
   }
 
-  private maybeGrowl(volume: number, force = false): void {
-    if (!this.context) return;
-    const now = this.context.currentTime;
-    if (!force && (now - this.lastGrowlAt < 1.1 || Math.random() > 0.34)) return;
-    this.lastGrowlAt = now;
-    this.playSample("wolf-growl", volume, 0.82 + Math.random() * 0.16);
-  }
-
   private tone(frequency: number, duration: number, type: OscillatorType, volume: number, endRatio: number): void {
     if (!this.context || !this.effectsBus) return;
     const now = this.context.currentTime;
@@ -386,6 +371,88 @@ export class SynthAudio {
     oscillator.connect(gain).connect(this.effectsBus);
     oscillator.start(now);
     oscillator.stop(now + duration + 0.02);
+  }
+
+  /**
+   * 挥砍的风声。**重做的攻击音就是这个。**
+   *
+   * 原来用的是 weapon-swing 采样：一记很干的"唰"，两个变体轮换，
+   * 0.55 秒冷却下连着按就是机关枪，而且它和命中的 flesh-hit 抢同一个频段。
+   *
+   * 换成带通滤波的白噪 + **频率下扫**：起手在高频（空气被劈开），
+   * 收尾掉到中低频（力道落下去）。听感上是"挥"而不是"敲"，
+   * 而且能量集中在一小段带宽里，连挥也不会糊成一片。
+   * 包络是先冲后落（前 18% 冲到顶），这一下让它有"甩"的重量感。
+   */
+  private swoosh(duration: number, volume: number, fromHz: number, toHz: number, q = 1.1): void {
+    if (!this.context || !this.effectsBus) return;
+    const now = this.context.currentTime;
+    const samples = Math.ceil(this.context.sampleRate * duration);
+    const buffer = this.context.createBuffer(1, samples, this.context.sampleRate);
+    const data = buffer.getChannelData(0);
+    const peak = Math.max(1, Math.floor(samples * 0.18));
+    for (let index = 0; index < samples; index += 1) {
+      // 起手快速冲到顶，之后平滑衰减 —— 线性衰减听起来像"泄气"。
+      const envelope = index < peak
+        ? index / peak
+        : Math.pow(1 - (index - peak) / (samples - peak), 1.8);
+      data[index] = (Math.random() * 2 - 1) * envelope;
+    }
+    const source = this.context.createBufferSource();
+    const filter = this.context.createBiquadFilter();
+    const gain = this.context.createGain();
+    filter.type = "bandpass";
+    filter.Q.value = q;
+    filter.frequency.setValueAtTime(fromHz, now);
+    filter.frequency.exponentialRampToValueAtTime(Math.max(60, toHz), now + duration);
+    gain.gain.value = volume;
+    source.buffer = buffer;
+    source.connect(filter).connect(gain).connect(this.effectsBus);
+    source.start(now);
+  }
+
+  /**
+   * 带节流的闷响，给**每挨一口就触发**的那两个事件用（反伤、玩家受击）。
+   *
+   * 节流按"截止频率"分桶而不是全局一把锁：反伤（200Hz）和受击（240Hz）
+   * 各自计时，互不影响 —— 否则挨一口咬会把同一瞬间的反伤声吃掉，
+   * 玩家就看不出铁甲在起作用。
+   */
+  private thudThrottled(duration: number, volume: number, cutoffHz: number, minGapMs: number): void {
+    if (!this.context) return;
+    const now = this.context.currentTime;
+    const key = Math.round(cutoffHz);
+    if (now - (this.lastThudAt.get(key) ?? -Infinity) < minGapMs / 1000) return;
+    this.lastThudAt.set(key, now);
+    this.thud(duration, volume, cutoffHz);
+  }
+
+  /**
+   * 闷响。所有"打到东西"的反馈都走它 —— 低通截止决定材质：
+   * 越低越像肉、越高越像石头或铁。
+   *
+   * 用一个原语而不是一堆采样，是为了让这些高频反馈**天然处在同一个频段里**：
+   * 五只狗同时咬中时它们互相叠加成一记更响的闷响，而不是五种不同音色打架。
+   */
+  private thud(duration: number, volume: number, cutoffHz: number): void {
+    if (!this.context || !this.effectsBus) return;
+    const now = this.context.currentTime;
+    const samples = Math.ceil(this.context.sampleRate * duration);
+    const buffer = this.context.createBuffer(1, samples, this.context.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let index = 0; index < samples; index += 1) {
+      data[index] = (Math.random() * 2 - 1) * Math.pow(1 - index / samples, 2.4);
+    }
+    const source = this.context.createBufferSource();
+    const filter = this.context.createBiquadFilter();
+    const gain = this.context.createGain();
+    filter.type = "lowpass";
+    filter.frequency.setValueAtTime(cutoffHz, now);
+    filter.frequency.exponentialRampToValueAtTime(Math.max(60, cutoffHz * 0.45), now + duration);
+    gain.gain.value = volume;
+    source.buffer = buffer;
+    source.connect(filter).connect(gain).connect(this.effectsBus);
+    source.start(now);
   }
 
   private noise(duration: number, volume: number): void {

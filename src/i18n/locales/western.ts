@@ -154,7 +154,7 @@ const copy: Record<string, WesternText> = {
   "intro.phase.day": w("Jour", "Tag", "Giorno", "Dia"),
   "intro.phase.night": w("Nuit", "Nacht", "Notte", "Noite"),
   "intro.tagline": w("Trouvez cinq barils d'essence. Quittez le désert.", "Finde fünf Benzinfässer. Entkomme der Wüste.", "Trova cinque barili di benzina. Fuggi dal deserto.", "Encontre cinco barris de gasolina. Saia do deserto."),
-  "intro.title": w("Survivant du désert", "Überleben in der Wüste", "Sopravvissuto del deserto", "Sobrevivente do deserto"),
+  "intro.title": w("Le dernier camion", "Der letzte Truck", "L'ultimo camion", "O último caminhão"),
   "intro.verb1": w("Trouver de l'eau et de l'essence", "Wasser und Benzin finden", "Trova acqua e benzina", "Encontre água e gasolina"),
   "intro.verb2": w("Alimenter le feu. Repousser les chiens.", "Feuer nähren. Hunde abwehren.", "Alimenta il fuoco. Respingi i cani.", "Alimente a fogueira. Afaste os cães."),
   "intro.verbs.aria": w("Objectifs du jour et de la nuit", "Ziele für Tag und Nacht", "Obiettivi diurni e notturni", "Objetivos de dia e de noite"),

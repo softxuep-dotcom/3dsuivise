@@ -149,7 +149,7 @@ export const en: Record<string, string> = {
   "intro.phase.day": "Day",
   "intro.phase.night": "Night",
   "intro.tagline": "Find five fuel barrels. Drive out.",
-  "intro.title": "Desert Survivor",
+  "intro.title": "Last Truck Out",
   "intro.verb1": "Find water and fuel",
   "intro.verb2": "Feed the fire. Hold off the dogs.",
   "intro.verbs.aria": "Day and night objectives",

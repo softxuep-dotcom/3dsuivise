@@ -148,7 +148,7 @@ export const zh: Record<string, string> = {
   "intro.phase.day": "白天",
   "intro.phase.night": "夜晚",
   "intro.tagline": "找齐 5 桶汽油，开车离开沙漠。",
-  "intro.title": "荒漠幸存者",
+  "intro.title": "最后一辆车",
   "intro.verb1": "找水、找汽油",
   "intro.verb2": "添柴、挡狼",
   "intro.verbs.aria": "昼夜目标",
