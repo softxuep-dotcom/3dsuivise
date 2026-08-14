@@ -428,6 +428,25 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
 .intro-card .eyebrow { color: var(--ember); }
 .tagline { margin: 13px 0 22px; color: #bcd0d7; font-size: 17px; }
 
+.pause-card {
+  text-align: center;
+}
+
+/* 看广告续命：和"再来一局"区分开 —— 它是主动作，用暖色。 */
+.revive-button {
+  margin-bottom: 10px;
+  border-color: rgba(242, 186, 106, .5);
+  background: linear-gradient(180deg, rgba(242, 186, 106, .22), rgba(242, 186, 106, .1));
+  color: #f7dcae;
+}
+
+/* 暂停键做成方形小键，和背包键并排；II 是通用暂停符号，不吃翻译。 */
+#pause-button {
+  min-width: 44px;
+  font-family: ui-monospace, monospace;
+  letter-spacing: .12em;
+}
+
 .records-line {
   margin: 14px 0 0;
   padding: 7px 12px;

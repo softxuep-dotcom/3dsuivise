@@ -79,6 +79,14 @@ const MAX_WOLVES = 120;
 /** 地形拒绝整步移动时依次尝试的缩短比例，见 stepAxis()。 */
 const MOVE_STEP_FALLBACKS = [1, 0.5, 0.25];
 /** 挨打后多少秒内不能休息（原本是"附近有狼"，夜里几乎恒为真）。 */
+/**
+ * 站定多久开始休息。5 → 4 秒。
+ *
+ * 这个门槛是"休息"这件事的全部成本 —— 它换来的是劳力和生命的快速回复，
+ * 而战斗封锁（REST_COMBAT_LOCK = 6 秒）本来就挡住了"边打边回"。
+ * 5 秒在实战里常常等不到：夜里几乎每 6 秒就会被摸一下，等于永远进不去。
+ */
+const REST_IDLE_SECONDS = 4;
 const REST_COMBAT_LOCK = 6;
 
 /**
@@ -256,6 +264,8 @@ const ARMOR_STATS: Record<ArmorKind, ArmorStat> = {
 const COMBO_WINDOW = 1.2;
 
 /** 精英狼从第 3 天起混入狼群，之后逐日提高出现率，但永远只是少数。 */
+/** 小狼与大狼的数值封顶在第几夜。到这一夜为止照常成长，之后不再变强。 */
+const PACK_SCALING_MAX_DAY = 3;
 const ELITE_MIN_DAY = 3;
 
 // 肉的两级。生肉顶饿不回体力，烤肉才回 —— 烤肉的价值全在体力那一条上。
@@ -291,9 +301,11 @@ const THERMAL_COMFORT_LOW = 35;
 const THERMAL_COMFORT_HIGH = 62;
 
 // --- 仙人掌汁：对齐原图 I00B（触发器 006________11）的随机区间 ---
-const JUICE_WATER: readonly [number, number] = [8, 16];
+// 补水 8~16 → 11~20、降温 5~10 → 8~14。仙人掌是满地都有的散装水源，
+// 但一趟只回一格多水的话，玩家宁可绕远路去井；抬一点让"顺手割一根"真的顶用。
+const JUICE_WATER: readonly [number, number] = [11, 20];
 const JUICE_HUNGER: readonly [number, number] = [1, 5];
-const JUICE_WARMTH: readonly [number, number] = [5, 10];
+const JUICE_WARMTH: readonly [number, number] = [8, 14];
 const DROP_LIFETIME = 180;
 
 // ============================================================================
@@ -415,6 +427,15 @@ const WELL_REFILL_SECONDS = 210;
 const WATER_RESTORE = 26;
 /** 一份水降 14 点体温：正好能把刚中暑的 100 拉到解除线 92 以下。 */
 const WATER_WARMTH_COST = 14;
+
+/**
+ * 复活后的无敌时长与清场半径。
+ *
+ * 两个都不能省：只清场不无敌，夜里几十只狗，推开 12 米也就两秒的事；
+ * 只无敌不清场，无敌一结束你还站在犬群正中间。
+ */
+const REVIVE_GRACE_SECONDS = 3.5;
+const REVIVE_CLEAR_RADIUS = 12;
 
 /** 走到几米内可以搬起一桶油。 */
 const FUEL_PICKUP_REACH = 2.6;
@@ -618,6 +639,7 @@ export class GameSimulation {
     this.elapsed += delta;
     this.phaseTime -= delta;
     this.combatTimer = Math.max(0, this.combatTimer - delta);
+    this.reviveGrace = Math.max(0, this.reviveGrace - delta);
     this.coolCooldown = Math.max(0, this.coolCooldown - delta);
     this.warmCooldown = Math.max(0, this.warmCooldown - delta);
     if (!isMoving) this.player.idleTime += delta;
@@ -663,6 +685,11 @@ export class GameSimulation {
   /** 死亡瞬间的瘫痪状态，供结算文案指出真正的死因链。 */
   deathCondition: SurvivalCondition = "normal";
 
+  /** 复活后的无敌剩余秒数。见 revive()。 */
+  private reviveGrace = 0;
+  /** 本次交互开始前的静止时长；劳力不足导致交互落空时用它还原，见 spendStamina()。 */
+  private idleTimeBeforeAction = 0;
+
   private endGame(cause: DeathCause): void {
     this.deathCondition = this.player.condition;
     this.setResting(false);
@@ -670,6 +697,85 @@ export class GameSimulation {
     this.gameOverSent = true;
     this.deathCause = cause;
     this.events.push({ type: "game-over" });
+  }
+
+  /**
+   * 原地复活。给激励视频用 —— 玩家看完广告，从倒下的地方接着打。
+   *
+   * 三条设计约束：
+   *
+   * 1. **不是满血复活。** 五轴各回到 45 上下就够站起来走，但离舒服还远 ——
+   *    复活是"再给你一次机会"，不是"这一局重来"。给满的话玩家会把广告当补给站，
+   *    水与食物那两条轴在他眼里就不再是威胁。
+   * 2. **必须把狗推开。** 死在犬群中间的话，复活的下一帧就会被咬回去，
+   *    那次广告等于白看 —— 这是所有"原地续命"最容易翻车的地方。
+   * 3. **给一段无敌时间。** 推开还不够：夜里几十只狗，推开 8 米也就两秒的事。
+   *
+   * 返回 false 表示这局不是"死了"的状态（已通关、或压根没死），调用方不该发奖励。
+   */
+  revive(): boolean {
+    if (this.running || this.victorySent || !this.gameOverSent) return false;
+    this.gameOverSent = false;
+    this.deathCause = null;
+    this.deathCondition = "normal";
+    this.running = true;
+    this.player.health = Math.max(this.player.health, 45);
+    this.player.water = Math.max(this.player.water, 45);
+    this.player.hunger = Math.max(this.player.hunger, 45);
+    this.player.stamina = Math.max(this.player.stamina, this.player.maxStamina * 0.5);
+    // 体温拉回舒适区中段：中暑/失温本身不致死，但带着 −75% 移速站起来
+    // 等于没复活。
+    this.player.warmth = clamp(this.player.warmth, 35, 65);
+    this.player.condition = "normal";
+    this.player.hurtFlash = 0;
+    this.combatTimer = 0;
+    this.reviveGrace = REVIVE_GRACE_SECONDS;
+    this.pushWolvesAway(REVIVE_CLEAR_RADIUS);
+    this.events.push({ type: "revive" });
+    return true;
+  }
+
+  /**
+   * 把半径内的狗推到半径外，并让它们暂时丢失目标。
+   *
+   * **不能只算一次落点**：直接沿"背离玩家"推出去，落点常常是崖壁或陡坡，
+   * 而 findNearestWalkablePoint 会把它拉回最近的可走格 —— 那一拉很可能又回到圈里。
+   * 实测第一版 8 只只推走 5 只，剩下 3 只贴着玩家，复活的意义直接没了。
+   *
+   * 所以改成**沿它原来的方位扇形试角度**：先试正背面，不行就左右各偏 22.5° 一路扫，
+   * 找到第一个既可走、又确实在圈外的落点。狗因此仍然大致留在它原来那一侧，
+   * 只是被顶开了 —— 比统一丢到某个方向自然。
+   */
+  private pushWolvesAway(radius: number): void {
+    const target = radius + 1.5;
+    for (const wolf of this.wolves) {
+      if (wolf.mode === "dead") continue;
+      if (distance(wolf, this.player) >= radius) continue;
+      const bearing = distance(wolf, this.player) < 0.001
+        ? this.random() * TAU
+        : Math.atan2(wolf.z - this.player.z, wolf.x - this.player.x);
+      let placed: Vec2 | null = null;
+      for (let step = 0; step < 16 && !placed; step += 1) {
+        // 0, +22.5°, −22.5°, +45°, −45° … 从正背面往两边扫。
+        const offset = Math.ceil(step / 2) * (Math.PI / 8) * (step % 2 === 0 ? 1 : -1);
+        const angle = bearing + offset;
+        const candidate = {
+          x: clamp(this.player.x + Math.cos(angle) * target, -this.world.size / 2 + 1, this.world.size / 2 - 1),
+          z: clamp(this.player.z + Math.sin(angle) * target, -this.world.size / 2 + 1, this.world.size / 2 - 1),
+        };
+        if (!isTerrainWalkable(this.world, candidate)) continue;
+        if (distance(candidate, this.player) < radius) continue;
+        placed = candidate;
+      }
+      if (placed) {
+        wolf.x = placed.x;
+        wolf.z = placed.z;
+      }
+      // 找不到落点的极端情况（四面都是崖）也要断掉仇恨，别让它贴脸继续咬。
+      wolf.mode = "patrol";
+      wolf.lostTimer = 0;
+      wolf.attackCooldown = Math.max(wolf.attackCooldown, 1.2);
+    }
   }
 
   private endGameWithVictory(): void {
@@ -684,6 +790,9 @@ export class GameSimulation {
   requestInteraction(): void {
     // 驶离期间整个操作面锁死：那十秒里玩家已经在车上了，按什么都不该有反应。
     if (!this.running || this.departTimer > 0) return;
+    // 记下按之前的静止时长：这次点击如果因为劳力不够而什么都没做，
+    // 它要被原样还回去，见 spendStamina()。
+    this.idleTimeBeforeAction = this.player.idleTime;
     this.noteActivity();
 
     // 水分是"归零即死"的轴。一旦玩家站在枯木堆里，E 会一直被拾取抢走，
@@ -856,6 +965,11 @@ export class GameSimulation {
     }
   }
 
+  /** 复活无敌还剩多久；HUD 拿它提示"这几秒不会掉血"。 */
+  getReviveGrace(): number {
+    return this.reviveGrace;
+  }
+
   isDeparting(): boolean {
     return this.departTimer > 0;
   }
@@ -901,6 +1015,15 @@ export class GameSimulation {
    */
   private spendStamina(cost: number, labelKey: string): boolean {
     if (this.player.stamina < cost) {
+      /*
+       * 劳力不够 = **这次点击什么也没发生**，所以"站着不动"的计时不该被它清零。
+       *
+       * 原先 requestInteraction 一进来就 noteActivity()，于是脱力时狂点捡柴
+       * 会把 idleTime 永远压在 0，人就再也进不了休息 —— 而休息正是劳力唯一的
+       * 快速回复途径。玩家因此卡在"没劳力→点不动→不能休息→还是没劳力"里。
+       * 提水、挖矿、割仙人掌、建造走的是同一个函数，一起修好。
+       */
+      this.player.idleTime = this.idleTimeBeforeAction;
       this.events.push({ type: "exhausted" });
       this.events.push({ type: "message", key: "msg.5", params: { v0: loc(labelKey), v1: cost } });
       return false;
@@ -976,10 +1099,18 @@ export class GameSimulation {
     if (!this.running || this.departTimer > 0 || this.player.attackCooldown > 0 || this.player.carrying) return;
     this.noteActivity();
     const stats = WEAPON_STATS[this.player.weapon];
-    // 劳力不足不会禁止挥砍，但伤害衰减到 60%，"脱力"是可感知的惩罚而不是硬锁。
+    /*
+     * **挥砍不再扣劳力。**
+     *
+     * 劳力从此只由采集与建造消耗，战斗不再和它抢预算 —— 原先夜里一边挨咬一边
+     * 眼看劳力见底，而劳力见底又意味着白天采不动，一次守夜失败会连着毁掉第二天。
+     *
+     * `stats.stamina` 没有删，含义变成**挥满力所需的储备**：劳力低于这个数
+     * 照样能砍，但伤害衰减到 60%。于是"把自己采空了再去打架"仍然有代价，
+     * 只是代价不再是"打架本身让你更采不动"。
+     */
     const exhausted = this.player.stamina < stats.stamina;
     if (exhausted) this.events.push({ type: "exhausted" });
-    else this.player.stamina = Math.max(0, this.player.stamina - stats.stamina);
     this.player.attackCooldown = ATTACK_COOLDOWN * this.getConditionCooldownScale();
     this.player.attackFlash = 0.22;
     this.events.push({ type: "attack" });
@@ -1719,7 +1850,7 @@ export class GameSimulation {
     this.player.facing = movement;
     const carryingPenalty = this.player.carrying ? 0.54 : 1;
     const needsPenalty = this.player.hunger < 12 || this.player.water < 12 ? 0.84 : 1;
-    // 武器与护甲的移速系数相乘。全重装（熔渣重刀 + 熔渣板甲）是 0.92 × 0.88 = 0.810
+    // 武器与护甲的移速系数相乘。全重装（砍刀Ⅲ + 铁甲Ⅲ）是 0.92 × 0.88 = 0.810
     // → 6.64，全轻装是 1.06 × 1.09 = 1.155 → 9.47，差 43%。
     // 守油大狼发现玩家后会短程冲刺；全重装不能再无伤拉着它们绕地形，
     // 轻装仍能靠机动脱离，装备选择因此有明确取舍。
@@ -1897,17 +2028,20 @@ export class GameSimulation {
     // 按距离判定会让夜里任何时候都休息不了 —— 夜间地图上本来就有几十只狼，
     // 20 米的追击半径几乎覆盖全图，玩家只会看到一句解释不了的"附近有狼"。
     if (this.combatTimer > 0) return loc("sim.42", { v0: Math.ceil(this.combatTimer) });
-    if (player.idleTime < 5) return loc("sim.43", { v0: Math.ceil(5 - player.idleTime) });
+    if (player.idleTime < REST_IDLE_SECONDS) return loc("sim.43", { v0: Math.ceil(REST_IDLE_SECONDS - player.idleTime) });
     return null;
   }
 
   private updateRest(delta: number): void {
     // 劳力没满时也值得休息 —— 休息是劳力的主要回复途径。
     const wantsRecovery = this.player.health < this.player.maxHealth || this.player.stamina < this.player.maxStamina;
-    const canRest = this.player.idleTime >= 5 && wantsRecovery && this.getRestBlocker() === null;
+    const canRest = this.player.idleTime >= REST_IDLE_SECONDS && wantsRecovery && this.getRestBlocker() === null;
     this.setResting(canRest);
     // 恒定流失是 HEALTH_DECAY，休息的净回复要减掉它才是玩家实际看到的速度。
-    const healingRate = (this.player.hunger < 40 || this.player.water < 40 ? 0.9 : 1.5) + HEALTH_DECAY;
+    // 净回复 1.5 → 1.9（吃不饱时 0.9 → 1.1）。站定 4 秒的门槛本来就不低，
+    // 回得太慢的话"休息"只是名义上的选择：满血要 66 秒，玩家宁可继续跑。
+    // 提到 1.9 之后是 53 秒，仍然是一段要主动付出的时间。
+    const healingRate = (this.player.hunger < 40 || this.player.water < 40 ? 1.1 : 1.9) + HEALTH_DECAY;
     if (this.player.resting) this.player.health = clamp(this.player.health + delta * healingRate, 0, this.player.maxHealth);
   }
 
@@ -2084,7 +2218,9 @@ export class GameSimulation {
           this.events.push({ type: "dodge" });
           return;
         }
-        const damage = Math.max(1, wolf.attack - this.getDefense());
+        // 复活后的无敌窗口：伤害整个免掉，但受击特效照常 ——
+        // 玩家要看得见"它咬到我了、只是没扣血"，否则会以为狗卡住了。
+        const damage = this.reviveGrace > 0 ? 0 : Math.max(1, wolf.attack - this.getDefense());
         this.player.health -= damage;
         this.player.hurtFlash = 0.3;
         this.events.push({ type: "player-hit", amount: damage });
@@ -2342,8 +2478,19 @@ export class GameSimulation {
    * 每夜的成长曲线：+3 攻击、+12 生命、+4% 移速，且不封顶。
    * 原图是每夜 +25 攻 +300 血（200 级上限），这里按我们 3~5 夜的体量缩放。
    */
-  private getNightScaling(): { attack: number; health: number; speed: number } {
-    const nights = Math.max(0, this.day - 1);
+  /**
+   * 每夜的成长曲线：+3 攻击、+12 生命、+4% 移速。
+   *
+   * `maxNights` 是**封顶**。小狼与大狼封在第 3 夜（PACK_SCALING_MAX_DAY），
+   * 因为不封顶的话第 10 夜的小狼咬伤 36，已经超过第 1 夜的大狼（20）——
+   * 玩家攒到三阶装备之后反而越打越吃力，努力方向是反的。
+   *
+   * 封顶之后夜晚仍然会变难，只是换了个来源：配额还在涨（40 → 90，第 5 夜封顶）、
+   * 大狼占比还在涨（22% → 58%）、精英狼从第 ELITE_MIN_DAY 夜开始出现且**不封顶**。
+   * 也就是"来得更多、成分更凶"，而不是"每一只都变成海绵"。
+   */
+  private getNightScaling(maxNights = Number.POSITIVE_INFINITY): { attack: number; health: number; speed: number } {
+    const nights = Math.min(Math.max(0, this.day - 1), maxNights);
     return { attack: nights * 3, health: nights * 12, speed: 1 + nights * 0.04 };
   }
 
@@ -2384,6 +2531,8 @@ export class GameSimulation {
     const kind: WolfKind = options.forceKind
       ?? (tutorialWolf ? "small" : kindRoll < eliteChance ? "elite" : kindRoll < eliteChance + largeChance ? "large" : "small");
     const scaling = this.getNightScaling();
+    // 小狼与大狼吃封顶后的曲线；精英狼吃完整曲线，它才是后期压力的来源。
+    const packScaling = this.getNightScaling(PACK_SCALING_MAX_DAY - 1);
 
     let maxHealth: number;
     let attack: number;
@@ -2402,18 +2551,21 @@ export class GameSimulation {
       speed = 3.05;
     } else if (kind === "large") {
       // 大狼是装备门槛，不该再被初始匕首几刀带走；生命、咬伤、护甲和追击速度一起抬高。
-      maxHealth = 160 + scaling.health;
-      attack = 20 + scaling.attack;
+      maxHealth = 160 + packScaling.health;
+      attack = 20 + packScaling.attack;
       defense = 7;
-      speed = (4.2 + this.random() * 0.65) * scaling.speed;
+      speed = (4.2 + this.random() * 0.65) * packScaling.speed;
     } else {
       // 小狗 58 → 72 血：初始匕首（攻 30 − 防 1 = 29）从**两刀**变成三刀。
       // 每只多挨一刀，交火时间拉长 50%，被咬的次数才真正上去 ——
       // 这比加数量更省算力，也不会把第一夜变成一堵狗墙。
-      maxHealth = 72 + scaling.health;
-      attack = 10 + scaling.attack;
+      maxHealth = 72 + packScaling.health;
+      // 咬伤 10 → 9。夜里同时贴上来的多半是小狗，第 1 夜三只咬满一轮
+      // 从 30 降到 27；每夜 +3 的成长曲线没动，所以后期差距会被抹平 ——
+      // 这一刀只松开场，不松终局。
+      attack = 9 + packScaling.attack;
       defense = 1;
-      speed = (3.65 + this.random() * 0.75) * scaling.speed;
+      speed = (3.65 + this.random() * 0.75) * packScaling.speed;
     }
     // 野狼白天只在自己的地盘游荡，不参与夜袭的成长曲线，所以稍微弱一点。
     if (role === "wild") {

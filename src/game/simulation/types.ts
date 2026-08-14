@@ -45,9 +45,9 @@ export type EquipLine = "none" | "saber" | "sword" | "scale" | "hide";
  * 武器：共用的阶 0，加两条各三阶的线。**全部是刀与剑，没有长柄武器** ——
  * 可用的攻击动画只有一个单手劈砍，拿着矛做劈砍是错的。
  *
- *   刀线 saber —— 阔刃（铁片砍刀 / 锻铁阔刀 / 熔渣重刀）。
+ *   刀线 saber —— 阔刃（砍刀Ⅰ / Ⅱ / Ⅲ）。
  *                 扇形 220°→280°，一刀扫过身周一大圈，破甲，命中击退。
- *   剑线 sword —— 细刃（骨柄短剑 / 兽牙细剑 / 裂齿长剑）。
+ *   剑线 sword —— 细刃（剑Ⅰ / Ⅱ / Ⅲ）。
  *                 扇形只有 100°，但咬住同一个目标会越打越疼（连击）。
  *
  * 两条线的分化**完全不依赖攻速**：一个动画意味着冷却必须全线统一，
@@ -511,6 +511,8 @@ export type GameEvent =
   | { type: "phase"; phase: Phase; day: number }
   | { type: "message"; key: string; params?: LocalizedText["params"] }
   | { type: "victory" }
+  /** 看完激励视频后原地复活。 */
+  | { type: "revive" }
   | { type: "game-over" };
 
 export interface InteractionHint {

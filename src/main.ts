@@ -6,6 +6,7 @@ import { InputController } from "./game/input/InputController";
 import { GameSimulation } from "./game/simulation/GameSimulation";
 import { GameRenderer } from "./render/GameRenderer";
 import { HudController } from "./ui/HudController";
+import { createPlatform } from "./platform";
 
 /**
  * index.html 内联脚本留下的引导桥，见那段注释。
@@ -99,6 +100,26 @@ async function bootstrap(): Promise<void> {
     (window as unknown as { game: unknown }).game = { simulation, world, hud };
   }
 
+  /*
+   * 平台 SDK 在这里握手，排在**重资源之前**：Poki 要求 gameLoadingFinished()
+   * 报的是"玩家可以开玩了"，那就得先有个 SDK 可报。
+   *
+   * createPlatform() 永远 resolve —— 拿不到 SDK 就退回 NullPlatform。
+   * 广告钩子把静音和输入冻结绑在一起：广告一开始，声音压掉、模拟层停住，
+   * 玩家不会在看广告的时候被狗咬死。
+   */
+  const platform = await createPlatform({
+    onAdStart: () => {
+      audio.setAdMuted(true);
+      hud.setAdPlaying(true);
+    },
+    onAdEnd: () => {
+      audio.setAdMuted(false);
+      hud.setAdPlaying(false);
+    },
+  });
+  if (import.meta.env.DEV) console.info(`[platform] ${platform.name}`);
+
   setProgress(0.58, t("boot.terrain"));
   await nextPaint();
 
@@ -133,12 +154,53 @@ async function bootstrap(): Promise<void> {
     onAttack: () => runGameplayAction(() => simulation.requestAttack()),
     onThermal: () => runGameplayAction(() => simulation.requestThermalAction()),
     onInventory: () => hud.toggleInventory(),
+    onPause: () => hud.togglePause(),
   });
   input.bindCanvas(renderer.canvas, (x, y) => renderer.screenToWorld(x, y));
 
   let started = false;
   let previousTime = performance.now();
   let hiddenAt = 0;
+
+  /*
+   * "可玩 / 不可玩"的唯一报点。
+   *
+   * HUD 每帧自查 isGameplayBlocked()（开背包会暂停模拟层、广告期间会冻结），
+   * 翻转时回调到这里。所有暂停路径因此只有这一处要维护 ——
+   * 以后再加什么会暂停游戏的 UI，平台信号自动跟着对。
+   */
+  /*
+   * 死后续命：看一次激励视频原地复活，一局三次。
+   *
+   * 两条不能省的规矩：
+   *   - `rewardedBreak()` 返回 false（没看完 / 加载失败 / 平台没有广告）**一次都不能给**；
+   *   - 次数在这里扣而不是在 HUD 里扣 —— 广告没播成不该消耗次数。
+   *
+   * 平台不支持激励视频时（本地、GitHub Pages）按钮根本不出现，玩家看到的还是原来的结算页。
+   */
+  let revivesLeft = 3;
+  const offerRevive = (): void => {
+    if (!platform.supportsRewarded || revivesLeft <= 0) return;
+    hud.showReviveOffer(revivesLeft, () => {
+      void (async () => {
+        const watched = await platform.rewardedBreak();
+        if (!watched) {
+          // 没看完就什么都不发生：次数不扣，按钮放回去让他再试。
+          offerRevive();
+          return;
+        }
+        if (!simulation.revive()) return;
+        revivesLeft -= 1;
+        hud.resumeAfterRevive();
+        platform.gameplayStart();
+      })();
+    });
+  };
+
+  hud.onGameplayBlockedChange((blocked) => {
+    if (blocked) platform.gameplayStop();
+    else if (started && simulation.running && !document.hidden) platform.gameplayStart();
+  });
 
   // 音频不在这里解锁：进场已经不由用户手势触发，此刻 resume 必然被浏览器拒掉。
   // 交给上面的 unlockAudio。
@@ -147,10 +209,28 @@ async function bootstrap(): Promise<void> {
     started = true;
     simulation.start();
     hud.showGame();
+    platform.gameplayStart();
   };
 
-  document.getElementById("restart-button")?.addEventListener("click", () => window.location.reload());
-  document.getElementById("victory-restart-button")?.addEventListener("click", () => window.location.reload());
+  /*
+   * 重开前插一次插屏广告。
+   *
+   * 时机是**点了"再来一局"之后**而不是死亡的那一刻 —— 这是平台反复强调的：
+   * 广告要放在玩家已经表达"我要继续"的自然断点上。放不放由平台自己决定。
+   *
+   * 按钮点完立刻置灰，否则连点两下会叠两次广告请求。
+   */
+  const restartWithBreak = async (button: HTMLElement | null): Promise<void> => {
+    if (button instanceof HTMLButtonElement) button.disabled = true;
+    await platform.commercialBreak();
+    window.location.reload();
+  };
+  for (const id of ["restart-button", "victory-restart-button"]) {
+    const button = document.getElementById(id);
+    button?.addEventListener("click", () => { void restartWithBreak(button); });
+  }
+  document.getElementById("pause-button")?.addEventListener("click", () => hud.togglePause());
+  document.getElementById("pause-resume")?.addEventListener("click", () => hud.setPaused(false));
   document.getElementById("sound-button")?.addEventListener("click", async () => {
     await audio.unlock().catch(() => { /* 同上 */ });
     const enabled = audio.toggle();
@@ -163,9 +243,12 @@ async function bootstrap(): Promise<void> {
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
       hiddenAt = performance.now();
+      // 切到后台就不算在玩了。不报的话平台统计里会出现"挂了一夜的一局"。
+      platform.gameplayStop();
     } else {
       previousTime = performance.now();
       if (started && hiddenAt > 0) hud.showToast(t("hud.resumed"), 1.5);
+      if (started && simulation.running && !hud.isGameplayBlocked()) platform.gameplayStart();
     }
   });
 
@@ -185,6 +268,10 @@ async function bootstrap(): Promise<void> {
           renderer.barrierHit(event.itemId);
         }
         if (event.type === "game-over") input.cancelMoveTarget();
+        // 结算页不算在玩。这一对信号报得越准，平台越不会把广告插在
+        // 玩家正被狗围着的时候。
+        if (event.type === "game-over" || event.type === "victory") platform.gameplayStop();
+        if (event.type === "game-over") offerRevive();
       }
       hud.update(delta);
       renderer.render(delta);
@@ -194,6 +281,7 @@ async function bootstrap(): Promise<void> {
   requestAnimationFrame(frame);
 
   setProgress(1, t("boot.ready"));
+  platform.loadingFinished();
   // 加载完直接进场，不再等一次点击。
   // 生存时钟不会因此空转 —— 它等玩家第一次移动才起跑（GameSimulation.clockStarted）。
   enterGame();

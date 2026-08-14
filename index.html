@@ -68,6 +68,7 @@
         <div class="bottom-right">
           <div class="utility-buttons">
             <button id="thermal-button" class="utility-button" type="button" data-i18n-attr="aria-label:hud.thermal.aria"><b id="thermal-state">—</b></button>
+            <button id="pause-button" class="utility-button" type="button" data-i18n-attr="aria-label:pause.aria">II</button>
             <button id="backpack-button" class="utility-button" type="button" data-i18n-attr="aria-label:hud.pack.aria"><span data-i18n="hud.pack.label">Pack</span> <b id="bag-usage">0/8</b></button>
           </div>
           <div class="action-buttons">
@@ -150,11 +151,21 @@
         </div>
       </div>
 
+      <div id="pause-overlay" class="overlay hidden" role="dialog" aria-modal="true">
+        <div class="intro-card pause-card">
+          <h2 data-i18n="pause.title">Paused</h2>
+          <p data-i18n="pause.hint">Press ESC to resume</p>
+          <button id="pause-resume" class="primary-button" type="button" data-i18n="pause.resume">Resume</button>
+        </div>
+      </div>
+
       <div id="game-over" class="overlay hidden">
         <div class="intro-card game-over-card">
           <p class="eyebrow" data-i18n="over.eyebrow">The sands remember your tracks</p>
           <h2 data-i18n="over.title">Buried by the sand</h2>
           <p id="result-copy"></p>
+          <!-- 只有平台支持激励视频、且这局还有次数时才显示（HudController 控制）。 -->
+          <button id="revive-button" class="primary-button revive-button hidden" type="button"></button>
           <button id="restart-button" class="primary-button" type="button" data-i18n="over.restart">Hold one more night</button>
         </div>
       </div>

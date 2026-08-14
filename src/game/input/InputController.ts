@@ -11,6 +11,7 @@ interface InputCallbacks {
   onAttack: () => void;
   onThermal: () => void;
   onInventory: () => void;
+  onPause: () => void;
 }
 
 export class InputController {
@@ -70,6 +71,7 @@ export class InputController {
   }
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
+    // Escape 不进这张表：浏览器的全屏退出等原生行为要留给它，我们只是**顺带**监听。
     const gameKeys = ["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "KeyE", "KeyQ", "KeyB", "Tab", "Space"];
     if (gameKeys.includes(event.code)) event.preventDefault();
     if (event.repeat) {
@@ -81,6 +83,9 @@ export class InputController {
     if (event.code === "Space") this.callbacks.onAttack();
     if (event.code === "KeyQ") this.callbacks.onThermal();
     if (event.code === "KeyB" || event.code === "Tab") this.callbacks.onInventory();
+    // Poki Requirements 第 15 条：键盘游戏要有 ESC 或空格暂停。
+    // 空格已经是攻击，所以只能是 ESC。
+    if (event.code === "Escape") this.callbacks.onPause();
   };
 
   private readonly onKeyUp = (event: KeyboardEvent): void => {

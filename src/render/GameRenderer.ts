@@ -4,7 +4,7 @@ import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import type { GameSimulation } from "../game/simulation/GameSimulation";
 import { clamp, lerp, mulberry32 } from "../game/simulation/geometry";
 import type { CampDefinition, CritterState, GroundItem, Vec2, WeaponKind, WolfState, WorldDefinition, WorldDrop } from "../game/simulation/types";
-import { CRITTER_SPECS, FUEL_REQUIRED } from "../game/simulation/types";
+import { BARRIER_STATS, CRITTER_SPECS, FUEL_REQUIRED } from "../game/simulation/types";
 import { distanceToCampApproach, terrainHeightAt, terrainMoistureAt, terrainSaltAt, terrainSlopeAt } from "../game/terrain/TerrainModel";
 import { instantiateAnimal, loadAnimal, type AnimalAsset, type AnimalInstance } from "./AnimalModels";
 import { createCritterMesh } from "./CritterModels";
@@ -44,6 +44,11 @@ interface WolfView {
  * 直接拿去乘血条，头犬的血条会跟着长到近三倍宽、飘到头顶两米以上。
  * 这里保留接近原来的那组倍率，只留下"越大的狗血条越宽"这一点。
  */
+/** 可搬运物的本色，以及被啃到快碎时染向的暗红。 */
+const STONE_COLOR = 0x748084;
+const WOOD_COLOR = 0x65432d;
+const BARRIER_DAMAGE_TINT = new THREE.Color(0x47231c);
+
 /** 长角羚的沙褐主色。 */
 const ORYX_COAT = 0xc19a63;
 /** 长角羚的站立高度：2.3，比壮犬(1.7)高、比玩家(2.6)矮 —— 最值得追的那个剪影。 */
@@ -1630,20 +1635,27 @@ export class GameRenderer {
       if (!item.active) continue;
       view.position.set(item.x, this.worldHeight(item.x, item.z) + (item.kind === "wood" ? 0.35 : 0.48), item.z);
       view.rotation.y = item.rotation;
-      const health = clamp(item.hp / (item.kind === "stone" ? 220 : 70), 0, 1);
+      // 除数取真实上限：石头 1500、枯木 70。原先石头写死 220，
+      // 于是它掉到最后 15% 血才开始变色，前面 85% 挨打毫无反馈。
+      const health = clamp(item.hp / BARRIER_STATS[item.kind].hp, 0, 1);
       view.scale.setScalar(item.placed ? 0.55 + health * 0.45 : 1);
       // 缩放在小屏上读不出来（看着像透视），颜色才是能读的信号：
       // 越残破越暗越发红，挨打的瞬间还会亮一下。
       if (item.placed) {
         const flash = this.barrierFlash.get(item.id) ?? 0;
+        const base = view.userData.baseColor as number;
         view.traverse((child) => {
           const material = (child as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
           if (!material || !material.isMeshStandardMaterial) return;
-          material.color.setRGB(
-            0.28 + health * 0.72,
-            0.16 + health * 0.84,
-            0.14 + health * 0.86,
-          );
+          /*
+           * 从**本色**往破损色插值，不能直接 setRGB 出一个绝对颜色。
+           *
+           * 原先写的是 `setRGB(0.28 + health*0.72, …)`，满血时算出来正好是纯白 ——
+           * 石头本色 0x748084 是灰蓝、枯木是褐色，一放下就全变白。
+           * 地图初始的石头 placed=false 不走这段，所以只有"搬过一次"的会变，
+           * 看着就像"拿起石头会变色"。
+           */
+          material.color.setHex(base).lerp(BARRIER_DAMAGE_TINT, 1 - health);
           material.emissive.setRGB(flash * 3.2, flash * 1.1, flash * 0.6);
         });
       }
@@ -1654,7 +1666,7 @@ export class GameRenderer {
     let view: THREE.Object3D;
     if (item.kind === "wood") {
       const group = new THREE.Group();
-      const material = makeMaterial(0x65432d, 1);
+      const material = makeMaterial(WOOD_COLOR, 1);
       for (let index = 0; index < 2; index += 1) {
         const log = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 1.65, 7), material);
         log.rotation.z = Math.PI / 2;
@@ -1665,13 +1677,15 @@ export class GameRenderer {
       view = group;
     } else {
       const group = new THREE.Group();
-      const mesh = new THREE.Mesh(new THREE.DodecahedronGeometry(0.7, 0), makeMaterial(0x748084, 1));
+      const mesh = new THREE.Mesh(new THREE.DodecahedronGeometry(0.7, 0), makeMaterial(STONE_COLOR, 1));
       mesh.scale.set(2.15, 1.32, 1.7);
       mesh.castShadow = true;
       group.add(mesh);
       view = group;
     }
     view.userData.kind = item.kind;
+    // 记下本色，破损染色要从它出发插值（见 syncItems）。
+    view.userData.baseColor = item.kind === "wood" ? WOOD_COLOR : STONE_COLOR;
     return view;
   }
 

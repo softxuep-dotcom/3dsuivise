@@ -2,6 +2,8 @@ import type { GameEvent } from "../game/simulation/types";
 
 export class SynthAudio {
   enabled = true;
+  /** 广告期间的临时静音，独立于玩家的 enabled 开关。 */
+  private adMuted = false;
   private context: AudioContext | null;
   private master: GainNode | null = null;
 
@@ -34,14 +36,30 @@ export class SynthAudio {
 
   toggle(): boolean {
     this.enabled = !this.enabled;
-    if (this.master && this.context) {
-      this.master.gain.setTargetAtTime(this.enabled ? 0.18 : 0, this.context.currentTime, 0.02);
-    }
+    this.applyGain();
     return this.enabled;
   }
 
+  /**
+   * 广告期间压掉声音。平台条款要求，也是常识 —— 玩家在看广告，
+   * 游戏不该在背后继续叫。
+   *
+   * 和玩家自己的静音开关**分开记**：广告里玩家点了声音按钮，
+   * 不该把广告的静音一起解掉；广告结束也不该把玩家关掉的声音打开。
+   */
+  setAdMuted(muted: boolean): void {
+    this.adMuted = muted;
+    this.applyGain();
+  }
+
+  private applyGain(): void {
+    if (!this.master || !this.context) return;
+    const audible = this.enabled && !this.adMuted;
+    this.master.gain.setTargetAtTime(audible ? 0.18 : 0, this.context.currentTime, 0.02);
+  }
+
   handle(event: GameEvent): void {
-    if (!this.enabled || !this.context || !this.master) return;
+    if (!this.enabled || this.adMuted || !this.context || !this.master) return;
     switch (event.type) {
       case "pickup":
         // 油桶给一个空腔的闷响，和捡柴、搬石头都不一样 —— 手上占着什么，耳朵先知道。

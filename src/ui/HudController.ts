@@ -132,6 +132,12 @@ export class HudController {
   private toastTimer = 0;
   private lastHudUpdate = 0;
   private inventoryOpen = false;
+  private adPlaying = false;
+  private paused = false;
+  private readonly pauseOverlay = required<HTMLElement>("pause-overlay");
+  private readonly reviveButton = required<HTMLButtonElement>("revive-button");
+  private lastBlocked = false;
+  private blockedListener: ((blocked: boolean) => void) | null = null;
 
   constructor(simulation: GameSimulation) {
     this.simulation = simulation;
@@ -165,8 +171,50 @@ export class HudController {
     this.hud.classList.remove("hidden");
   }
 
+  /** 订阅"可玩 / 不可玩"的翻转。平台适配层拿它报 gameplayStart / gameplayStop。 */
+  onGameplayBlockedChange(listener: (blocked: boolean) => void): void {
+    this.blockedListener = listener;
+  }
+
   isGameplayBlocked(): boolean {
-    return this.inventoryOpen;
+    return this.inventoryOpen || this.adPlaying || this.paused;
+  }
+
+  /**
+   * 暂停 / 继续。Poki 的 Requirements 第 15 条要求键盘游戏提供 ESC 或空格
+   * 的暂停恢复，而我们的空格已经是攻击键，所以只能是 ESC；手机上没有 ESC，
+   * 另配了一个 HUD 按钮。
+   *
+   * 死了或通关之后不让暂停 —— 那时候屏幕上已经有结算页，再叠一层暂停是纯噪音。
+   */
+  togglePause(): void {
+    // 背包开着的时候 ESC 是"关背包"，不是"再叠一层暂停" —— ESC 关掉最上面那层
+    // 是所有游戏的通用预期，而且背包本来就已经把游戏停住了。
+    if (this.inventoryOpen) {
+      this.closeInventory();
+      return;
+    }
+    this.setPaused(!this.paused);
+  }
+
+  setPaused(paused: boolean): void {
+    if (paused && (!this.simulation.running || this.inventoryOpen)) return;
+    this.paused = paused;
+    this.pauseOverlay.classList.toggle("hidden", !paused);
+  }
+
+  isPaused(): boolean {
+    return this.paused;
+  }
+
+  /**
+   * 广告播放期间冻结游戏。
+   *
+   * 和"开背包暂停"走同一个闸：模拟层这段时间完全不推进，
+   * 所以玩家不会在看广告的时候被狗咬死 —— 那是投诉率最高的一类体验。
+   */
+  setAdPlaying(playing: boolean): void {
+    this.adPlaying = playing;
   }
 
   toggleInventory(): void {
@@ -182,6 +230,16 @@ export class HudController {
   }
 
   update(deltaSeconds: number): void {
+    // 每帧自查"现在算不算在玩"，变了才通知。
+    //
+    // 不在各个开关处逐个报，是因为 inventoryOpen 有五条改法（背包键、关闭键、
+    // 建造完成、死亡、通关），漏掉任何一条，平台那边的"这一局玩了多久"就错了。
+    // 自查一次全都覆盖，代价是最多晚一帧 —— 对统计毫无影响。
+    const blocked = this.isGameplayBlocked();
+    if (blocked !== this.lastBlocked) {
+      this.lastBlocked = blocked;
+      this.blockedListener?.(blocked);
+    }
     if (this.toastTimer > 0) {
       this.toastTimer -= deltaSeconds;
       if (this.toastTimer <= 0) this.toast.classList.add("hidden");
@@ -579,6 +637,34 @@ export class HudController {
     const text = describeRecords(loadRecords());
     this.recordsLine.textContent = text ?? "";
     this.recordsLine.classList.toggle("hidden", text === null);
+  }
+
+  /**
+   * 结算页上的"看广告续命"。
+   *
+   * 按钮文案里**必须写明这是广告**（Poki 审核必查项），所以标签上带一个片头符号，
+   * 并把剩余次数摊开写 —— 玩家要在点之前就知道自己换的是什么、还剩几次。
+   * 平台不支持激励视频、或次数用完，整个按钮不显示。
+   */
+  showReviveOffer(remaining: number, onRevive: () => void): void {
+    this.reviveButton.classList.remove("hidden");
+    this.reviveButton.disabled = false;
+    this.reviveButton.textContent = t("revive.offer", { remaining });
+    this.reviveButton.onclick = () => {
+      this.reviveButton.disabled = true;
+      onRevive();
+    };
+  }
+
+  hideReviveOffer(): void {
+    this.reviveButton.classList.add("hidden");
+    this.reviveButton.onclick = null;
+  }
+
+  /** 复活成功：收掉结算页，回到游戏。 */
+  resumeAfterRevive(): void {
+    this.hideReviveOffer();
+    this.gameOver.classList.add("hidden");
   }
 
   private showGameOver(): void {
