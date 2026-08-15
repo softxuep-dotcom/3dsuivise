@@ -234,28 +234,11 @@ button { font: inherit; }
 .supply-line span.empty { opacity: .34; }
 .supply-line span.empty b { color: inherit; }
 
-.inventory-button {
-  width: 100%;
-  margin-top: 2px;
-  padding: 6px 9px;
-  color: #eff9e8;
-  border: 1px solid rgba(155, 208, 109, .35);
-  border-radius: 8px;
-  background: rgba(64, 103, 50, .45);
-  cursor: pointer;
-  pointer-events: auto;
-}
-
-/* 状态栏里只剩声音开关了 —— 所有玩法操作都下放到了拇指区。 */
-.hud-actions {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.hud-actions .inventory-button { width: auto; }
-
-.inventory-button:active { transform: translateY(1px); }
-.inventory-button:disabled { opacity: .45; cursor: default; }
+/*
+ * 状态栏现在**只读**：五条状态轴 + 补给计数，一个可点元素都没有了。
+ * 声音开关搬进了设置面板（Poki 只要求广告期间自动静音，没要求主界面自带开关），
+ * 随之 .inventory-button / .hud-actions / .sound-button 三组样式一起删掉 —— 已无引用。
+ */
 
 /*
  * 右下操作簇：[体温][背包]  ⟨大间距⟩  [攻击][行动]。
@@ -319,20 +302,6 @@ button { font: inherit; }
  * 它的可视高度只有 20px，远低于能可靠点中的尺寸 —— 用一层透明的伪元素把命中区域
  * 向外扩 12px，视觉不变、面板也不长高。面板里已经没有别的可点元素，扩出去不会抢点击。
  */
-.sound-button { position: relative; }
-
-.sound-button::before {
-  content: "";
-  position: absolute;
-  inset: -12px;
-}
-
-.sound-button {
-  color: #b9ccd4;
-  border-color: rgba(150, 178, 190, .3);
-  background: rgba(38, 52, 62, .5);
-}
-
 .prompt {
   bottom: max(34px, calc(env(safe-area-inset-bottom) + 18px));
   left: 50%;
@@ -520,6 +489,60 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
 .primary-button:hover { filter: brightness(1.08); transform: translateY(-1px); }
 .primary-button:active { transform: translateY(1px); }
 
+/* 次要动作（重开一局）。刻意不用主按钮的橙色：这一页的主动作是"继续"。 */
+.secondary-button {
+  padding: 9px 18px;
+  border: 1px solid rgba(196, 151, 91, .5);
+  border-radius: 9px;
+  background: rgba(24, 36, 44, .8);
+  color: #e3d3b6;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.secondary-button:active { transform: translateY(1px); filter: brightness(1.15); }
+
+/* 左上角设置齿轮。它同时是暂停键，见 index.html 那段注释。 */
+.icon-button {
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(150, 204, 221, .32);
+  border-radius: 9px;
+  background: rgba(9, 17, 22, .62);
+  color: #cfe5ec;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.icon-button:active { transform: translateY(1px); filter: brightness(1.2); }
+
+.difficulty-picker { display: flex; flex-direction: column; gap: 7px; width: 100%; }
+.settings-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; }
+.settings-label { color: #91a9b1; font-size: 11px; letter-spacing: .04em; }
+.difficulty-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+
+.difficulty-option {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 6px;
+  border: 1px solid rgba(150, 204, 221, .26);
+  border-radius: 9px;
+  background: rgba(12, 21, 27, .62);
+  color: #a9c0c8;
+  cursor: pointer;
+  text-align: center;
+}
+.difficulty-option b { color: #d7e5ea; font-size: 13px; }
+.difficulty-option span { font-size: 10px; line-height: 1.3; opacity: .8; }
+/* 选中的那一档：留边框和底色两重标记，别只靠颜色 —— 色觉障碍下要还能分辨。 */
+.difficulty-option[aria-checked="true"] {
+  border-color: rgba(255, 185, 87, .85);
+  background: rgba(80, 52, 22, .6);
+}
+.difficulty-option[aria-checked="true"] b { color: #ffcf9e; }
+
 /*
  * 开场加载条。它顶替"踏入沙海"按钮的位置，所以高度要接近，免得整张卡片跳一下。
  * 前半段由 index.html 的内联脚本驱动（那时主包还没到），后半段是真实进度。
@@ -680,6 +703,8 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
    三种形态共用同一个容器：分叉卡（两栏）、升级卡（当前↓下阶）、满级总览。 */
 .upgrade-slot { margin-top: 10px; }
 .upgrade-head { margin: 0 0 5px; color: #91a9b1; font-size: 11px; letter-spacing: .04em; }
+/* 未解锁那一行：压暗一档，说明它是"以后会有"，不是"现在坏了"。 */
+.upgrade-head.locked { color: #6d818a; font-style: italic; letter-spacing: 0; }
 .tier-pips { color: #d7c08a; letter-spacing: .12em; }
 
 .fork-card { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -780,8 +805,6 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
    * 英文四个标签在 6px 间距下会冲出 142px 面板。
    */
   .supply-line { gap: 4px; margin-bottom: 4px; padding: 3px 5px; font-size: 9px; }
-  .inventory-button { padding: 4px 6px; font-size: 10px; }
-  .hud-actions { gap: 4px; }
   .top-stack { top: max(10px, env(safe-area-inset-top)); gap: 6px; }
   .clock { padding: 5px 10px; }
   .toast { padding: 7px 12px; font-size: 12px; }
@@ -811,6 +834,11 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
     pointer-events: none;
   }
 
+  /*
+   * 摇杆是**纯显示**的：pointer-events 关掉，触摸一律落到底下的 canvas，
+   * 由 InputController.startJoystick 把它挪到手指落点（见那里的注释）。
+   * 角落里这个位置只是"待机位"，让玩家知道左半屏能推。
+   */
   .joystick {
     position: absolute;
     left: max(20px, env(safe-area-inset-left));
@@ -821,8 +849,16 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
     border-radius: 50%;
     background: rgba(11, 19, 25, .32);
     box-shadow: inset 0 0 24px rgba(255,255,255,.03);
-    pointer-events: auto;
-    touch-action: none;
+    pointer-events: none;
+    opacity: .5;
+    transition: opacity .18s ease;
+  }
+
+  /* 推着的时候：left/top 由 JS 写成行内样式，bottom 必须让开。 */
+  .joystick.floating {
+    bottom: auto;
+    opacity: 1;
+    transition: none;
   }
 
   .joystick i {
@@ -842,9 +878,32 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
     bottom: max(24px, env(safe-area-inset-bottom));
   }
 
-  .action-buttons { display: flex; align-items: flex-end; gap: 12px; }
-  .utility-button { min-width: 54px; padding: 7px 9px; font-size: 9px; }
+  /*
+   * 四键弧形簇（MOBA 那种排法）。从左到右：体温、背包、行动、攻击 ——
+   * **越靠右越低**，攻击是落在拇指自然停位上的大锚点。
+   *
+   * 为什么是弧不是一排：拇指是绕掌指关节**转**的，不是平移。一排平铺时最外侧那颗
+   * 要靠伸展去够，而弧形上每一颗到转轴的距离都差不多。
+   *
+   * row-reverse 让攻击排到最右：DOM 里攻击仍在行动之前（读屏和 Tab 顺序应当先给
+   * 最高频的那颗），视觉顺序交给 CSS。
+   */
+  .action-buttons { display: flex; flex-direction: row-reverse; align-items: flex-end; gap: 8px; }
+  .bottom-right { gap: 8px; }
+  .utility-buttons { gap: 6px; align-items: flex-end; }
+  /*
+   * padding 从 7px 提到 11px：体温键只有一行内容，7px 下高度只有 29px，
+   * 明显低于 44pt 触控下限 —— 而它恰恰是全 HUD 唯一需要"反射性按"的键
+   * （要按它的时候你正中暑、移速剩四成）。提完是 37px。
+   */
+  .utility-button { min-width: 54px; padding: 11px 9px; font-size: 9px; }
   .utility-button b { font-size: 11px; }
+
+  /* 弧线本身。抬升量到 72px 封顶 —— 竖屏那套 bottom 偏移是按"动作簇不超过 140px 高"
+     算的（见竖屏块的注释），抬过头会顶到行动提示。 */
+  #thermal-button { margin-bottom: 72px; }
+  #backpack-button { margin-bottom: 40px; }
+  #action-button { margin-bottom: 10px; }
 
   .round-button {
     position: relative;
@@ -881,16 +940,40 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
    * 底部锚点则相反：往上生长的方向全是空地，最坏情况也够不到状态栏。
    */
   /*
-   * 竖屏放不下一行四键：[体温][背包][攻击][行动] 要 282px，而摇杆已经占掉左边 124px，
-   * 375px 宽的屏幕横向不够。改成两层（工具键在上、动作键在下）——
-   * 竖屏的纵向空间本来就富裕。下面三个 bottom 偏移是连着算的：
-   *   动作簇 24..140 → 行动提示 152..183 → 中央栏从 195 起往上长。
+   * 曾经这里把四键拆成两层，因为一排要 282px，而 375px 宽减去摇杆占的 124px 不够。
+   * 弧形排布之后不用拆了：**四颗在纵向上是错开的，横向就可以叠着放**。
+   * 收掉组间距、让两组各自往右咬进去一点，总宽压到约 240px，塞得进 251px 的净空。
+   *
+   * 摇杆那 124px 现在也只是个待机位的视觉标记 —— 浮动摇杆的触发区是左半屏，
+   * 见 InputController.startJoystick，不再是一块必须让开的死区。
+   *
+   * 下面两个 bottom 偏移和动作簇的高度是连着算的（数字都是量出来的，别凭感觉改）：
+   *   动作簇 24..163 → 行动提示 176..207 → 中央栏从 219 起往上长。
+   * 两层的总高 139px 来自：动作键 78 + 层间距 10 + 工具键 51。
+   * 加大 .utility-button 的 padding 会把这条链整体抬高，改之前先量。
+   */
+  /*
+   * **竖屏不用弧形，改回两层。**
+   *
+   * 弧形是横屏的解法：它把四颗键沿拇指转动轨迹向左铺开，而横屏有那个宽度。
+   * 竖屏只有 390px，四颗一横排要 239px，左边缘会顶到 124px 处的摇杆待机位
+   * （实测只剩 7px 间隙）—— 体温和背包被推到屏幕中下方，那是**左手拇指的地盘**，
+   * 右手够不舒服、左手还容易误碰。
+   *
+   * 竖屏真正富裕的是纵向，所以还是两层：工具键(体温/背包)在上、动作键在下，
+   * 两层都右对齐，整簇待在右拇指的扇形里。移除暂停键之后上层从三颗降到两颗，
+   * 这一层的宽度本来就宽松了。
    */
   .bottom-right {
     flex-direction: column;
     align-items: flex-end;
     gap: 10px;
   }
+  /* 弧线的抬升量属于横屏，竖屏一律清零，否则两层之间会被顶出一道空档。 */
+  #thermal-button,
+  #backpack-button,
+  #action-button { margin-bottom: 0; }
+
 
   .prompt { bottom: calc(max(24px, env(safe-area-inset-bottom)) + 152px); }
 
@@ -916,8 +999,6 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
   .condition-badge { margin-bottom: 4px; padding: 3px 6px; font-size: 9px; }
   .drain-note { display: none; }
   .supply-line { margin-bottom: 3px; padding: 2px 5px; font-size: 8px; }
-  .inventory-button { padding: 3px 6px; font-size: 9px; }
-  .hud-actions { gap: 3px; }
   .top-stack { gap: 5px; }
   .toast { padding: 6px 11px; font-size: 11px; }
 }
@@ -948,8 +1029,6 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
   .condition-badge { margin-bottom: 4px; padding: 3px 6px; font-size: 9px; }
   .drain-note { margin: -2px 0 4px; padding-left: 32px; font-size: 8px; }
   .supply-line { margin-bottom: 3px; padding: 2px 5px; font-size: 8px; }
-  .inventory-button { padding: 3px 6px; font-size: 9px; }
-  .hud-actions { gap: 3px; }
   .top-stack { top: max(6px, env(safe-area-inset-top)); gap: 5px; }
   .clock { padding: 4px 8px; }
   .toast { padding: 6px 11px; font-size: 11px; }

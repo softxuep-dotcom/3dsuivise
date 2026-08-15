@@ -43,6 +43,8 @@ import type {
   WorldDrop,
 } from "./types";
 import { BARRIER_STATS, CRITTER_SPECS, FUEL_REQUIRED, INVENTORY_CAPACITY, INVENTORY_STACK_LIMITS, STRUCTURE_SPECS } from "./types";
+import type { Difficulty, DifficultyTuning } from "./difficulty";
+import { DEFAULT_DIFFICULTY, tuningFor } from "./difficulty";
 
 /**
  * 造一条待渲染文案。模拟层所有面向玩家的字符串都经这里出去 ——
@@ -84,13 +86,17 @@ const EARLY_NIGHT_RAID_TARGETS = [5, 9, 14] as const;
 const MOVE_STEP_FALLBACKS = [1, 0.5, 0.25];
 /** 挨打后多少秒内不能休息（原本是"附近有狼"，夜里几乎恒为真）。 */
 /**
- * 站定多久开始休息。5 → 4 秒。
+ * 站定多久开始休息。5 → 4 → 3 秒。
  *
  * 这个门槛是"休息"这件事的全部成本 —— 它换来的是劳力和生命的快速回复，
  * 而战斗封锁（REST_COMBAT_LOCK = 6 秒）本来就挡住了"边打边回"。
  * 5 秒在实战里常常等不到：夜里几乎每 6 秒就会被摸一下，等于永远进不去。
+ *
+ * 降到 3 秒还有个手感上的理由：站定是移动端玩家**唯一放开摇杆的时刻**，
+ * 门槛越高，手就被按得越久。文案里写死了这个秒数（hud.drain.hint，六个语言），
+ * 改这里记得一起改。
  */
-const REST_IDLE_SECONDS = 4;
+const REST_IDLE_SECONDS = 3;
 const REST_COMBAT_LOCK = 6;
 
 /**
@@ -267,10 +273,12 @@ const ARMOR_STATS: Record<ArmorKind, ArmorStat> = {
  */
 const COMBO_WINDOW = 1.2;
 
-/** 精英狼从第 3 天起混入狼群，之后逐日提高出现率，但永远只是少数。 */
 /** 小狼与大狼的数值封顶在第几夜。到这一夜为止照常成长，之后不再变强。 */
 const PACK_SCALING_MAX_DAY = 3;
-const ELITE_MIN_DAY = 3;
+/*
+ * 精英狼登场的夜数**跟着难度走**（简单 3 / 普通 2 / 令人发狂 1），
+ * 见 difficulty.ts 的 eliteMinDay。之后逐日提高出现率，但永远只是少数。
+ */
 
 // 肉的两级。生肉顶饿不回体力，烤肉才回 —— 烤肉的价值全在体力那一条上。
 const RAW_HUNGER: readonly [number, number] = [12, 18];
@@ -369,6 +377,52 @@ const FIRE_WARMTH_RADIUS = 10.0;
 
 // --- 体力：恒定流失（基准 600HP / -0.7/s ≈ 857 秒） ---
 const HEALTH_DECAY = 0.24; // 100 / 0.24 ≈ 417 秒 ≈ 1.16 个昼夜（基准 857/750 = 1.14）
+
+/**
+ * 吃饱喝足时的**止损**（不是回血）。
+ *
+ * 净效果 0.30 − HEALTH_DECAY = +0.06/s：光靠它回满要 1000 秒，也就是根本回不动。
+ * 它要解决的是另一件事 —— 状态一切良好却仍被 HEALTH_DECAY 慢性磨死的挫败感。
+ *
+ * 门槛卡在饱食**和**水分都高于 70：任一掉下去立刻恢复净流失，
+ * "吃饭是硬需求"这条心跳一点没松。刻意不做成随时间递增或按比例回复的形式 ——
+ * 那会变成真正的自动回血，把打猎→烤肉→回体力整条循环的压力抽掉。
+ */
+const HEALTH_PASSIVE_REGEN = 0.30;
+const HEALTH_PASSIVE_NEED = 70;
+
+/**
+ * 开局口粮。**这是新手能不能活过第一夜的分水岭**，不是送温暖。
+ *
+ * 把两条时间轴对齐就明白了 —— 开局饱食 82、水分 90，两者都按 0.42/s 掉，
+ * 且**归零即死**（见 update() 里的结算）：
+ *
+ *   饿死 195s · 渴死 214s · 而第二天黎明在 90 + 150 = 240s
+ *
+ * 也就是说背包空着出门的玩家，算术上撑不到第二个黎明。而第一个白天只有 90 秒，
+ * 这 90 秒里 getObjective() 的引导链正把他按在"捡枯木→添柴→封门"上，
+ * "去囤水"（sim.29）排在这三步**全部做完之后**；入夜之后游戏又明确让他守着火别出门
+ * （sim.20 / sim.nightHold）。照着游戏自己的指引走，第一夜必死。
+ *
+ * 2 水 + 1 熟肉刚好把人送过那道线。注意**两条需求轴都封顶 100**，所以口粮值多少
+ * 不看给了几份，只看**什么时候吃** —— 按提示在预警线（饱食<18，t≈152s）吃下熟肉：
+ *
+ *   饱食 18 → 44~56（COOKED_HUNGER 是 26~38 的随机） → 黎明 240s 时剩 7~19
+ *
+ * 也就是天亮那一刻饱食条正在闪红：玩家不是被送过关，是被准点推到
+ * "天亮了我得去弄吃的"这个认知上。水那一路更宽松（渴死推到 337s）。
+ *
+ * 顺带逼他开一次背包 —— 那是吃、烤、造装备的总入口，不开就什么都学不会。
+ *
+ * **没有被这份口粮解决的事**：满值 100 ÷ 0.42 = 238s，而第一昼夜是 90+150 = 240s。
+ * 也就是说哪怕开局两条轴都是满的、中途一口不吃，也差 2 秒撑不到黎明。
+ * 开局就把口粮一次吃光的玩家（浪费掉溢出部分）仍然会在 238s 倒下。
+ * 真要堵死这个口子得动 FIRST_NIGHT_DURATION 或衰减率，那是另一笔账。
+ */
+const STARTING_RATION: ReadonlyArray<readonly [InventoryItemKind, number]> = [
+  ["water", 2],
+  ["cooked-meat", 1],
+];
 
 // --- 水分与饥饿（基准两者都是 -0.2/s，满值 500 秒） ---
 const WATER_DECAY = 0.42;  // 238 秒 ≈ 0.66 个昼夜（基准 500/750 = 0.67）
@@ -518,6 +572,8 @@ export class GameSimulation {
   coolCooldown = 0;
   warmCooldown = 0;
   private objectiveStage = 0;
+  /** 见 isEquipmentUnlocked。只置位、不复位。 */
+  private equipmentUnlocked = false;
   private gameOverSent = false;
   private duskWarningSent = false;
   private largeWolfAnnounced = false;
@@ -531,7 +587,11 @@ export class GameSimulation {
   deathCause: DeathCause | null = null;
   won = false;
 
-  constructor(world: WorldDefinition) {
+  /** 本局的难度倍率。构造时定死，中途不重读 —— 见 difficulty.ts。 */
+  private readonly tuning: DifficultyTuning;
+
+  constructor(world: WorldDefinition, difficulty: Difficulty = DEFAULT_DIFFICULTY) {
+    this.tuning = tuningFor(difficulty);
     this.world = world;
     this.navigation = new NavigationGrid(world);
     const retreatEdge = world.size / 2 - 0.7;
@@ -588,6 +648,7 @@ export class GameSimulation {
       gatherTimer: 0,
       kills: 0,
     };
+    for (const [kind, count] of STARTING_RATION) this.addInventory(kind, count);
     this.navigation.rebuild(this.player);
     this.seedCritters();
     this.seedDenGuards();
@@ -1414,7 +1475,11 @@ export class GameSimulation {
    *   长度 1  已分叉未满级，只能升同线的下一阶 → 渲染升级卡
    *   长度 0  已满级 → 渲染属性总览
    *
-   * 换线不在这里 —— 它走 craftEquip(id) 直接指定另一条线的一阶，材料不返还。
+   * **返回值不表达"还没解锁"** —— 那是 isEquipmentUnlocked() 的事。
+   * 长度 0 已经被"已满级"占了，用空数组兼表未解锁会让开局显示满级卡。
+   *
+   * 换线不在这里 —— 它走 craftEquip(id) 直接指定另一条线的一阶。
+   * **一阶换线全额退材料，二阶起才不返还**（见 craftEquip 里那段）。
    * 之所以是软锁而不是硬锁：单局最长 5 天，硬锁会让第一次玩的玩家在信息不足时
    * 做出不可逆的错误选择。真正的硬约束在材料池里 —— 双铁线要吃掉全图一半到
    * 四分之三的铁矿，你根本没有余量在同一局里再爬一遍另一条铁线。
@@ -1424,6 +1489,25 @@ export class GameSimulation {
     const current = this.getEquipped(slot);
     if (current.line === "none") return tiers.filter((tier) => tier.tier === 1);
     return tiers.filter((tier) => tier.line === current.line && tier.tier === current.tier + 1);
+  }
+
+  /**
+   * 装备制作是否已解锁 —— 拿到过第一张兽皮或第一块铁矿之后为真。
+   *
+   * 四条一阶全都要兽皮或铁矿（sword 1皮+2木 / saber 3铁+1皮 / hide 4皮 / scale 2铁+2皮），
+   * 而这两样开局都是 0、只能白天打猎或挖矿拿到。所以在此之前那两张分叉卡
+   * **在逻辑上必然全部不可造** —— 不是"看着有点乱"，是可证明的死 UI。
+   * 而它们顶着的是「选一条线，然后跟着它过四天」，全局最重的一句话，
+   * 却出现在玩家还没挥过任何一把武器、背包 1/8 的时候。
+   *
+   * 第一分钟该做的事根本不在背包里（把枯木搬到火边按互动键），
+   * 所以这里只是把装备树收起来，**不动搭树桩和烤肉** —— 尤其不能把搭树桩往前推：
+   * 第一根枯木进树桩而不进火堆，当晚就没燃料了。
+   *
+   * 只置位不复位：造完装备材料花光了，树也不该再消失。
+   */
+  isEquipmentUnlocked(): boolean {
+    return this.equipmentUnlocked;
   }
 
   /** 某条线的三阶终点。分叉卡用它告诉玩家"这条路通向哪"。 */
@@ -1450,6 +1534,19 @@ export class GameSimulation {
       this.events.push({ type: "message", key: "msg.15", params: { v0: loc(`equip.${next.id}.name`) } });
       return false;
     }
+    /*
+     * 一阶换线全额退材料，二阶起才真正锁定。
+     *
+     * 四条线的手感差得很远（剑单体连击 / 刀 220~280° 横扫 / 皮甲闪避加回复 /
+     * 铁甲高防反伤减速），可玩家要在**挥过任何一把之前**，凭 line.*.personality
+     * 那两行字做一个跟四天的不可逆选择。选错的人不会回头攒材料重来，他会关标签页。
+     *
+     * 退了材料之后，"跟着一条线走四天"的设定一点没松 —— 只是把承诺点从"选之前"
+     * 挪到"用过之后"。真正的硬约束一直在材料池里（双铁线要吃掉全图一半以上的铁矿），
+     * 那条没动。
+     */
+    const current = this.getEquipped(slot);
+    const isTier1Sidegrade = current.tier === 1 && next.tier === 1 && next.line !== current.line;
     return this.craftUpgrade(next, (tier) => {
       if (slot === "weapon") {
         this.player.weapon = tier.id as WeaponKind;
@@ -1462,10 +1559,17 @@ export class GameSimulation {
         this.player.armor = tier.id as ArmorKind;
         this.events.push({ type: "craft-coat" });
       }
-    });
+    }, isTier1Sidegrade ? current.cost : []);
   }
 
-  private craftUpgrade(next: EquipTier, apply: (tier: EquipTier) => void): boolean {
+  /**
+   * @param refund 退还的材料（一阶换线时是被替换掉那件的造价，见 craftEquip）。
+   *
+   * 退款和造价先**轧差**再验价，而不是"先退再收" —— 否则想试第二条线就得攒两份材料，
+   * "一阶随便换"就名存实亡了。轧完差先扣正项、后补负项：扣掉的那部分先腾出格子，
+   * 补回来的东西才装得下。
+   */
+  private craftUpgrade(next: EquipTier, apply: (tier: EquipTier) => void, refund: EquipTier["cost"] = []): boolean {
     if (!this.running) return false;
     // 判定半径与取暖、烤肉统一走 FIRE_WARMTH_RADIUS：原先这里单独写死 5.2，
     // 于是"站在营地里就算烤着火"对升级装备这一条不成立。
@@ -1473,14 +1577,22 @@ export class GameSimulation {
       this.events.push({ type: "message", key: "msg.16", params: { v0: loc(`equip.${next.id}.name`) } });
       return false;
     }
-    const missing = next.cost.filter(([kind, count]) => this.getInventoryCount(kind) < count);
+    const net = new Map<InventoryItemKind, number>();
+    for (const [kind, count] of next.cost) net.set(kind, (net.get(kind) ?? 0) + count);
+    for (const [kind, count] of refund) net.set(kind, (net.get(kind) ?? 0) - count);
+
+    const missing = [...net].filter(([kind, count]) => count > 0 && this.getInventoryCount(kind) < count);
     if (missing.length > 0) {
       const need = this.describeCost(next.cost);
       this.events.push({ type: "message", key: "msg.17", params: { v0: loc(`equip.${next.id}.name`), v1: need } });
       return false;
     }
     this.noteInPlaceAction();
-    for (const [kind, count] of next.cost) this.removeInventory(kind, count);
+    for (const [kind, count] of net) if (count > 0) this.removeInventory(kind, count);
+    for (const [kind, count] of net) {
+      // 背包塞不下退款时不静默吞掉 —— 和捡东西满包一样给一句提示。
+      if (count < 0 && !this.addInventory(kind, -count)) this.events.push({ type: "message", key: "msg.3" });
+    }
     apply(next);
     this.events.push({ type: "message", key: "msg.18", params: { v0: loc(`equip.${next.id}.name`), v1: loc(`equip.${next.id}.blurb`) } });
     return true;
@@ -1875,6 +1987,10 @@ export class GameSimulation {
 
     // --- 体力恒定流失：把"吃饭"从可拖延的提示变成硬心跳（基准 -0.7/600HP）---
     this.player.health -= delta * HEALTH_DECAY;
+    // 吃饱喝足时把流失抵掉（净 +0.06/s，回不了血）—— 见 HEALTH_PASSIVE_REGEN。
+    if (this.player.hunger > HEALTH_PASSIVE_NEED && this.player.water > HEALTH_PASSIVE_NEED) {
+      this.player.health = Math.min(this.player.health + delta * HEALTH_PASSIVE_REGEN, this.player.maxHealth);
+    }
 
     // --- 劳力回复：休息最快，静止其次，移动最慢 ---
     // 护甲整体缩放这三档：皮甲把防御换成产出（×1.35 时一个白天多回 99 点劳力
@@ -2047,10 +2163,11 @@ export class GameSimulation {
     const canRest = this.player.idleTime >= REST_IDLE_SECONDS && wantsRecovery && this.getRestBlocker() === null;
     this.setResting(canRest);
     // 恒定流失是 HEALTH_DECAY，休息的净回复要减掉它才是玩家实际看到的速度。
-    // 净回复 1.5 → 1.9（吃不饱时 0.9 → 1.1）。站定 4 秒的门槛本来就不低，
-    // 回得太慢的话"休息"只是名义上的选择：满血要 66 秒，玩家宁可继续跑。
-    // 提到 1.9 之后是 53 秒，仍然是一段要主动付出的时间。
-    const healingRate = (this.player.hunger < 40 || this.player.water < 40 ? 1.1 : 1.9) + HEALTH_DECAY;
+    // 净回复 1.5 → 1.9 → 2.6（吃不饱时仍是 1.1）。站定的门槛本来就不低，
+    // 回得太慢的话"休息"只是名义上的选择：满血 66 秒 → 53 秒 → 38 秒。
+    // 38 秒仍然是一段要主动付出的时间，但在手机上不再长到让人宁可继续跑。
+    // 饥渴档没跟着提：吃饱喝足才回得快，这条差距是"先去吃饭"的动力所在。
+    const healingRate = (this.player.hunger < 40 || this.player.water < 40 ? 1.1 : 2.6) + HEALTH_DECAY;
     if (this.player.resting) this.player.health = clamp(this.player.health + delta * healingRate, 0, this.player.maxHealth);
   }
 
@@ -2136,7 +2253,7 @@ export class GameSimulation {
         const nightlyPressure = Math.max(0.78, 1 - (this.day - 1) * 0.09);
         // 刷怪间隔曲线整体压缩：从 0.9~5.7s 缩到 0.7~4.0s，前期更密集
         const curvedInterval = 0.7 + Math.pow(nightProgress, 0.8) * 3.3;
-        this.spawnCountdown = curvedInterval * nightlyPressure * (0.85 + this.random() * 0.3);
+        this.spawnCountdown = curvedInterval * nightlyPressure * this.tuning.spawnInterval * (0.85 + this.random() * 0.3);
       }
     }
 
@@ -2498,7 +2615,7 @@ export class GameSimulation {
    * 玩家攒到三阶装备之后反而越打越吃力，努力方向是反的。
    *
    * 封顶之后夜晚仍然会变难，只是换了个来源：配额还在涨（30 → 90，第 5 夜封顶）、
-   * 大狼占比还在涨（22% → 58%）、精英狼从第 ELITE_MIN_DAY 夜开始出现且**不封顶**。
+   * 大狼占比还在涨（22% → 58%）、精英狼从难度决定的那一夜开始出现且**不封顶**。
    * 也就是"来得更多、成分更凶"，而不是"每一只都变成海绵"。
    */
   private getNightScaling(maxNights = Number.POSITIVE_INFINITY): { attack: number; health: number; speed: number } {
@@ -2542,7 +2659,8 @@ export class GameSimulation {
     const spawn = this.findNearestWalkablePoint(spawnCandidate);
 
     const largeChance = Math.min(0.58, 0.22 + (this.day - 1) * 0.09);
-    const eliteChance = this.day < ELITE_MIN_DAY ? 0 : Math.min(0.16, 0.04 + (this.day - ELITE_MIN_DAY) * 0.03);
+    const eliteMinDay = this.tuning.eliteMinDay;
+    const eliteChance = this.day < eliteMinDay ? 0 : Math.min(0.16, 0.04 + (this.day - eliteMinDay) * 0.03);
     const kindRoll = this.random();
     const kind: WolfKind = options.forceKind
       ?? (tutorialWolf ? "small" : kindRoll < eliteChance ? "elite" : kindRoll < eliteChance + largeChance ? "large" : "small");
@@ -2588,6 +2706,13 @@ export class GameSimulation {
       maxHealth = Math.round(maxHealth * 0.85);
       attack = Math.max(6, Math.round(attack * 0.8));
     }
+    // 难度倍率最后乘，这样上面那些手调过的基准值仍然是"简单档读什么就是什么"。
+    // **教学犬不吃倍率** —— 第一夜第一只狗是写死的剧本（28 血 / 5 咬伤），
+    // 它的作用是教玩家"面对它、挥一刀"，在令人发狂档把它变成硬骨头只会教错东西。
+    if (!tutorialWolf) {
+      maxHealth = Math.round(maxHealth * this.tuning.wolfHealth);
+      attack = Math.round(attack * this.tuning.wolfAttack);
+    }
 
     /*
      * 前三夜使用固定攻营配额 5 / 9 / 14。每次生成时按“剩余名额 ÷ 剩余生成数”
@@ -2596,13 +2721,19 @@ export class GameSimulation {
      *
      * 第 4 夜以后继续沿用原来的 35% 攻营概率，保留后期压力。
      */
-    const earlyRaidTarget = EARLY_NIGHT_RAID_TARGETS[this.day - 1];
+    const baseRaidTarget = EARLY_NIGHT_RAID_TARGETS[this.day - 1];
+    // 配额是"整夜最多扑过来几只"，倍率乘完要取整；undefined 表示第 4 夜以后，
+    // 那时走的是概率式，见下面的 raiderChance。
+    const earlyRaidTarget = baseRaidTarget === undefined
+      ? undefined
+      : Math.round(baseRaidTarget * this.tuning.raid);
     const remainingSpawns = Math.max(1, this.getNightWolfTarget() - this.spawnedThisNight);
     const remainingRaiders = earlyRaidTarget === undefined
       ? 0
       : Math.max(0, earlyRaidTarget - this.raidersSpawnedThisNight);
     const raiderChance = earlyRaidTarget === undefined
-      ? Math.min(0.35, 0.2 + (this.day - 1) * 0.05)
+      // 第 4 夜起的概率式也要吃倍率，否则后期三个难度只差狼的数值，攻营强度一模一样。
+      ? Math.min(1, Math.min(0.35, 0.2 + (this.day - 1) * 0.05) * this.tuning.raid)
       : remainingRaiders / remainingSpawns;
     const raider = role === "raider" && (tutorialWolf || this.random() < raiderChance);
     if (raider) this.raidersSpawnedThisNight += 1;
@@ -3114,6 +3245,9 @@ export class GameSimulation {
   private addInventory(kind: InventoryItemKind, count: number): boolean {
     if (count <= 0) return true;
     if (this.getInventorySpace(kind) < count) return false;
+    // 过了容量检查就必然入包，锁存放在这里 —— 这是物品进背包的唯一收口
+    // （挖矿、剥皮、捡掉落、开局口粮全走它），不必在各个调用点重复判断。
+    if (kind === "hide" || kind === "iron-ore") this.equipmentUnlocked = true;
     let remaining = count;
     const limit = INVENTORY_STACK_LIMITS[kind];
     for (const stack of this.player.inventory) {

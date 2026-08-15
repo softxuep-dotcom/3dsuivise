@@ -14,6 +14,11 @@
 
       <div id="hud" class="hidden" aria-live="polite">
         <div class="left-stack">
+          <!--
+            设置入口。它同时**就是暂停键** —— 打开设置会把游戏停住，面板里那颗
+            "继续"就是恢复。这样底排只留四个操作键，而过审要找的暂停控件仍然在。
+          -->
+          <button id="settings-button" class="icon-button" type="button" data-i18n-attr="aria-label:settings.open">⚙</button>
           <section class="objective-chip">
             <span class="eyebrow" id="day-label"></span>
             <strong id="objective"></strong>
@@ -38,9 +43,6 @@
             <span id="supply-water"><i data-i18n="supply.water">Wtr</i> <b>0</b></span>
             <span id="supply-juice"><i data-i18n="supply.juice">Sap</i> <b>0</b></span>
             <span id="supply-meat"><i data-i18n="supply.meat">Meat</i> <b>0</b></span>
-          </div>
-          <div class="hud-actions">
-            <button id="sound-button" class="inventory-button sound-button" type="button" data-i18n-attr="aria-label:hud.sound.aria" aria-pressed="true"><span data-i18n="hud.sound.label">Sound</span> <b id="sound-state" data-i18n="sound.on">On</b></button>
           </div>
         </section>
 
@@ -69,7 +71,6 @@
         <div class="bottom-right">
           <div class="utility-buttons">
             <button id="thermal-button" class="utility-button" type="button" data-i18n-attr="aria-label:hud.thermal.aria"><b id="thermal-state">—</b></button>
-            <button id="pause-button" class="utility-button" type="button" data-i18n-attr="aria-label:pause.aria">II</button>
             <button id="backpack-button" class="utility-button" type="button" data-i18n-attr="aria-label:hud.pack.aria"><span data-i18n="hud.pack.label">Pack</span> <b id="bag-usage">0/8</b></button>
           </div>
           <div class="action-buttons">
@@ -151,9 +152,38 @@
         </div>
       </div>
 
+      <!--
+        暂停页兼设置页。合成一页而不是两页：暂停本来就是"停下来调整一下"的时刻，
+        而单独开一个设置浮层意味着两条互相排斥的暂停路径要各自维护。
+      -->
       <div id="pause-overlay" class="overlay hidden" role="dialog" aria-modal="true">
         <div class="intro-card pause-card">
           <h2 data-i18n="pause.title">Paused</h2>
+          <div class="difficulty-picker">
+            <span class="settings-label" data-i18n="settings.difficulty">Difficulty</span>
+            <div id="difficulty-options" class="difficulty-options" role="radiogroup" data-i18n-attr="aria-label:settings.difficulty">
+              <button class="difficulty-option" type="button" role="radio" aria-checked="false" data-difficulty="easy">
+                <b data-i18n="difficulty.easy">Easy</b><span data-i18n="difficulty.easy.blurb"></span>
+              </button>
+              <button class="difficulty-option" type="button" role="radio" aria-checked="false" data-difficulty="normal">
+                <b data-i18n="difficulty.normal">Normal</b><span data-i18n="difficulty.normal.blurb"></span>
+              </button>
+              <button class="difficulty-option" type="button" role="radio" aria-checked="false" data-difficulty="insane">
+                <b data-i18n="difficulty.insane">Maddening</b><span data-i18n="difficulty.insane.blurb"></span>
+              </button>
+            </div>
+            <!-- 选了别的档才出现：难度在开局时定死，改了必须重开一局才算数。 -->
+            <button id="difficulty-restart" class="secondary-button hidden" type="button" data-i18n="settings.restart">Restart to apply</button>
+          </div>
+          <!--
+            声音键从状态栏搬进来。Poki 的要求只有"广告期间自动静音"（由 withAdGuard 统一处理），
+            **没有任何一条要求游戏自带可见的声音开关**，更没规定它要摆在主界面上。
+            放在这里既省掉状态栏一行，也和难度凑成一个完整的设置区。
+          -->
+          <div class="settings-row">
+            <span class="settings-label" data-i18n="hud.sound.label">Sound</span>
+            <button id="sound-button" class="secondary-button" type="button" data-i18n-attr="aria-label:hud.sound.aria" aria-pressed="true"><b id="sound-state" data-i18n="sound.on">On</b></button>
+          </div>
           <p data-i18n="pause.hint">Press ESC to resume</p>
           <button id="pause-resume" class="primary-button" type="button" data-i18n="pause.resume">Resume</button>
         </div>

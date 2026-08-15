@@ -2,6 +2,8 @@ import type { EquipTier, GameSimulation } from "../game/simulation/GameSimulatio
 import { t, tx } from "../i18n";
 import { clamp } from "../game/simulation/geometry";
 import { describeRecords, formatDuration, loadRecords, submitRun } from "./Records";
+import type { Difficulty } from "../game/simulation/difficulty";
+import { DEFAULT_DIFFICULTY } from "../game/simulation/difficulty";
 import { STRUCTURE_SPECS } from "../game/simulation/types";
 import { itemIcon } from "./ItemIcons";
 import type {
@@ -138,8 +140,16 @@ export class HudController {
   private lastBlocked = false;
   private blockedListener: ((blocked: boolean) => void) | null = null;
 
-  constructor(simulation: GameSimulation) {
+  /** 本局实际在跑的难度 —— 记录只和同难度比。 */
+  private readonly difficulty: Difficulty;
+  /** 设置面板里当前高亮的那一档，可能已经和 difficulty 不同（选了但还没重开）。 */
+  private difficultySelection: Difficulty;
+
+  constructor(simulation: GameSimulation, difficulty: Difficulty = DEFAULT_DIFFICULTY) {
     this.simulation = simulation;
+    this.difficulty = difficulty;
+    this.difficultySelection = difficulty;
+    this.setDifficultySelection(difficulty);
     this.slots = [...document.querySelectorAll<HTMLButtonElement>(".inventory-slot")];
     this.slots.forEach((slot) => {
       slot.addEventListener("click", () => {
@@ -438,11 +448,14 @@ export class HudController {
   }
 
   /**
-   * 升级区有且只有三种状态，由 getUpgradeOptions() 返回的候选数量决定：
+   * 升级区有四种状态。**先看闸，再看候选数量**：
    *
-   *   2 个 —— 阶 0，两条线的一阶同时可造 → **分叉卡**
-   *   1 个 —— 已分叉未满级 → **升级卡**（当前 vs 下阶并排）
-   *   0 个 —— 已满级 → **属性总览**
+   *   未解锁 —— isEquipmentUnlocked() 为假 → **一行说明**，整棵树收起来
+   *   2 个   —— 阶 0，两条线的一阶同时可造 → **分叉卡**
+   *   1 个   —— 已分叉未满级 → **升级卡**（当前 vs 下阶并排）
+   *   0 个   —— 已满级 → **属性总览**
+   *
+   * 闸必须单独判，不能靠候选数量：长度 0 已经被"已满级"占了。
    *
    * 分叉卡刻意不做成两个并排的按钮：按钮只有一行字的预算，而这是全局最重的
    * 一次决策 —— 它决定接下来四天你去挖矿还是去捡柴。背包本来就暂停游戏，
@@ -457,7 +470,9 @@ export class HudController {
     // 背包开着时这个方法每 0.08 秒被调一次。无脑重写 innerHTML 会让按钮一秒
     // 重建 12 次 —— 落在两次重建之间的点击会被整个吞掉。所以先算一个签名，
     // 只有真的有东西变了才重绘。
+    const unlocked = this.simulation.isEquipmentUnlocked();
     const signature = [
+      unlocked ? "open" : "locked",
       equipped.id,
       ...options.map((tier) => tier.id),
       ...options.flatMap((tier) => tier.cost.map(([kind, count]) => `${kind}${Math.min(this.simulation.getInventoryCount(kind), count)}`)),
@@ -466,6 +481,14 @@ export class HudController {
     ].join("|");
     if (this.upgradeSignatures.get(slot) === signature) return;
     this.upgradeSignatures.set(slot, signature);
+
+    // 还没拿到兽皮或铁矿：整棵树收起来，只说清它什么时候会长出来。
+    // 说明只挂武器槽（index.html 里它排在护甲槽前面），护甲槽留空 ——
+    // 同一句话在一屏里印两遍是噪音。
+    if (!unlocked) {
+      host.innerHTML = slot === "weapon" ? `<p class="upgrade-head locked">${t("upgrade.locked")}</p>` : "";
+      return;
+    }
 
     const html = options.length >= 2
       ? `<p class="upgrade-head">${t("upgrade.pickLine", { slot: noun })}</p>
@@ -565,8 +588,12 @@ export class HudController {
     if (pending && pending.slot === slot) {
       const target = switches.find((tier) => tier.id === pending.id);
       if (target) {
+        const equipped = this.simulation.getEquipped(slot);
+        // 一阶换线退全款（见 GameSimulation.craftEquip），这时候还吓唬玩家"材料不退"
+        // 就是在劝退一个本来无损的试错。
+        const warningKey = equipped.tier === 1 ? "switch.free" : "switch.warning";
         return `<div class="confirm-bar">
-          <span>${t("switch.warning", { current: this.tierName(this.simulation.getEquipped(slot)), next: this.tierName(target) })}</span>
+          <span>${t(warningKey, { current: this.tierName(equipped), next: this.tierName(target) })}</span>
           <button type="button" data-craft="${target.id}">${t("switch.confirm")}</button>
           <button type="button" data-cancel="1">${t("switch.cancel")}</button>
         </div>`;
@@ -616,6 +643,7 @@ export class HudController {
       seconds: this.simulation.elapsed,
       fuel: fuel.loaded,
       won,
+      difficulty: this.difficulty,
     });
     this.refreshRecordsLine();
     // 破了纪录就只报破的那一项 —— 平局时再念一遍旧纪录只会冲淡成就感。
@@ -632,9 +660,26 @@ export class HudController {
     return t("records.bestFuelLong", { fuel: records.bestFuel });
   }
 
+  /**
+   * 把设置面板里的高亮切到某一档。
+   *
+   * 只改高亮，不改本局难度 —— 本局跑的是 this.difficulty，构造之后不再变。
+   * 两者不同就说明玩家选了新档但还没重开，main.ts 那边据此亮出"重开一局"。
+   */
+  setDifficultySelection(difficulty: Difficulty): void {
+    this.difficultySelection = difficulty;
+    for (const option of document.querySelectorAll<HTMLElement>("#difficulty-options [data-difficulty]")) {
+      option.setAttribute("aria-checked", String(option.dataset.difficulty === difficulty));
+    }
+  }
+
+  getDifficultySelection(): Difficulty {
+    return this.difficultySelection;
+  }
+
   /** 开场页那一行；没玩过时整行隐藏，不占版面。 */
   refreshRecordsLine(): void {
-    const text = describeRecords(loadRecords());
+    const text = describeRecords(loadRecords(this.difficulty));
     this.recordsLine.textContent = text ?? "";
     this.recordsLine.classList.toggle("hidden", text === null);
   }

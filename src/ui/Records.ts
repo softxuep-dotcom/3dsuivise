@@ -24,10 +24,17 @@
  */
 
 import { t } from "../i18n";
+import type { Difficulty } from "../game/simulation/difficulty";
+import { DIFFICULTIES } from "../game/simulation/difficulty";
 
 // v1 存的是 bestDay/bestKills，两项在新目标下都没有意义了，
 // 换 key 而不是迁移：旧值翻译不成新值，硬迁只会显示一个假记录。
-const STORAGE_KEY = "desert-survivor.records.v2";
+//
+// v2 → v3 同理：加了难度之后，"令人发狂通关"和"简单通关"共用一条最佳记录
+// 就没有意义了 —— 一个 4 分钟的简单局会永久压住一个 9 分钟的发狂局。
+// v2 的旧值属于哪个难度也已经无从判断（那时只有现在的简单档），
+// 硬塞进简单档看似合理，但玩家会看到一条自己没打过的"简单档记录"。照旧换 key。
+const STORAGE_KEY = "desert-survivor.records.v3";
 
 export interface Records {
   /** 最快通关用时（秒）；0 表示还没通关过。 */
@@ -44,38 +51,51 @@ export interface Records {
 
 const EMPTY: Records = { bestEscapeSeconds: 0, bestEscapeDay: 0, bestFuel: 0, victories: 0, runs: 0 };
 
+/** 存储体：一个难度一套记录。 */
+type RecordBook = Record<Difficulty, Records>;
+
+function emptyBook(): RecordBook {
+  return Object.fromEntries(DIFFICULTIES.map((d) => [d, { ...EMPTY }])) as RecordBook;
+}
+
+function sanitize(value: Partial<Records> | undefined): Records {
+  return {
+    bestEscapeSeconds: Number(value?.bestEscapeSeconds) || 0,
+    bestEscapeDay: Number(value?.bestEscapeDay) || 0,
+    bestFuel: Number(value?.bestFuel) || 0,
+    victories: Number(value?.victories) || 0,
+    runs: Number(value?.runs) || 0,
+  };
+}
+
 /**
  * 隐私模式、被禁用的存储、以及跨域 iframe（Poki 就是 iframe 嵌入）都可能让
  * localStorage 直接抛异常。记录是锦上添花，任何一步失败都必须静默降级，
  * 绝不能把游戏本身带崩。
  */
-function read(): Records {
+function read(): RecordBook {
+  const book = emptyBook();
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { ...EMPTY };
-    const parsed = JSON.parse(raw) as Partial<Records>;
-    return {
-      bestEscapeSeconds: Number(parsed.bestEscapeSeconds) || 0,
-      bestEscapeDay: Number(parsed.bestEscapeDay) || 0,
-      bestFuel: Number(parsed.bestFuel) || 0,
-      victories: Number(parsed.victories) || 0,
-      runs: Number(parsed.runs) || 0,
-    };
+    if (!raw) return book;
+    const parsed = JSON.parse(raw) as Partial<Record<Difficulty, Partial<Records>>>;
+    for (const difficulty of DIFFICULTIES) book[difficulty] = sanitize(parsed?.[difficulty]);
+    return book;
   } catch {
-    return { ...EMPTY };
+    return book;
   }
 }
 
-function write(records: Records): void {
+function write(book: RecordBook): void {
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(book));
   } catch {
     // 存不下就算了，本局照常显示。
   }
 }
 
-export function loadRecords(): Records {
-  return read();
+export function loadRecords(difficulty: Difficulty): Records {
+  return read()[difficulty];
 }
 
 /** 把秒数写成 M:SS —— 一局十几分钟，小时位永远用不上。 */
@@ -91,6 +111,8 @@ export interface RunResult {
   /** 结束时车里装了几桶。 */
   fuel: number;
   won: boolean;
+  /** 这一局跑的是哪个难度。记录只和同难度比。 */
+  difficulty: Difficulty;
 }
 
 /** 结算一局，返回更新后的记录以及这一局刷新了哪几项。 */
@@ -99,7 +121,8 @@ export function submitRun(result: RunResult): {
   brokeEscape: boolean;
   brokeFuel: boolean;
 } {
-  const previous = read();
+  const book = read();
+  const previous = book[result.difficulty];
   // 最快脱出只有通关才算；0 是"还没通关过"的哨兵，所以第一次通关无条件破纪录。
   const brokeEscape = result.won
     && (previous.bestEscapeSeconds <= 0 || result.seconds < previous.bestEscapeSeconds);
@@ -111,7 +134,8 @@ export function submitRun(result: RunResult): {
     victories: previous.victories + (result.won ? 1 : 0),
     runs: previous.runs + 1,
   };
-  write(records);
+  book[result.difficulty] = records;
+  write(book);
   return { records, brokeEscape, brokeFuel };
 }
 

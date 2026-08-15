@@ -6,6 +6,8 @@ import { InputController } from "./game/input/InputController";
 import { GameSimulation } from "./game/simulation/GameSimulation";
 import { GameRenderer } from "./render/GameRenderer";
 import { HudController } from "./ui/HudController";
+import { loadDifficulty, saveDifficulty } from "./ui/Settings";
+import { normalizeDifficulty } from "./game/simulation/difficulty";
 import { createPlatform } from "./platform";
 
 /**
@@ -68,7 +70,9 @@ async function bootstrap(): Promise<void> {
       }
     }
   }
-  const simulation = new GameSimulation(world);
+  // 难度只在这里读一次 —— 换档要重开页面，见 difficulty.ts 顶部那段。
+  const difficulty = loadDifficulty();
+  const simulation = new GameSimulation(world, difficulty);
   if (import.meta.env.DEV && new URLSearchParams(window.location.search).get("night") === "1") {
     simulation.phase = "night";
     simulation.phaseTime = 105;
@@ -91,7 +95,7 @@ async function bootstrap(): Promise<void> {
   document.addEventListener("pointerdown", unlockAudio, true);
   document.addEventListener("keydown", unlockAudio, true);
 
-  const hud = new HudController(simulation);
+  const hud = new HudController(simulation, difficulty);
   // 开场页要立刻显示上一局的高度，不能等到这一局结束才刷。
   hud.refreshRecordsLine();
 
@@ -233,8 +237,24 @@ async function bootstrap(): Promise<void> {
     const button = document.getElementById(id);
     button?.addEventListener("click", () => { void restartWithBreak(button); });
   }
-  document.getElementById("pause-button")?.addEventListener("click", () => hud.togglePause());
+  // 齿轮即暂停键：底排腾出来只放四个操作键，而暂停控件仍然看得见、点得到。
+  document.getElementById("settings-button")?.addEventListener("click", () => hud.togglePause());
   document.getElementById("pause-resume")?.addEventListener("click", () => hud.setPaused(false));
+
+  /*
+   * 难度：点一下就存下来（下次自然重开即生效），同时亮出"重开一局"。
+   * 不做热切换 —— 狼的数值是生成时算的，跑到一半换档只会让新旧狼混在同一夜里。
+   */
+  const difficultyRestart = document.getElementById("difficulty-restart");
+  for (const option of document.querySelectorAll<HTMLButtonElement>("#difficulty-options [data-difficulty]")) {
+    option.addEventListener("click", () => {
+      const picked = normalizeDifficulty(option.dataset.difficulty);
+      saveDifficulty(picked);
+      hud.setDifficultySelection(picked);
+      difficultyRestart?.classList.toggle("hidden", picked === difficulty);
+    });
+  }
+  difficultyRestart?.addEventListener("click", () => { void restartWithBreak(difficultyRestart); });
   document.getElementById("sound-button")?.addEventListener("click", async () => {
     await audio.unlock().catch(() => { /* 同上 */ });
     const enabled = audio.toggle();

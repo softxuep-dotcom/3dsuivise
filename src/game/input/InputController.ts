@@ -21,6 +21,10 @@ export class InputController {
   private readonly callbacks: InputCallbacks;
   private joystick = { x: 0, y: 0 };
   private moveTarget: Vec2 | null = null;
+  /** 浮动摇杆当前吃住的那根手指；null = 没人在推。 */
+  private joystickPointer: number | null = null;
+  private readonly joystickBase = document.getElementById("joystick");
+  private readonly joystickKnob = document.querySelector<HTMLElement>("#joystick i");
 
   constructor(callbacks: InputCallbacks) {
     this.callbacks = callbacks;
@@ -30,18 +34,25 @@ export class InputController {
     this.bindButton("action-button", callbacks.onAction);
     this.bindButton("attack-button", callbacks.onAttack);
     this.bindButton("thermal-button", callbacks.onThermal);
-    this.bindJoystick();
   }
 
   bindCanvas(canvas: HTMLCanvasElement, screenToWorld: (x: number, y: number) => Vec2 | null): void {
     canvas.addEventListener("pointerdown", (event) => {
-      if (event.pointerType === "touch") return;
+      if (event.pointerType === "touch") {
+        this.startJoystick(canvas, event);
+        return;
+      }
       const target = screenToWorld(event.clientX, event.clientY);
       if (target) {
         this.callbacks.onGameplayIntent();
         this.moveTarget = target;
       }
     });
+    canvas.addEventListener("pointermove", (event) => {
+      if (event.pointerId === this.joystickPointer) this.trackJoystick(event);
+    });
+    canvas.addEventListener("pointerup", this.releaseJoystick);
+    canvas.addEventListener("pointercancel", this.releaseJoystick);
   }
 
   getMovement(player: PlayerState): Vec2 {
@@ -101,7 +112,8 @@ export class InputController {
 
   private readonly clear = (): void => {
     this.keys.clear();
-    this.joystick = { x: 0, y: 0 };
+    this.joystickPointer = null;
+    this.parkJoystick();
   };
 
   private bindButton(id: string, callback: () => void): void {
@@ -112,45 +124,62 @@ export class InputController {
     });
   }
 
-  private bindJoystick(): void {
-    const base = document.getElementById("joystick");
-    const knob = base?.querySelector("i") as HTMLElement | null;
+  /**
+   * 浮动摇杆：圆心落在手指按下的位置，而不是屏幕角上那个写死的圈。
+   *
+   * 固定摇杆逼着左拇指整局外展去够左下角的 104px 圆 —— 那是持续等长收缩，
+   * 竖屏久玩手酸的头号来源。落点即圆心之后，手放哪都行。
+   *
+   * 事件绑在 **canvas** 上而不是摇杆元素上：按钮和状态栏都是盖在 canvas 之上的 DOM，
+   * 它们的触摸压根走不到这里，于是"哪里算摇杆区"不需要再和 HUD 抢层叠关系。
+   * 只认左半屏 —— 右半屏是按钮簇的地盘，那边的空白点击维持原样（什么都不做）。
+   */
+  private startJoystick(canvas: HTMLCanvasElement, event: PointerEvent): void {
+    const base = this.joystickBase;
+    if (!base || this.joystickPointer !== null) return;
+    if (event.clientX > window.innerWidth * 0.5) return;
+    this.callbacks.onGameplayIntent();
+    this.joystickPointer = event.pointerId;
+    base.classList.add("floating");
+    base.style.left = `${event.clientX - base.offsetWidth / 2}px`;
+    base.style.top = `${event.clientY - base.offsetHeight / 2}px`;
+    canvas.setPointerCapture(event.pointerId);
+    this.trackJoystick(event);
+  }
+
+  private readonly trackJoystick = (event: PointerEvent): void => {
+    const base = this.joystickBase;
+    const knob = this.joystickKnob;
     if (!base || !knob) return;
-    let activePointer: number | null = null;
+    // 圆心就是元素中心 —— startJoystick 已经把它摆在了落点上。
+    const rect = base.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    let x = (event.clientX - centerX) / (rect.width * 0.34);
+    let y = (event.clientY - centerY) / (rect.height * 0.34);
+    const length = Math.hypot(x, y);
+    if (length > 1) {
+      x /= length;
+      y /= length;
+    }
+    this.joystick = { x, y };
+    knob.style.transform = `translate(${x * rect.width * 0.29}px, ${y * rect.height * 0.29}px)`;
+  };
 
-    const update = (event: PointerEvent): void => {
-      const rect = base.getBoundingClientRect();
-      const centerX = rect.left + rect.width / 2;
-      const centerY = rect.top + rect.height / 2;
-      let x = (event.clientX - centerX) / (rect.width * 0.34);
-      let y = (event.clientY - centerY) / (rect.height * 0.34);
-      const length = Math.hypot(x, y);
-      if (length > 1) {
-        x /= length;
-        y /= length;
-      }
-      this.joystick = { x, y };
-      knob.style.transform = `translate(${x * rect.width * 0.29}px, ${y * rect.height * 0.29}px)`;
-    };
+  private readonly releaseJoystick = (event: PointerEvent): void => {
+    if (this.joystickPointer !== event.pointerId) return;
+    this.joystickPointer = null;
+    this.parkJoystick();
+  };
 
-    const release = (event: PointerEvent): void => {
-      if (activePointer !== event.pointerId) return;
-      activePointer = null;
-      this.joystick = { x: 0, y: 0 };
-      knob.style.transform = "translate(0, 0)";
-      base.releasePointerCapture(event.pointerId);
-    };
-
-    base.addEventListener("pointerdown", (event) => {
-      this.callbacks.onGameplayIntent();
-      activePointer = event.pointerId;
-      base.setPointerCapture(event.pointerId);
-      update(event);
-    });
-    base.addEventListener("pointermove", (event) => {
-      if (activePointer === event.pointerId) update(event);
-    });
-    base.addEventListener("pointerup", release);
-    base.addEventListener("pointercancel", release);
+  /** 停推：清零输入，并让摇杆回到 CSS 里那个角落待机位（新玩家得先看得见它）。 */
+  private parkJoystick(): void {
+    this.joystick = { x: 0, y: 0 };
+    if (this.joystickKnob) this.joystickKnob.style.transform = "translate(0, 0)";
+    const base = this.joystickBase;
+    if (!base) return;
+    base.classList.remove("floating");
+    base.style.left = "";
+    base.style.top = "";
   }
 }
