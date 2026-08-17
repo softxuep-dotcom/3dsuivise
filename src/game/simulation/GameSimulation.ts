@@ -70,7 +70,21 @@ function screenBearing(from: Vec2, to: Vec2): number {
   return Math.atan2(right, up);
 }
 
-const FIRST_DAY_DURATION = 90;
+/*
+ * 第一天 90 → 40 秒。
+ *
+ * Poki 实测 11 场会话时长中位数 **52 秒**，而入夜原本在第 90 秒 —— 也就是
+ * **73% 的玩家从没见过夜**，而夜袭是这个游戏的全部。四条装备线、体温双向夹逼、
+ * 井的回蓄、狗巢，全都住在他们看不到的地方。
+ *
+ * 40 而不是 35：出生点脚边就有 4 根枯木，捡 3 根 + 添柴实测要十几秒，
+ * 再留一点给"囤水"那步，35 秒会把引导链压得没法完成。40 秒下中位玩家
+ * 仍然能在离开前看到天黑。
+ *
+ * 这条只缩白天，不动 FIRST_NIGHT_DURATION：第一昼夜因此从 240 秒降到 190 秒，
+ * 而开局口粮是按 240 秒配的（见 STARTING_RATION 那段），所以只会更宽松，不会饿死人。
+ */
+const FIRST_DAY_DURATION = 40;
 const FIRST_NIGHT_DURATION = 150;
 const LATER_DAY_DURATION = 180;
 const SECOND_NIGHT_DURATION = 180;
@@ -645,6 +659,7 @@ export class GameSimulation {
     if (this.wolvesEnabled) return;
     this.wolvesEnabled = true;
     this.wolfDirector.seedDenGuards();
+    this.wolfDirector.seedOpeningScout();
     // 资源可能直到入夜后才下载完；此时要从本夜的完整配额重新开始。
     if (this.phase === "night") this.wolfDirector.beginNight();
     else this.wolfDirector.beginDay();
@@ -1815,7 +1830,22 @@ export class GameSimulation {
 
   getObjective(): LocalizedText {
     if (this.departTimer > 0) return loc("sim.departing");
-    if (!this.clockStarted) return loc("sim.7");
+    /*
+     * 开场第一句必须说清**为什么活着**，不是"先干个家务"。
+     *
+     * 原来写的是"移动或拿起枯木，开始第一天" —— 那是流程说明。而卡车（通关条件）
+     * 就在出生点 34 米外、一抬头就看得见，玩家却完全不知道它是出路。
+     * Poki 那批会话中位数只有 52 秒，绝大多数人从头到尾没被告知过目标是什么。
+     * 现在第一句直接给：加满几桶、车在哪个方位、多远。
+     */
+    if (!this.clockStarted) {
+      const opening = this.getFuelProgress();
+      return loc("sim.7", {
+        required: opening.required,
+        metres: Math.round(opening.truckDistance),
+        bearing: loc(this.bearingKey(screenBearing(this.player, this.truck))),
+      });
+    }
     if (this.player.gatherTimer > 0) return loc("sim.8");
 
     // 致命轴优先：水分和饥饿归零是立即死亡，必须压过其它所有提示。

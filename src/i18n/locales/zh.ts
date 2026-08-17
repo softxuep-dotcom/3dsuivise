@@ -323,7 +323,7 @@ export const zh: Record<string, string> = {
   "sim.43": "站定 {v0} 秒后开始休息",
   "sim.5": "离已有的{v0}太近",
   "sim.6": "这里有东西挡着",
-  "sim.7": "移动或拿起枯木，开始第一天",
+  "sim.7": "加满 {required} 桶油，开着卡车离开沙海 · 车在{bearing}约 {metres} 米",
   "sim.8": "取水中 · 别移动",
   "sim.9": "水分见底 · 立刻找水，归零即死",
   "sim.cookAnywhere": "体力在掉 · 生肉烤熟才回体力，先找个篝火添柴",

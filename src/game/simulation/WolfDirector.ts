@@ -758,6 +758,33 @@ export class WolfDirector {
    * 白天在远离玩家的地方补充游荡野狼。
    * 它们不主动攻击，被打才反击 —— 是狼皮（进而是防具线）的唯一来源。
    */
+  /**
+   * 开场斥候：出生点外 27 米放一只白天野狗，开局第一帧就在。
+   *
+   * 不是加难度 —— wild 角色只有被打才还手。是为了**第一秒画面里有活的东西**。
+   * 实测开局 40 米内野狗 0 只（updateWildWolves 明确拒绝在玩家 34 米内刷，
+   * 而且每 9 秒才补一只、位置全图随机），第一只要到第 29 秒才晃进视野；
+   * 而 Poki 那批会话时长中位数只有 52 秒 —— 超过一半的人开局看到的是一片不动的沙子。
+   *
+   * 它同时是兽皮的唯一来源，所以这只狗顺带把"打猎"这条循环也指出来了。
+   * 挑方位时要求视线不被挡：藏在土垄后面的斥候等于没放。
+   */
+  seedOpeningScout(): void {
+    const player = this.ctx.player;
+    for (let index = 0; index < 16; index += 1) {
+      // 从正右方起转一圈，取第一个站得住又看得见的点。
+      const angle = (index / 16) * TAU;
+      const point = this.ctx.findNearestWalkablePoint({
+        x: player.x + Math.cos(angle) * 27,
+        z: player.z + Math.sin(angle) * 27,
+      });
+      if (!isTerrainWalkable(this.ctx.world, point)) continue;
+      if (this.ctx.lineOfSightBlocked(player, point)) continue;
+      this.spawnWolf({ role: "wild", origin: point });
+      return;
+    }
+  }
+
   private updateWildWolves(delta: number): void {
     if (this.ctx.phase !== "day") return;
     this.wildRespawnCountdown -= delta;

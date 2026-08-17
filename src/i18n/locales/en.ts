@@ -324,7 +324,7 @@ export const en: Record<string, string> = {
   "sim.43": "stand still {v0}s more to start resting",
   "sim.5": "Too close to an existing {v0}",
   "sim.6": "Something is in the way",
-  "sim.7": "Move, or pick up deadwood, to start day one",
+  "sim.7": "Fill the truck with {required} barrels and drive out · it is {metres} m {bearing}",
   "sim.8": "Drawing · do not move",
   "sim.9": "Out of water · find some now; at zero you die",
   "sim.cookAnywhere": "Health draining · raw meat restores none of it. Get a fire lit and cook",
