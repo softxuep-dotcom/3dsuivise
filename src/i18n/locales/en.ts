@@ -378,5 +378,6 @@ export const en: Record<string, string> = {
   "win.summary": "On day {day} you poured the fifth barrel in and left this stretch of sand in the mirror. {count} kills in all.",
   "win.summary_one": "On day {day} you poured the fifth barrel in and left this stretch of sand in the mirror. {count} kill in all.",
   "win.summary_other": "On day {day} you poured the fifth barrel in and left this stretch of sand in the mirror. {count} kills in all.",
+  "win.tryHarder": "That run was on {current}. Want it harder? Switch to {next} under ⚙ up top — {blurb}",
   "win.title": "Out of the sand",
 };

@@ -315,6 +315,14 @@ async function bootstrap(): Promise<void> {
   // 场景可以先展示，但 gameplayStart 与模拟层都必须等玩家第一次实际游戏输入。
   // HUD 已经提示“移动或拿起枯木，开始第一天”，无需重新加一层开始按钮。
   hud.showGame();
+  // 先把可玩的第一帧交给浏览器，再在后台下载动物；它们不再占开场进度条。
+  // 哪个模型先到就只启用哪类种群，未下载成功的动物不会生成。
+  requestAnimationFrame(() => {
+    renderer.loadDeferredAnimalAssets((kind) => {
+      if (kind === "wolf") simulation.enableWolves();
+      else simulation.enableCritters();
+    });
+  });
 }
 
 void bootstrap().catch((error) => console.error("Bootstrap failed", error));

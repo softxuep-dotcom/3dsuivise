@@ -377,5 +377,6 @@ export const zh: Record<string, string> = {
   "win.summary": "第 {day} 天，五桶汽油灌进油箱，你把这片沙海留在了后视镜里。累计猎杀 {count} 只。",
   "win.summary_one": "第 {day} 天，五桶汽油灌进油箱，你把这片沙海留在了后视镜里。累计猎杀 {count} 只。",
   "win.summary_other": "第 {day} 天，五桶汽油灌进油箱，你把这片沙海留在了后视镜里。累计猎杀 {count} 只。",
+  "win.tryHarder": "刚才这局是{current}。想更难就去右上角 ⚙ 换成{next} —— {blurb}",
   "win.title": "走出沙海",
 };

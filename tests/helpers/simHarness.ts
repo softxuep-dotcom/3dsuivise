@@ -61,6 +61,8 @@ export function runNight({ campId, seconds = NIGHT_SECONDS, onStep }: NightOptio
   inner.phaseTime = NIGHT_SECONDS;
   inner.clockStarted = true;
   inner.running = true;
+  // 生产环境等 Wolf.glb 下载完成后才启用；这里在夜相位设置好后模拟“资源已就绪”。
+  sim.enableWolves();
 
   const steps = Math.round(seconds / STEP);
   for (let step = 0; step < steps; step += 1) {

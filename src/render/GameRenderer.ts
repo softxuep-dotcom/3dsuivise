@@ -329,9 +329,10 @@ export class GameRenderer {
   private time = 0;
   private readonly onAssetProgress?: (loaded: number, total: number) => void;
   private readonly playerAssetReady: Promise<void>;
-  /** Quaternius 的狼与鹿；加载失败时保持 null，视图会退回程序化替身。 */
+  /** Quaternius 的狼与鹿；它们在游戏画面出现后才开始下载。 */
   private wolfAsset: AnimalAsset | null = null;
   private deerAsset: AnimalAsset | null = null;
+  private animalAssetLoadingStarted = false;
 
   constructor(
     root: HTMLElement,
@@ -1382,6 +1383,34 @@ export class GameRenderer {
     return this.playerAssetReady;
   }
 
+  /**
+   * 进入游戏画面后再并行下载动物资源。
+   *
+   * 每个资源独立成功、独立启用：鹿先到就只生成猎物，狼先到就只生成狼群。
+   * 加载失败时不回退到程序化动物，也不通知模拟层生成对应实体，避免隐形攻击。
+   */
+  loadDeferredAnimalAssets(onReady: (kind: "wolf" | "deer") => void): void {
+    if (this.animalAssetLoadingStarted) return;
+    this.animalAssetLoadingStarted = true;
+
+    const loader = new GLTFLoader();
+    loader.setMeshoptDecoder(MeshoptDecoder);
+    const assetRoot = `${import.meta.env.BASE_URL}assets/animals`;
+    const load = async (name: string, kind: "wolf" | "deer", assign: (asset: AnimalAsset) => void): Promise<void> => {
+      try {
+        assign(await loadAnimal(loader, `${assetRoot}/${name}`));
+        onReady(kind);
+      } catch (error) {
+        console.warn(`${name} failed to load; ${kind} population will stay disabled.`, error);
+      }
+    };
+
+    void Promise.all([
+      load("Wolf.glb", "wolf", (asset) => { this.wolfAsset = asset; }),
+      load("Deer.glb", "deer", (asset) => { this.deerAsset = asset; }),
+    ]);
+  }
+
   private async loadPlayerAsset(): Promise<void> {
     const loader = new GLTFLoader();
     loader.setMeshoptDecoder(MeshoptDecoder);
@@ -1397,10 +1426,7 @@ export class GameRenderer {
       "Rig_Medium_General.glb",
       "Rig_Medium_CombatMelee.glb",
     ];
-    const animalRoot = `${import.meta.env.BASE_URL}assets/animals`;
-    // 动物也算进同一条进度：它们和人物一样是"进场前就该到位"的东西 ——
-    // 玩家不该看着一只方块狗在第 3 秒突然变成一只狼。
-    const totalFiles = files.length + 2;
+    const totalFiles = files.length;
     let loaded = 0;
     this.onAssetProgress?.(0, totalFiles);
     const step = (): void => {
@@ -1408,30 +1434,14 @@ export class GameRenderer {
       this.onAssetProgress?.(loaded, totalFiles);
     };
 
-    // 每个动物各自 catch：狼加载不出来不该把鹿或人物一起拖下水。
-    // 失败只是让对应的视图退回程序化替身，进度照样往前走。
-    const animalsReady = ([
-      ["Wolf.glb", (asset: AnimalAsset) => { this.wolfAsset = asset; }],
-      ["Deer.glb", (asset: AnimalAsset) => { this.deerAsset = asset; }],
-    ] as Array<[string, (asset: AnimalAsset) => void]>).map(async ([name, assign]) => {
-      try {
-        assign(await loadAnimal(loader, `${animalRoot}/${name}`));
-        this.rebuildAnimalViews();
-      } catch (error) {
-        console.warn(`${name} failed to load; keeping the procedural fallback.`, error);
-      }
-      step();
-    });
-
     try {
-      const characters = Promise.all(
+      const [character, movement, general, combat] = await Promise.all(
         files.map(async (name) => {
           const gltf = await loader.loadAsync(`${assetRoot}/${name}`);
           step();
           return gltf;
         }),
       );
-      const [[character, movement, general, combat]] = await Promise.all([characters, ...animalsReady]);
 
       const model = character.scene;
       model.name = "KayKit_Rogue_Hooded";
@@ -2000,22 +2010,6 @@ export class GameRenderer {
     this.scene.remove(view.group);
     view.animal?.dispose();
     view.bodyMaterial.dispose();
-  }
-
-  /**
-   * 素材到位之后，把**已经用替身建好的视图**全部丢掉，下一帧自然会用真模型重建。
-   *
-   * 不做这一步的话，开局就存在的东西会永久停在替身上：`main.ts` 里有一次
-   * 故意的着色器预热 `renderer.render(0)`，它跑在 `whenPlayerAssetReady()` **之前**，
-   * 而那一刻模拟层里已经有 4 只长角羚（seedCritters）和 5 只守巢犬（seedDenGuards）——
-   * 它们的视图就在那一帧被建好并缓存，之后再也不会重建。
-   * 现象是"守油桶的狗是丑方块、羊还是老样子，而后面出生的狼都是对的"。
-   */
-  private rebuildAnimalViews(): void {
-    for (const view of this.wolfViews.values()) this.disposeWolfView(view);
-    this.wolfViews.clear();
-    for (const view of this.critterViews.values()) this.disposeCritterView(view);
-    this.critterViews.clear();
   }
 
   private createWolfView(wolf: WolfState): WolfView {

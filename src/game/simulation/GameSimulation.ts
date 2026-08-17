@@ -526,6 +526,12 @@ export class GameSimulation {
   private readonly retreatNavigations: NavigationGrid[];
   private critterId = 0;
   private critterRespawnCountdown = 4;
+  /**
+   * 动物模型改为进场后下载。资源没准备好时模拟层也不能先生成实体，
+   * 否则玩家会被尚未显示出来的狼攻击，或看见猎物稍后突然换模型。
+   */
+  private crittersEnabled = false;
+  private wolvesEnabled = false;
   private dropId = 0;
   private navigationCountdown = 0;
   /** 剑线连击：当前层数、锁定的目标、以及还剩多久清零。 */
@@ -625,8 +631,23 @@ export class GameSimulation {
     for (const [kind, count] of STARTING_RATION) this.addInventory(kind, count);
     this.navigation.rebuild(this.player, this.getFlowFieldObstacles());
     this.wolfDirector = new WolfDirector(this.createWolfWorld());
+  }
+
+  /** 鹿模型下载完成后一次性启用猎物种群；重复调用不会重复撒怪。 */
+  enableCritters(): void {
+    if (this.crittersEnabled) return;
+    this.crittersEnabled = true;
     this.seedCritters();
+  }
+
+  /** 狼模型下载完成后启用守巢犬、白天野狼和夜袭刷新。 */
+  enableWolves(): void {
+    if (this.wolvesEnabled) return;
+    this.wolvesEnabled = true;
     this.wolfDirector.seedDenGuards();
+    // 资源可能直到入夜后才下载完；此时要从本夜的完整配额重新开始。
+    if (this.phase === "night") this.wolfDirector.beginNight();
+    else this.wolfDirector.beginDay();
   }
 
   /**
@@ -717,8 +738,8 @@ export class GameSimulation {
     this.updateWells();
     this.updateStructures(delta);
     this.updateDrops();
-    this.updateCritters(delta);
-    this.wolfDirector.updateWolves(delta);
+    if (this.crittersEnabled) this.updateCritters(delta);
+    if (this.wolvesEnabled) this.wolfDirector.updateWolves(delta);
     this.updateRest(delta);
     this.updateObjectives();
 

@@ -3,7 +3,7 @@ import { t, tx } from "../i18n";
 import { clamp } from "../game/simulation/geometry";
 import { describeRecords, formatDuration, loadRecords, submitRun } from "./Records";
 import type { Difficulty } from "../game/simulation/difficulty";
-import { DEFAULT_DIFFICULTY } from "../game/simulation/difficulty";
+import { DEFAULT_DIFFICULTY, DIFFICULTIES } from "../game/simulation/difficulty";
 import { STRUCTURE_SPECS } from "../game/simulation/types";
 import { itemIcon } from "./ItemIcons";
 import type {
@@ -142,6 +142,7 @@ export class HudController {
 
   /** 本局实际在跑的难度 —— 记录只和同难度比。 */
   private readonly difficulty: Difficulty;
+  private readonly victoryDifficultyHint = required<HTMLElement>("victory-difficulty-hint");
   /** 设置面板里当前高亮的那一档，可能已经和 difficulty 不同（选了但还没重开）。 */
   private difficultySelection: Difficulty;
 
@@ -740,6 +741,28 @@ export class HudController {
       t("win.summary", { day: this.simulation.day, count: player.kills }),
       this.submitAndDescribe(true),
     ].filter(Boolean).join(" ");
+    this.showNextDifficultyHint();
     this.victory.classList.remove("hidden");
+  }
+
+  /**
+   * 通关页上的"下一步"：告诉玩家还有更高的难度，以及去哪儿调。
+   *
+   * 只在**还有更高档**时出现 —— 默认是简单档，所以绝大多数第一次通关的人都会看到；
+   * 而已经打穿令人发狂的人不该被劝"再难一点"，那一行对他只是噪音，整行隐藏。
+   *
+   * 放在通关的那一刻，是因为这是玩家唯一一个"我做到了、还有什么"的时刻：
+   * 死亡页说这句话像是在嘲讽，开场页说则没人在意。
+   */
+  private showNextDifficultyHint(): void {
+    const index = DIFFICULTIES.indexOf(this.difficulty);
+    const next = index >= 0 ? DIFFICULTIES[index + 1] : undefined;
+    this.victoryDifficultyHint.classList.toggle("hidden", !next);
+    if (!next) return;
+    this.victoryDifficultyHint.textContent = t("win.tryHarder", {
+      current: t(`difficulty.${this.difficulty}`),
+      next: t(`difficulty.${next}`),
+      blurb: t(`difficulty.${next}.blurb`),
+    });
   }
 }
