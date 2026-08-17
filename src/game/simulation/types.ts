@@ -577,3 +577,12 @@ export const INVENTORY_STACK_LIMITS: Record<InventoryItemKind, number> = {
   "wolf-fang": 4,
   wood: 4,
 };
+
+/**
+ * 碰撞半径。放在 types 里是因为 GameSimulation 和 WolfDirector 都要用，
+ * 搁在任何一侧都会让两个模块循环 import。
+ */
+export const PLAYER_RADIUS = 0.72;
+export const WOLF_RADIUS = 0.68;
+/** 天然大石的碰撞半径。流场把石头当障碍时用的是同一个值。 */
+export const STONE_COLLIDE_RADIUS = 1.48;
