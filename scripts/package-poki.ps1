@@ -5,8 +5,8 @@ $packageJsonPath = Join-Path $projectRoot "package.json"
 $distPath = Join-Path $projectRoot "dist-poki"
 $packageJson = Get-Content -LiteralPath $packageJsonPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $displayVersion = [string]$packageJson.version
-$archivePath = Join-Path $projectRoot "desert-survivor-poki-$displayVersion.zip"
-$legacyArchivePath = Join-Path $projectRoot "desert-survivor-poki.zip"
+$archivePath = Join-Path $projectRoot "last-truck-out-poki-$displayVersion.zip"
+$legacyArchivePath = Join-Path $projectRoot "last-truck-out-poki.zip"
 
 if (-not (Test-Path -LiteralPath (Join-Path $distPath "index.html"))) {
   throw "Poki build is missing: $distPath"

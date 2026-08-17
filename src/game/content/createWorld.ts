@@ -80,7 +80,7 @@ const DEN_BARREL_COUNT = 3;
  * 野外那六桶几乎没人碰。把车挪到家门口之后，九桶油对卡车的距离第一次拉开了梯度。
  */
 const TRUCK_GATE_MIN = 6;
-const TRUCK_GATE_MAX = 22;
+const TRUCK_GATE_MAX = 14;
 /**
  * 卡车所在地的坡度上限。比井（0.34）更严 —— 井只要人站得住，
  * 车还要能**开出去**：太陡的话发车动画会把车推进坡里。
@@ -95,7 +95,7 @@ const TRUCK_EXIT_STEP = 3;
 /** 卡车模型的车身长度（buildTruck 的底盘 BoxGeometry 是 6.2 长）。 */
 const TRUCK_LENGTH = 6.2;
 /** 想让卡车在画面上比坡底靠右几个车身。 */
-const TRUCK_RIGHT_LENGTHS = 2.5;
+const TRUCK_RIGHT_LENGTHS = 1.0;
 /** 为此在坡底邻域里搜多大范围、多密。 */
 const TRUCK_SHIFT_RANGE = 22;
 const TRUCK_SHIFT_STEP = 2;

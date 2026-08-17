@@ -280,8 +280,56 @@ button { font: inherit; }
 /* 冷却中的体温键：整颗压暗，数字仍然读得出来还要等多久。 */
 .utility-button:disabled b { color: #9fb4bd; }
 
-/* 攻击/行动是触屏专属；桌面端只留体温和背包两颗，占住右下角。 */
-.action-buttons { display: none; }
+/* 四个右下操作键在所有设备上都可见；输入方式不同，HUD 不分两套。 */
+.action-buttons { display: flex; align-items: flex-end; gap: 8px; }
+
+.round-button {
+  position: relative;
+  width: 68px;
+  height: 68px;
+  border: 1px solid rgba(255,255,255,.25);
+  border-radius: 50%;
+  color: white;
+  font-size: 12px;
+  font-weight: 900;
+  text-shadow: 0 1px 2px rgba(0,0,0,.5);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.round-button.action { background: rgba(48, 110, 127, .7); }
+.round-button.attack { width: 78px; height: 78px; background: rgba(147, 62, 48, .72); }
+.round-button:active { transform: scale(.94); filter: brightness(1.2); }
+
+/*
+ * 右下四键固定使用参考图里的弧形：取暖左下、背包中间、行动右上、攻击右下。
+ * 这套几何不再依赖 pointer 类型或朝向，避免电脑端隐藏攻击键、竖屏又换一套位置。
+ */
+.bottom-right {
+  --arc-r: 140px;
+  width: calc(var(--arc-r) + 52px);
+  height: calc(var(--arc-r) + 52px);
+}
+
+.utility-buttons,
+.action-buttons { display: contents; }
+
+.bottom-right > * > .round-button,
+#thermal-button,
+#backpack-button,
+#action-button,
+#attack-button {
+  position: absolute;
+  transform: translate(50%, 50%);
+}
+
+#thermal-button  { right: calc(var(--arc-r) * 0.961); bottom: calc(var(--arc-r) * 0.276); }
+#backpack-button { right: calc(var(--arc-r) * 0.669); bottom: calc(var(--arc-r) * 0.743); }
+#action-button   { right: calc(var(--arc-r) * 0.174); bottom: calc(var(--arc-r) * 0.985); }
+#attack-button   { right: calc(var(--arc-r) * 0.257); bottom: calc(var(--arc-r) * 0.257); }
+
+.round-button:active { transform: translate(50%, 50%) scale(.94); }
+.utility-button:active { transform: translate(50%, 50%) translateY(1px); }
 
 .clock {
   display: flex;
@@ -914,22 +962,6 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
   .utility-button { min-width: 54px; padding: 11px 9px; font-size: 9px; }
   .utility-button b { font-size: 11px; }
 
-  .round-button {
-    position: relative;
-    width: 68px;
-    height: 68px;
-    border: 1px solid rgba(255,255,255,.25);
-    border-radius: 50%;
-    color: white;
-    font-size: 12px;
-    font-weight: 900;
-    text-shadow: 0 1px 2px rgba(0,0,0,.5);
-    touch-action: manipulation;
-  }
-
-  .round-button.action { background: rgba(48, 110, 127, .7); }
-  .round-button.attack { width: 78px; height: 78px; background: rgba(147, 62, 48, .72); }
-  .round-button:active { transform: scale(.94); filter: brightness(1.2); }
   .intro-card { padding: 25px 20px 20px; }
   .verb-row { gap: 6px; }
   .verb-row span { padding: 10px 5px; font-size: 10px; }
@@ -973,21 +1005,11 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
    * 两层都右对齐，整簇待在右拇指的扇形里。移除暂停键之后上层从三颗降到两颗，
    * 这一层的宽度本来就宽松了。
    */
-  .bottom-right {
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 10px;
-  }
-  /* 竖屏是两层，不是弧形。弧形几何现在只写在横屏块里，这里不用再撤销什么。 */
-  .utility-buttons { display: flex; }
-  .action-buttons { display: flex; flex-direction: row-reverse; }
-
-
-  .prompt { bottom: calc(max(24px, env(safe-area-inset-bottom)) + 152px); }
+  .prompt { bottom: calc(max(24px, env(safe-area-inset-bottom)) + 210px); }
 
   .top-stack {
     top: auto;
-    bottom: calc(max(24px, env(safe-area-inset-bottom)) + 195px);
+    bottom: calc(max(24px, env(safe-area-inset-bottom)) + 253px);
     left: max(10px, env(safe-area-inset-left));
     align-items: flex-start;
     max-width: calc(100vw - 20px);
@@ -1030,23 +1052,6 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
    * translate(50%,50%) 把"盒子右下角对齐到目标点"换算成"中心对齐到目标点"，
    * 这样三颗宽度不一的键才能真的同心。
    */
-  .bottom-right {
-    --arc-r: 140px;
-    /* 给绝对定位的子元素一个参照盒；子元素全脱流，盒子自己不会有高度。 */
-    width: calc(var(--arc-r) + 52px);
-    height: calc(var(--arc-r) + 52px);
-  }
-  /* 让四颗键成为 .bottom-right 的直接排布对象，绕过两层 flex 包装。 */
-  .utility-buttons,
-  .action-buttons { display: contents; }
-  .bottom-right > * > .round-button,
-  #thermal-button,
-  #backpack-button,
-  #action-button,
-  #attack-button {
-    position: absolute;
-    transform: translate(50%, 50%);
-  }
   /*
    * 角度沿弧从外到内：体温 16° → 背包 48° → 行动 80°，攻击落在 45° 的内圈。
    * 右/下偏移 = 半径 × cos/sin，写成小数常量，免得引入 CSS 三角函数（Safari 支持还不齐）。
@@ -1055,14 +1060,6 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
    * 再留 8px 防误触，R=128 时至少要 30°。第一版用了 29°，实测背包和行动**重叠 6px**。
    * 改半径的话这个角度也得跟着重算，别只动一个。
    */
-  #thermal-button  { right: calc(var(--arc-r) * 0.961); bottom: calc(var(--arc-r) * 0.276); }
-  #backpack-button { right: calc(var(--arc-r) * 0.669); bottom: calc(var(--arc-r) * 0.743); }
-  #action-button   { right: calc(var(--arc-r) * 0.174); bottom: calc(var(--arc-r) * 0.985); }
-  #attack-button   { right: calc(var(--arc-r) * 0.257); bottom: calc(var(--arc-r) * 0.257); }
-  /* 按下时的缩放要叠在居中位移上，否则一按就跳位。 */
-  .round-button:active { transform: translate(50%, 50%) scale(.94); }
-  .utility-button:active { transform: translate(50%, 50%) translateY(1px); }
-
   .left-stack { max-width: 32vw; }
   .status-strip { width: 190px; }
   .top-stack { max-width: 32vw; }

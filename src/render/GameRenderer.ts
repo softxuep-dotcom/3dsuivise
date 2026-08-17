@@ -293,6 +293,8 @@ export class GameRenderer {
   private readonly carriedStake: THREE.Object3D;
   private readonly carriedFuel: THREE.Object3D;
   private readonly truckGroup: THREE.Group;
+  private truckBeacon: THREE.Mesh | null = null;
+  private truckRing: THREE.Mesh | null = null;
   /** 车斗上那一排已装的油桶，按 loaded 逐个点亮。 */
   private readonly truckLoadViews: THREE.Object3D[] = [];
   private readonly barrelViews = new Map<number, THREE.Object3D>();
@@ -880,9 +882,18 @@ export class GameRenderer {
    */
   private buildTruck(): THREE.Group {
     const group = new THREE.Group();
-    const body = makeMaterial(0x8a6236, 1);
-    const iron = makeMaterial(0x5e554a, 0.95);
-    const glass = makeMaterial(0x3d5560, 0.4);
+    /*
+     * 车身刷成**青绿**，不是沙色。
+     *
+     * 原来是 0x8a6236 —— 一个偏红的土黄，和脚下的沙子几乎同色同明度，
+     * 于是这台"唯一的通关目标"在开局画面里读起来只是块石头。
+     * 青绿是沙黄的补色，昼夜两种光照下都跳得出来，而且不和 HUD 的琥珀色
+     * 或伤害红撞车。车斗挡板用更亮一档，让"装了几桶"更容易看清。
+     */
+    const body = makeMaterial(0x11a5a0, 1);
+    const panelPaint = makeMaterial(0x16c2ba, 1);
+    const iron = makeMaterial(0x39423f, 0.95);
+    const glass = makeMaterial(0x9fe6df, 0.35);
 
     const chassis = new THREE.Mesh(new THREE.BoxGeometry(6.2, 0.55, 2.5), iron);
     chassis.position.y = 0.95;
@@ -900,7 +911,7 @@ export class GameRenderer {
     // 车斗四面挡板：装了几桶油要从外面看得见，所以侧板留矮。
     for (const [dx, dz, sx, sz] of [[-3.05, 0, 0.16, 2.4], [0.85, 0, 0.16, 2.4],
       [-1.1, 1.2, 4, 0.16], [-1.1, -1.2, 4, 0.16]] as const) {
-      const panel = new THREE.Mesh(new THREE.BoxGeometry(sx, 0.9, sz), body);
+      const panel = new THREE.Mesh(new THREE.BoxGeometry(sx, 0.9, sz), panelPaint);
       panel.position.set(dx, 1.68, dz);
       panel.castShadow = true;
       group.add(panel);
@@ -926,8 +937,51 @@ export class GameRenderer {
       this.truckLoadViews.push(slot);
     }
 
+    this.buildTruckBeacon(group);
     this.scene.add(group);
     return group;
+  }
+
+  /**
+   * 卡车的常驻标记：一道光柱 + 一圈贴地的环。
+   *
+   * 为什么要有：卡车是全局唯一的通关物，可玩家一旦跑开就再没有任何东西指回来。
+   * 目标行会报方位和距离，但那是**文字** —— 第一次玩的人读文字的概率远低于
+   * 看见一个发光的东西。Poki 那批会话里没有一个人装过油，很可能压根没认出那是出路。
+   *
+   * 做法上刻意保守：不写深度（depthWrite false）+ 加色混合，所以它永远不会挡住
+   * 后面的东西，也不参与阴影；沙丘挡在前面时会被正常遮挡，不至于变成穿墙的标记。
+   */
+  private buildTruckBeacon(group: THREE.Group): void {
+    const beam = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.9, 1.5, 26, 12, 1, true),
+      new THREE.MeshBasicMaterial({
+        color: 0x35e6d6,
+        transparent: true,
+        opacity: 0.16,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      }),
+    );
+    beam.position.y = 13;
+    group.add(beam);
+    this.truckBeacon = beam;
+
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(3.4, 4.2, 32),
+      new THREE.MeshBasicMaterial({
+        color: 0x35e6d6,
+        transparent: true,
+        opacity: 0.5,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.09;
+    group.add(ring);
+    this.truckRing = ring;
   }
 
   private buildBarrels(): void {
@@ -955,6 +1009,26 @@ export class GameRenderer {
     this.truckLoadViews.forEach((slot, index) => {
       slot.visible = index < truck.loaded;
     });
+    /*
+     * 标记随进度收敛：油装得越满，光柱越淡 —— 它的职责是"把人引过来"，
+     * 装满之后引导已经完成，再亮着只会挡视野。装满时环改为常亮不闪，
+     * 表示"可以走了"。
+     */
+    const fuel = this.simulation.getFuelProgress();
+    const remain = Math.max(0, 1 - fuel.loaded / Math.max(1, fuel.required));
+    const pulse = 0.5 + 0.5 * Math.sin(this.time * 2.2);
+    if (this.truckBeacon) {
+      const material = this.truckBeacon.material as THREE.MeshBasicMaterial;
+      material.opacity = 0.06 + 0.13 * remain * (0.65 + 0.35 * pulse);
+      this.truckBeacon.visible = !this.simulation.isDeparting();
+    }
+    if (this.truckRing) {
+      const material = this.truckRing.material as THREE.MeshBasicMaterial;
+      material.opacity = remain > 0 ? 0.28 + 0.3 * pulse : 0.55;
+      const scale = remain > 0 ? 1 + 0.06 * pulse : 1.06;
+      this.truckRing.scale.setScalar(scale);
+      this.truckRing.visible = !this.simulation.isDeparting();
+    }
     // 驶离时玩家在车里。模拟层把人的坐标锁在车心，所以直接把人藏掉 ——
     // 否则最后 5 秒会看到一个人站在车斗中央被拖出地图。
     this.playerGroup.visible = !this.simulation.isDeparting();
