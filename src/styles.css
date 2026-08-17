@@ -18,6 +18,7 @@ html, body, #game-root, #render-root {
   overflow: hidden;
 }
 
+
 body {
   overscroll-behavior: none;
   touch-action: none;
@@ -428,6 +429,17 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
   min-width: 44px;
   font-family: ui-monospace, monospace;
   letter-spacing: .12em;
+}
+
+/* 通关页的下一步提示：比正文弱一档，别抢"你赢了"的风头。 */
+.victory-hint {
+  margin: 10px 0 0;
+  padding: 8px 12px;
+  border: 1px dashed rgba(242, 210, 158, .32);
+  border-radius: 10px;
+  color: #d8c3a6;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .records-line {
@@ -879,16 +891,12 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
   }
 
   /*
-   * 四键弧形簇（MOBA 那种排法）。从左到右：体温、背包、行动、攻击 ——
-   * **越靠右越低**，攻击是落在拇指自然停位上的大锚点。
-   *
-   * 为什么是弧不是一排：拇指是绕掌指关节**转**的，不是平移。一排平铺时最外侧那颗
-   * 要靠伸展去够，而弧形上每一颗到转轴的距离都差不多。
-   *
-   * row-reverse 让攻击排到最右：DOM 里攻击仍在行动之前（读屏和 Tab 顺序应当先给
-   * 最高频的那颗），视觉顺序交给 CSS。
+   * 这里只放**两个朝向都要的**东西：显示、间距、触控尺寸。
+   * 排布方式（横屏弧形 / 竖屏两层）各自写在下面的朝向块里 ——
+   * 以前弧形几何写在这个共享块里，竖屏只能靠"把它清零"来自保，
+   * 于是每次调横屏都会顺手改到竖屏的基线。
    */
-  .action-buttons { display: flex; flex-direction: row-reverse; align-items: flex-end; gap: 8px; }
+  .action-buttons { display: flex; align-items: flex-end; gap: 8px; }
   .bottom-right { gap: 8px; }
   .utility-buttons { gap: 6px; align-items: flex-end; }
   /*
@@ -898,12 +906,6 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
    */
   .utility-button { min-width: 54px; padding: 11px 9px; font-size: 9px; }
   .utility-button b { font-size: 11px; }
-
-  /* 弧线本身。抬升量到 72px 封顶 —— 竖屏那套 bottom 偏移是按"动作簇不超过 140px 高"
-     算的（见竖屏块的注释），抬过头会顶到行动提示。 */
-  #thermal-button { margin-bottom: 72px; }
-  #backpack-button { margin-bottom: 40px; }
-  #action-button { margin-bottom: 10px; }
 
   .round-button {
     position: relative;
@@ -969,10 +971,9 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
     align-items: flex-end;
     gap: 10px;
   }
-  /* 弧线的抬升量属于横屏，竖屏一律清零，否则两层之间会被顶出一道空档。 */
-  #thermal-button,
-  #backpack-button,
-  #action-button { margin-bottom: 0; }
+  /* 竖屏是两层，不是弧形。弧形几何现在只写在横屏块里，这里不用再撤销什么。 */
+  .utility-buttons { display: flex; }
+  .action-buttons { display: flex; flex-direction: row-reverse; }
 
 
   .prompt { bottom: calc(max(24px, env(safe-area-inset-bottom)) + 152px); }
@@ -1004,6 +1005,57 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
 }
 
 @media (pointer: coarse) and (orientation: landscape) {
+  /*
+   * 横屏：四键真·弧形簇（MOBA 排法）。**这一块是弧形几何的唯一归属地**，
+   * 共享块和竖屏块都不碰它，所以调这里不会波及竖屏。
+   *
+   * 为什么必须是弧、而不是"一排带点高低差"：拇指绕掌指关节**转**，不平移。
+   * 弧的价值在于每颗键到转轴的距离都一样 —— 而旧写法（一个 flex 横排 + 三档
+   * margin-bottom）做不到这件事：实测四颗键到转轴 37 / 102 / 173 / 238px，
+   * **极差 201px**，最该"反射性按"的体温键反而离拇指最远。那不是弧，是斜线。
+   *
+   * 根因是横排太宽太平：四颗横跨 256px 却只抬高 111px。想让它们落在同一个圆上，
+   * 圆得穿过最左那颗（离转轴 221px），于是内侧的键会被抬到 y=72，一头撞进状态栏
+   * （状态栏底边 97px）。所以只要还用一个 flex 横排，弧就画不出来。
+   *
+   * 改成极坐标摆放：转轴取操作簇盒子的右下角，三颗功能键同半径 --arc-r，
+   * 攻击键单独落在更靠内的锚点上（它是拇指的自然停位）。
+   * translate(50%,50%) 把"盒子右下角对齐到目标点"换算成"中心对齐到目标点"，
+   * 这样三颗宽度不一的键才能真的同心。
+   */
+  .bottom-right {
+    --arc-r: 140px;
+    /* 给绝对定位的子元素一个参照盒；子元素全脱流，盒子自己不会有高度。 */
+    width: calc(var(--arc-r) + 52px);
+    height: calc(var(--arc-r) + 52px);
+  }
+  /* 让四颗键成为 .bottom-right 的直接排布对象，绕过两层 flex 包装。 */
+  .utility-buttons,
+  .action-buttons { display: contents; }
+  .bottom-right > * > .round-button,
+  #thermal-button,
+  #backpack-button,
+  #action-button,
+  #attack-button {
+    position: absolute;
+    transform: translate(50%, 50%);
+  }
+  /*
+   * 角度沿弧从外到内：体温 16° → 背包 48° → 行动 80°，攻击落在 45° 的内圈。
+   * 右/下偏移 = 半径 × cos/sin，写成小数常量，免得引入 CSS 三角函数（Safari 支持还不齐）。
+   *
+   * 32° 这个间隔不是random：相邻两键中心距 = 2R·sin(Δθ/2)，要装下两者的半尺寸
+   * 再留 8px 防误触，R=128 时至少要 30°。第一版用了 29°，实测背包和行动**重叠 6px**。
+   * 改半径的话这个角度也得跟着重算，别只动一个。
+   */
+  #thermal-button  { right: calc(var(--arc-r) * 0.961); bottom: calc(var(--arc-r) * 0.276); }
+  #backpack-button { right: calc(var(--arc-r) * 0.669); bottom: calc(var(--arc-r) * 0.743); }
+  #action-button   { right: calc(var(--arc-r) * 0.174); bottom: calc(var(--arc-r) * 0.985); }
+  #attack-button   { right: calc(var(--arc-r) * 0.257); bottom: calc(var(--arc-r) * 0.257); }
+  /* 按下时的缩放要叠在居中位移上，否则一按就跳位。 */
+  .round-button:active { transform: translate(50%, 50%) scale(.94); }
+  .utility-button:active { transform: translate(50%, 50%) translateY(1px); }
+
   .left-stack { max-width: 32vw; }
   .status-strip { width: 190px; }
   .top-stack { max-width: 32vw; }
@@ -1036,6 +1088,8 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
 
 /* 再矮一档：说明行是教学用的，最先让位。 */
 @media (orientation: landscape) and (max-height: 340px) {
+  /* 键变小了，弧也要跟着收，否则簇会往上顶进状态栏。 */
+  .bottom-right { --arc-r: 128px; }
   .drain-note { display: none !important; }
   .meter { margin-bottom: 2px; font-size: 8px; }
   .round-button { width: 58px; height: 58px; }
@@ -1051,6 +1105,7 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
  * 那里贴着屏幕最下沿，不算侵占视野中央。
  */
 @media (orientation: landscape) and (max-height: 320px) {
+  .bottom-right { --arc-r: 118px; }
   .prompt {
     right: auto;
     /* 卡在摇杆和右下操作簇之间那条空带里，左对齐贴着摇杆走 —— 居中会撞上操作簇。 */
