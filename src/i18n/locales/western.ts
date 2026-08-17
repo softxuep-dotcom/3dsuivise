@@ -24,6 +24,7 @@ const copy: Record<string, WesternText> = {
   "blocked.missing": w("Il manque {parts}", "Benötigt {parts}", "Manca {parts}", "Falta {parts}"),
   "blocked.needFire": w("À fabriquer près du feu", "Am Feuer herstellen", "Da creare accanto al fuoco", "Crie perto da fogueira"),
   "boot.generating": w("Création du désert…", "Wüste wird erzeugt…", "Creazione del deserto…", "Criando o deserto…"),
+  "boot.landscapeHint": w("Mode paysage recommandé", "Querformat empfohlen", "Modalità orizzontale consigliata", "Recomendamos jogar na horizontal"),
   "boot.lighting": w("Éclairage de la scène…", "Szene wird beleuchtet…", "Illuminazione della scena…", "Iluminando a cena…"),
   "boot.ready": w("Prêt", "Bereit", "Pronto", "Pronto"),
   "boot.survivor": w("Chargement du survivant…", "Überlebender wird geladen…", "Caricamento del sopravvissuto…", "Carregando o sobrevivente…"),

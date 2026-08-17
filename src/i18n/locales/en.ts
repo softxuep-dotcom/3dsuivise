@@ -19,6 +19,7 @@ export const en: Record<string, string> = {
   "blocked.missing": "Need {parts}",
   "blocked.needFire": "Craft it by the fire",
   "boot.generating": "Generating the sands…",
+  "boot.landscapeHint": "Best played in landscape",
   "boot.lighting": "Lighting the scene…",
   "boot.ready": "Ready",
   "boot.survivor": "Loading the survivor…",

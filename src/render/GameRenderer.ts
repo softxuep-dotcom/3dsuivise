@@ -46,7 +46,7 @@ interface WolfView {
  */
 /** 相机距离系数。竖屏拉远补视野，横屏拉近补可读性 —— 见 updateCamera。 */
 const PORTRAIT_CAMERA_SCALE = 1.18;
-const LANDSCAPE_CAMERA_SCALE = 0.86;
+const LANDSCAPE_CAMERA_SCALE = 0.80;
 
 /** 可搬运物的本色，以及被啃到快碎时染向的暗红。 */
 const STONE_COLOR = 0x748084;
@@ -2134,9 +2134,9 @@ export class GameRenderer {
     this.cameraFocus.y = lerp(this.cameraFocus.y, this.worldHeight(player.x, player.z), smoothing);
     /*
      * 竖屏（小屏且高大于宽）拉远到 1.18：那个比例下横向只剩一条窄缝，不拉远看不到两侧。
-     * 其余一律是横屏 —— 拉近到 0.86，手机上物体原先偏小。
+     * 其余一律是横屏 —— 拉近到 0.80，手机上物体更容易辨认。
      *
-     * 这两档是**分开调的**：竖屏的 1.18 是为了补视野，横屏的 0.86 是为了补可读性，
+     * 这两档是**分开调的**：竖屏的 1.18 是为了补视野，横屏的 0.80 是为了补可读性，
      * 合成一个系数的话动一个必然弄坏另一个。
      */
     const portrait = window.innerWidth < 760 && window.innerWidth < window.innerHeight;

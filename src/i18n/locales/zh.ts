@@ -18,6 +18,7 @@ export const zh: Record<string, string> = {
   "blocked.missing": "还差 {parts}",
   "blocked.needFire": "去篝火旁制作",
   "boot.generating": "生成沙海…",
+  "boot.landscapeHint": "推荐横屏游玩",
   "boot.lighting": "点亮场景…",
   "boot.ready": "准备就绪",
   "boot.survivor": "载入幸存者…",

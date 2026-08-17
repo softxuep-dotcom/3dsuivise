@@ -592,6 +592,13 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
   font-size: 12px;
   letter-spacing: .04em;
 }
+
+.boot-progress .landscape-hint {
+  color: #f2d29e;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .06em;
+}
 .game-over-card p:not(.eyebrow) { margin: 18px 0 24px; color: #c3d3d8; line-height: 1.7; }
 
 .victory-card .eyebrow { color: #ffd479; }
