@@ -331,6 +331,42 @@ button { font: inherit; }
 .round-button:active { transform: translate(50%, 50%) scale(.94); }
 .utility-button:active { transform: translate(50%, 50%) translateY(1px); }
 
+/*
+ * 卡车的屏幕边缘指示器。
+ * 用 translate(-50%,-50%) 把自己的中心对到算出来的那个点，箭头用 rotate 指向车。
+ * pointer-events: none —— 它压在画面上，绝不能吃掉点击（那是移动指令）。
+ */
+.truck-pointer {
+  position: absolute;
+  z-index: 6;
+  display: grid;
+  gap: 2px;
+  place-items: center;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,.55));
+}
+
+.truck-pointer i {
+  display: block;
+  width: 0;
+  height: 0;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-bottom: 12px solid #36d9cc;
+}
+
+.truck-pointer b {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(10, 30, 34, .72);
+  color: #8ff0e6;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .03em;
+  white-space: nowrap;
+}
+
 .clock {
   display: flex;
   gap: 10px;

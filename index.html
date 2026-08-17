@@ -57,6 +57,14 @@
           <div id="rest-indicator" class="status-pill rest-indicator hidden"></div>
         </div>
 
+        <!--
+          卡车的屏幕边缘指示器。车在画面外时贴着边缘显示方向和距离，进画面就隐藏。
+          放在世界之外而不是世界之内 —— 3D 场景里插一根光柱既丑又挡视野。
+        -->
+        <div id="truck-pointer" class="truck-pointer hidden" aria-hidden="true">
+          <i></i><b></b>
+        </div>
+
         <div id="prompt" class="prompt hidden"></div>
 
         <div id="touch-controls">

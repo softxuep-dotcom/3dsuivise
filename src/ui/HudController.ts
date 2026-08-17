@@ -50,6 +50,9 @@ export class HudController {
   private readonly gameOver = required<HTMLElement>("game-over");
   private readonly victory = required<HTMLElement>("victory");
   private readonly inventoryOverlay = required<HTMLElement>("inventory-overlay");
+  private readonly truckPointer = required<HTMLElement>("truck-pointer");
+  /** 由 main.ts 注入：世界坐标 → 画布 CSS 像素。没有渲染层时保持 null，指示器整个不显示。 */
+  private projectToScreen: ((x: number, z: number) => { x: number; y: number; behind: boolean }) | null = null;
   private readonly healthBar = required<HTMLElement>("health-bar");
   private readonly warmthBar = required<HTMLElement>("warmth-bar");
   private readonly hungerBar = required<HTMLElement>("hunger-bar");
@@ -239,6 +242,60 @@ export class HudController {
     this.inventoryOverlay.classList.add("hidden");
   }
 
+  /** 渲染层就绪后把投影函数交进来。 */
+  setProjector(project: (x: number, z: number) => { x: number; y: number; behind: boolean }): void {
+    this.projectToScreen = project;
+  }
+
+  /**
+   * 卡车的屏幕边缘指示器。
+   *
+   * 卡车是全局唯一的通关物，跑开之后就再没有任何东西指回来 —— 目标行会报方位，
+   * 但那是文字，第一次玩的人不会去读。曾经试过在车上插一道 26 米的光柱，
+   * 又丑又挡视野；标记就不该待在世界里。
+   *
+   * 规则：车在画面内 → 不显示（看得见就不用指）；在画面外 → 贴着视口边缘，
+   * 箭头指向车，底下报距离。相机背后要把投影坐标翻转，否则箭头会指反。
+   */
+  private syncTruckPointer(): void {
+    const project = this.projectToScreen;
+    if (!project || !this.simulation.running || this.isGameplayBlocked() || this.simulation.isDeparting()) {
+      this.truckPointer.classList.add("hidden");
+      return;
+    }
+    const truck = this.simulation.truck;
+    const player = this.simulation.player;
+    const margin = 34;
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    const projected = project(truck.x, truck.z);
+    const onScreen = !projected.behind
+      && projected.x > margin && projected.x < width - margin
+      && projected.y > margin && projected.y < height - margin;
+    if (onScreen) {
+      this.truckPointer.classList.add("hidden");
+      return;
+    }
+    // 相机背后时投影是镜像的，绕屏幕中心翻过来才是真实方向。
+    const centreX = width / 2;
+    const centreY = height / 2;
+    let dx = projected.x - centreX;
+    let dy = projected.y - centreY;
+    if (projected.behind) { dx = -dx; dy = -dy; }
+    // 把方向射线压到视口内缘的矩形上。
+    const scale = Math.min((centreX - margin) / Math.abs(dx || 1e-6), (centreY - margin) / Math.abs(dy || 1e-6));
+    const edgeX = centreX + dx * scale;
+    const edgeY = centreY + dy * scale;
+    this.truckPointer.style.left = `${Math.round(edgeX)}px`;
+    this.truckPointer.style.top = `${Math.round(edgeY)}px`;
+    // 三角形默认朝上（border-bottom 撑出来的），所以要额外 +90°。
+    const arrow = this.truckPointer.querySelector("i") as HTMLElement | null;
+    if (arrow) arrow.style.transform = `rotate(${Math.atan2(dy, dx) * 180 / Math.PI + 90}deg)`;
+    const label = this.truckPointer.querySelector("b");
+    if (label) label.textContent = `${Math.round(Math.hypot(truck.x - player.x, truck.z - player.z))}m`;
+    this.truckPointer.classList.remove("hidden");
+  }
+
   update(deltaSeconds: number): void {
     // 每帧自查"现在算不算在玩"，变了才通知。
     //
@@ -322,6 +379,7 @@ export class HudController {
       this.prompt.classList.remove("hidden");
     }
     if (this.inventoryOpen) this.updateInventory();
+    this.syncTruckPointer();
   }
 
   private updateConditionBadge(): void {

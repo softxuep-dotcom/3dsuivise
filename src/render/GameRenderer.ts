@@ -293,7 +293,6 @@ export class GameRenderer {
   private readonly carriedStake: THREE.Object3D;
   private readonly carriedFuel: THREE.Object3D;
   private readonly truckGroup: THREE.Group;
-  private truckBeacon: THREE.Mesh | null = null;
   private truckRing: THREE.Mesh | null = null;
   /** 车斗上那一排已装的油桶，按 loaded 逐个点亮。 */
   private readonly truckLoadViews: THREE.Object3D[] = [];
@@ -447,6 +446,23 @@ export class GameRenderer {
     if (!hit) return null;
     this.worldPoint.copy(hit.point);
     return { x: this.worldPoint.x, z: this.worldPoint.z };
+  }
+
+  /**
+   * 世界坐标 → 画布内的 CSS 像素坐标。给 HUD 的屏幕边缘指示器用。
+   *
+   * `behind` 表示目标在相机背后：这时投影出来的 x/y 是镜像的，直接拿去用会让
+   * 箭头指反方向，所以调用方必须自己处理这一位。
+   */
+  worldToScreen(x: number, z: number): { x: number; y: number; behind: boolean } {
+    this.worldPoint.set(x, this.worldHeight(x, z) + 1.2, z);
+    this.worldPoint.project(this.camera);
+    const rect = this.canvas.getBoundingClientRect();
+    return {
+      x: rect.left + ((this.worldPoint.x + 1) / 2) * rect.width,
+      y: rect.top + ((1 - this.worldPoint.y) / 2) * rect.height,
+      behind: this.worldPoint.z > 1,
+    };
   }
 
   impact(strength: number): void {
@@ -943,37 +959,23 @@ export class GameRenderer {
   }
 
   /**
-   * 卡车的常驻标记：一道光柱 + 一圈贴地的环。
+   * 卡车的常驻标记只剩**贴地一圈环**。
    *
-   * 为什么要有：卡车是全局唯一的通关物，可玩家一旦跑开就再没有任何东西指回来。
-   * 目标行会报方位和距离，但那是**文字** —— 第一次玩的人读文字的概率远低于
-   * 看见一个发光的东西。Poki 那批会话里没有一个人装过油，很可能压根没认出那是出路。
+   * 原来还有一道 26 米高的加色光柱 —— 那是网游任务标记那一套，和这游戏的
+   * 低多边形沙漠完全不搭，而且它是**世界里的物件**，注定会挡视野。
+   * "怎么找到车"这件事已经交给 HUD 的屏幕边缘指示器（见 HudController.syncTruckPointer），
+   * 那个不在世界里，所以不会丑、也不会挡。
    *
-   * 做法上刻意保守：不写深度（depthWrite false）+ 加色混合，所以它永远不会挡住
-   * 后面的东西，也不参与阴影；沙丘挡在前面时会被正常遮挡，不至于变成穿墙的标记。
+   * 留下地环是因为它有另一个用途：告诉你**站到哪儿才能装油**。
+   * 它贴着地、跟着地形，读起来像停车位划线，不像特效。
    */
   private buildTruckBeacon(group: THREE.Group): void {
-    const beam = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.9, 1.5, 26, 12, 1, true),
-      new THREE.MeshBasicMaterial({
-        color: 0x35e6d6,
-        transparent: true,
-        opacity: 0.16,
-        side: THREE.DoubleSide,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-      }),
-    );
-    beam.position.y = 13;
-    group.add(beam);
-    this.truckBeacon = beam;
-
     const ring = new THREE.Mesh(
-      new THREE.RingGeometry(3.4, 4.2, 32),
+      new THREE.RingGeometry(3.4, 3.9, 40),
       new THREE.MeshBasicMaterial({
-        color: 0x35e6d6,
+        color: 0x36d9cc,
         transparent: true,
-        opacity: 0.5,
+        opacity: 0.34,
         side: THREE.DoubleSide,
         depthWrite: false,
       }),
@@ -1015,18 +1017,12 @@ export class GameRenderer {
      * 表示"可以走了"。
      */
     const fuel = this.simulation.getFuelProgress();
-    const remain = Math.max(0, 1 - fuel.loaded / Math.max(1, fuel.required));
+    // 没装满时环轻微呼吸，装满后常亮 —— "可以走了"。
     const pulse = 0.5 + 0.5 * Math.sin(this.time * 2.2);
-    if (this.truckBeacon) {
-      const material = this.truckBeacon.material as THREE.MeshBasicMaterial;
-      material.opacity = 0.06 + 0.13 * remain * (0.65 + 0.35 * pulse);
-      this.truckBeacon.visible = !this.simulation.isDeparting();
-    }
     if (this.truckRing) {
       const material = this.truckRing.material as THREE.MeshBasicMaterial;
-      material.opacity = remain > 0 ? 0.28 + 0.3 * pulse : 0.55;
-      const scale = remain > 0 ? 1 + 0.06 * pulse : 1.06;
-      this.truckRing.scale.setScalar(scale);
+      const full = fuel.loaded >= fuel.required;
+      material.opacity = full ? 0.5 : 0.22 + 0.16 * pulse;
       this.truckRing.visible = !this.simulation.isDeparting();
     }
     // 驶离时玩家在车里。模拟层把人的坐标锁在车心，所以直接把人藏掉 ——
