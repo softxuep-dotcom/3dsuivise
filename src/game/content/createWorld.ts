@@ -365,10 +365,25 @@ export function createWorld(seed = 71291): WorldDefinition {
     });
   };
 
-  // Each cliff shelter has one narrow ramp and one movable boulder that can seal it.
+  /*
+   * 每座营地一条窄坡道，外加一块能把它堵死的大石。
+   *
+   * 石头放在门**旁边**，不是门口正中。原先是 addItem("stone", gate.x, gate.z)——
+   * 那在天然石头还没有碰撞的年代没问题：它只是躺在门口的建材，玩家搬起来、
+   * 放下（placed = true）才算堵门。后来 isBlockingGroundItem 把天然石头也算成实体，
+   * 这块石头就从"建材"变成了"出生即焊死的门闩"：五座营地的大门全部从开局起
+   * 就通不过去，玩家进不去、狗也进不去（实测流场可达格从 99.9% 掉到 0.4%）。
+   *
+   * 沿入口法线挪开一个身位：石头仍然就在手边，堵不堵门重新变成玩家的选择。
+   */
   for (const camp of camps) {
     const gate = campGatePosition(camp);
-    addItem("stone", gate.x, gate.z);
+    const aside = camp.entranceAngle + Math.PI / 2;
+    // 半个门宽（让开通道）+ 石头自己的碰撞半径 1.48 + 余量。
+    // 只加 1.6 不够：岩壁洞窟的门本来就最窄，石头还是压在通道上，
+    // 那一座的流场可达格仍然只有 0.4%。
+    const offset = CAMP_ENTRANCE_WIDTH[camp.kind] / 2 + 1.48 + 1.1;
+    addItem("stone", gate.x + Math.cos(aside) * offset, gate.z + Math.sin(aside) * offset);
   }
 
   // The starting abandoned camp contains enough wood to teach fire management immediately.

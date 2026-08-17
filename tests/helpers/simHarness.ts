@@ -42,7 +42,15 @@ interface NightOptions {
  * 玩家血量每步回填：我们要观察的是整夜的狗群行为，不是玩家能撑多久。
  */
 export function runNight({ campId, seconds = NIGHT_SECONDS, onStep }: NightOptions): GameSimulation {
-  const sim = new GameSimulation(sharedWorld);
+  /*
+   * 每次都现造一个世界，**不要**复用 sharedWorld。
+   *
+   * GameSimulation 会就地改动 world 上的一些结构，于是共享同一个 world 时，
+   * 一条用例的结果取决于它前面跑过几条 —— 同样是 1/20 步长、同样的营地，
+   * 单独跑给出 5 只攻营犬到达，放进整套里跑就变成 0 只。这种"顺序依赖"的假失败
+   * 会把真回归淹掉，而且极难复现。sharedWorld 只留给只读用途（量地形高度、取名字）。
+   */
+  const sim = new GameSimulation(createWorld());
   const inner = sim as unknown as {
     phase: string; phaseTime: number; clockStarted: boolean; running: boolean;
   };
@@ -57,11 +65,25 @@ export function runNight({ campId, seconds = NIGHT_SECONDS, onStep }: NightOptio
   const steps = Math.round(seconds / STEP);
   for (let step = 0; step < steps; step += 1) {
     for (const c of sim.camps) c.fuel = c.id === campId ? 999 : 0;
-    sim.player.health = 1_000_000;
+    keepPlayerAlive(sim);
     sim.update(STEP, { x: 0, z: 0 });
     onStep?.(sim, step);
   }
   return sim;
+}
+
+/**
+ * 每步把玩家的五条轴顶满。我们观察的是整夜的狗群行为，玩家不该成为变量。
+ *
+ * **水分和饥饿必须一起顶**，只顶血是不够的：水每秒 -0.42、初始 90，
+ * 到第 214 秒归零就触发 endGame("dehydrated")，running 置 false，
+ * 此后 update() 直接 return —— 整个世界静止。跑超过一夜的用例（比如天亮撤退）
+ * 会看到"27 只狗卡在原地 200 秒"，那不是寻路坏了，是模拟停了。
+ */
+export function keepPlayerAlive(sim: GameSimulation): void {
+  sim.player.health = 1_000_000;
+  sim.player.water = 100;
+  sim.player.hunger = 100;
 }
 
 /** 场上还活着的夜袭犬。 */

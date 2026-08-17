@@ -16,6 +16,13 @@ export class NavigationGrid {
   private readonly cellSize = 1.5;
   private readonly width: number;
   private readonly blocked: Uint8Array;
+  /**
+   * 会移动的障碍（目前是天然石头）。和 blocked 分开存，因为它每次 rebuild 都要重算：
+   * 玩家能把石头搬走，格子得跟着解封。
+   */
+  private readonly dynamic: Uint8Array;
+  /** 上一轮盖过章的格子，用来 O(改动量) 清零，不必每次扫全图。 */
+  private dynamicStamped: number[] = [];
   private readonly flow: Uint16Array;
   private readonly queue: Uint32Array;
   private target: Vec2 = { x: 0, z: 0 };
@@ -24,12 +31,22 @@ export class NavigationGrid {
     this.width = Math.ceil(world.size / this.cellSize);
     const count = this.width * this.width;
     this.blocked = new Uint8Array(count);
+    this.dynamic = new Uint8Array(count);
     this.flow = new Uint16Array(count);
     this.queue = new Uint32Array(count);
     this.buildStaticObstacles();
   }
 
-  rebuild(target: Vec2): void {
+  /**
+   * @param obstacles 实心但**不在 world.walls 里**的圆形障碍 —— 目前是天然石头。
+   *
+   * 为什么非传不可：石头有碰撞（isBlockingGroundItem 认 kind === "stone"），
+   * 而流场只认 world.walls 和地形，于是"物理上撞不过去"和"寻路说直着走"长期不一致。
+   * 狗照着流场笔直撞上石头、被碰撞弹回、下一帧又被指向石头 —— 每 40 秒跑出
+   * 一百多米路程，净位移 0.0 米，看着就是在原地抽搐。
+   */
+  rebuild(target: Vec2, obstacles: readonly { x: number; z: number; radius: number }[] = []): void {
+    this.stampDynamic(obstacles);
     this.target = { ...target };
     this.flow.fill(UNREACHABLE);
     const targetCell = this.findNearestOpenCell(this.toCell(target));
@@ -50,11 +67,11 @@ export class NavigationGrid {
           const nz = z + dz;
           if (nx < 0 || nz < 0 || nx >= this.width || nz >= this.width) continue;
           const neighbor = nz * this.width + nx;
-          if (this.blocked[neighbor] || this.flow[neighbor] !== UNREACHABLE) continue;
+          if (this.isBlocked(neighbor) || this.flow[neighbor] !== UNREACHABLE) continue;
           if (dx !== 0 && dz !== 0) {
             const sideA = z * this.width + nx;
             const sideB = nz * this.width + x;
-            if (this.blocked[sideA] || this.blocked[sideB]) continue;
+            if (this.isBlocked(sideA) || this.isBlocked(sideB)) continue;
           }
           this.flow[neighbor] = nextDistance;
           this.queue[write++] = neighbor;
@@ -104,7 +121,7 @@ export class NavigationGrid {
          * 流场值在 10 和 UNREACHABLE 之间反复横跳，一整夜停在离玩家 19.6 米的地方。
          */
         if (dx !== 0 && dz !== 0
-          && (this.blocked[z * this.width + nx] || this.blocked[nz * this.width + x])) continue;
+          && (this.isBlocked(z * this.width + nx) || this.isBlocked(nz * this.width + x))) continue;
         const neighbor = nz * this.width + nx;
         if (this.flow[neighbor] < bestDistance) {
           best = neighbor;
@@ -128,6 +145,45 @@ export class NavigationGrid {
         });
         const hitsSteepTerrain = !isTerrainWalkable(this.world, point);
         this.blocked[index] = hitsWall || hitsSteepTerrain ? 1 : 0;
+      }
+    }
+  }
+
+  private isBlocked(index: number): boolean {
+    return this.blocked[index] === 1 || this.dynamic[index] === 1;
+  }
+
+  /** 把圆形障碍盖进 dynamic 层；只碰它自己覆盖的那几格，全图扫描没必要。 */
+  private stampDynamic(obstacles: readonly { x: number; z: number; radius: number }[]): void {
+    for (const index of this.dynamicStamped) this.dynamic[index] = 0;
+    this.dynamicStamped = [];
+    const half = this.world.size / 2;
+    for (const obstacle of obstacles) {
+      /*
+       * 半径**不加**格子padding。
+       *
+       * 直觉上该加半格（格子按中心采样，贴着格边的石头会漏掉），但这里加不得：
+       * 地图故意在每座营地的单一入口预留了一块可搬大石，而入口本来就窄。
+       * 多封 0.75 米，整座营地在流场里就成了孤岛 —— 实测 BFS 可达格从 99.9%
+       * 掉到 0.6%，狗一只都摸不进来。宁可让流场略微乐观、把最后半格交给
+       * findSteppableDirection 去贴着绕，也不能把入口整个焊死。
+       */
+      const reach = obstacle.radius;
+      const minX = Math.max(0, Math.floor((obstacle.x - reach + half) / this.cellSize));
+      const maxX = Math.min(this.width - 1, Math.floor((obstacle.x + reach + half) / this.cellSize));
+      const minZ = Math.max(0, Math.floor((obstacle.z - reach + half) / this.cellSize));
+      const maxZ = Math.min(this.width - 1, Math.floor((obstacle.z + reach + half) / this.cellSize));
+      for (let z = minZ; z <= maxZ; z += 1) {
+        for (let x = minX; x <= maxX; x += 1) {
+          const index = z * this.width + x;
+          if (this.dynamic[index] === 1) continue;
+          const center = this.cellCenter(index);
+          const dx = center.x - obstacle.x;
+          const dz = center.z - obstacle.z;
+          if (dx * dx + dz * dz > reach * reach) continue;
+          this.dynamic[index] = 1;
+          this.dynamicStamped.push(index);
+        }
       }
     }
   }
@@ -197,7 +253,7 @@ export class NavigationGrid {
 
   private findNearestOpenCell(start: number): number {
     if (start < 0) return -1;
-    if (!this.blocked[start]) return start;
+    if (!this.isBlocked(start)) return start;
     const startX = start % this.width;
     const startZ = Math.floor(start / this.width);
     for (let radius = 1; radius < 6; radius += 1) {
@@ -207,7 +263,7 @@ export class NavigationGrid {
           const z = startZ + dz;
           if (x < 0 || z < 0 || x >= this.width || z >= this.width) continue;
           const index = z * this.width + x;
-          if (!this.blocked[index]) return index;
+          if (!this.isBlocked(index)) return index;
         }
       }
     }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  CAMP_IDS, STEP, campLabel, distanceTo, heightAt, livingRaiders, runNight, sharedWorld,
+  CAMP_IDS, STEP, campLabel, distanceTo, heightAt, keepPlayerAlive, livingRaiders, runNight, sharedWorld,
 } from "./helpers/simHarness";
 import type { Vec2 } from "../src/game/simulation/types";
 import { GameSimulation } from "../src/game/simulation/GameSimulation";
@@ -99,7 +99,7 @@ describe("天亮撤退 · 必须清场", () => {
 
     // 继续跑到天亮之后；runNight 的夜长是 180 秒，这里补跑到相位切换再 +60 秒。
     for (let i = 0; i < Math.round(180 / STEP); i += 1) {
-      sim.player.health = 1_000_000;
+      keepPlayerAlive(sim);
       sim.update(STEP, { x: 0, z: 0 });
     }
     expect(

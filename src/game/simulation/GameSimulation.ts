@@ -72,6 +72,8 @@ function screenBearing(from: Vec2, to: Vec2): number {
 
 const PLAYER_RADIUS = 0.72;
 const WOLF_RADIUS = 0.68;
+/** 天然大石的碰撞半径。原先是散在四处的裸数字 1.48，流场也要用同一个值。 */
+const STONE_COLLIDE_RADIUS = 1.48;
 const FIRST_DAY_DURATION = 90;
 const FIRST_NIGHT_DURATION = 150;
 const LATER_DAY_DURATION = 180;
@@ -602,7 +604,9 @@ export class GameSimulation {
       { x: 0, z: retreatEdge },
     ].map((target) => {
       const navigation = new NavigationGrid(world);
-      navigation.rebuild(target);
+      navigation.rebuild(target, world.initialItems
+        .filter((item) => item.kind === "stone" && !item.placed)
+        .map((item) => ({ x: item.x, z: item.z, radius: STONE_COLLIDE_RADIUS + WOLF_RADIUS })));
       return navigation;
     });
     const startCamp = world.camps[world.startCampId];
@@ -649,7 +653,7 @@ export class GameSimulation {
       kills: 0,
     };
     for (const [kind, count] of STARTING_RATION) this.addInventory(kind, count);
-    this.navigation.rebuild(this.player);
+    this.navigation.rebuild(this.player, this.getFlowFieldObstacles());
     this.seedCritters();
     this.seedDenGuards();
   }
@@ -711,7 +715,7 @@ export class GameSimulation {
     if (!isMoving) this.player.idleTime += delta;
     this.navigationCountdown -= delta;
     if (this.navigationCountdown <= 0) {
-      this.navigation.rebuild(this.player);
+      this.navigation.rebuild(this.player, this.getFlowFieldObstacles());
       this.navigationCountdown = 0.65;
     }
 
@@ -2403,7 +2407,7 @@ export class GameSimulation {
 
     const blockingItem = wolf.mode === "retreating" ? null : this.findBlockingItem(wolf, desired);
     if (blockingItem) {
-      const obstacleRadius = blockingItem.kind === "stone" ? 1.48 : 0.62;
+      const obstacleRadius = blockingItem.kind === "stone" ? STONE_COLLIDE_RADIUS : 0.62;
       const attackReach = WOLF_RADIUS + obstacleRadius + 0.2;
       const barrierDistance = distance(wolf, blockingItem);
       if (barrierDistance > attackReach) {
@@ -2446,10 +2450,15 @@ export class GameSimulation {
      * 巡逻犬**不走流场**（它绕的是自己的锚点，不是玩家），所以一旦被地形卡住
      * 就没有任何恢复手段 —— 上面那些流场修复一条都轮不到它。实测岩壁洞窟外
      * 有四只狗以 flow=UNREACHABLE 的姿态一动不动站到天亮，就是这一类。
-     * 撤退犬不走这里：它自己有一套逐步放宽坡度的解卡机制。
+     * 撤退犬**也**要走这里。它自带的解卡只放宽**坡度**，对墙体碰撞毫无作用 ——
+     * 实测天亮后 27 只狗全部卡在离地图边缘 30.2 米处，`retreating` 状态挂了 200 秒
+     * 一步没动，就是被墙顶住而坡度放宽救不了。
      */
-    if (wolf.mode !== "retreating" && !this.canStepToward(wolf, steered)) {
-      steered = this.findSteppableDirection(wolf, steered) ?? steered;
+    // 撤退犬在 moveEntity 里是 collideWithItems = false 的，探针也必须用同一个值，
+    // 否则它会误判"这边有石头走不了"，而实际它根本不撞石头。
+    const collideWithItems = wolf.mode !== "retreating";
+    if (!this.canStepToward(wolf, steered, WOLF_RADIUS, collideWithItems)) {
+      steered = this.findSteppableDirection(wolf, steered, collideWithItems) ?? steered;
     }
     wolf.facing = steered;
     const pace = wolf.mode === "retreating"
@@ -3101,6 +3110,24 @@ export class GameSimulation {
     let closestDistance = Number.POSITIVE_INFINITY;
     for (const item of this.items) {
       if (!this.isBlockingGroundItem(item)) continue;
+      /*
+       * 只啃**玩家布置**的路障。
+       *
+       * 天然石头也有碰撞（isBlockingGroundItem 认它，这是对的：撞不过去），
+       * 但"有碰撞"不等于"该啃"。石头 1500 血 / 10 护甲，第一夜小狗每口
+       * round(10 × 1.05) − 10 = **1 点**，冷却 0.95 秒 —— 啃穿要 1425 秒，
+       * 而一夜只有 180 秒，等于八夜不吃不喝地啃一块石头。
+       *
+       * 而下面那两条分支每帧都 return，根本走不到 moveEntity。于是野地里
+       * 27 块石头每一块都是捕狗夹：狗路过时只要贴到 2.36 米内、方向大致朝着它，
+       * 就再也不走了，站在那儿啃到天亮 —— 玩家看到的就是"狗站着看我不过来"。
+       * 实测五座营地合计 1605 狗秒、最长一只连续定住 143.9 秒，全是这么来的。
+       *
+       * 天然石头改成绕开走（碰撞 + 转向 + findSteppableDirection 已经够了），
+       * 这也正是路障玩法本来的意思：**路障是玩家搬过去堵路的那块**，
+       * 不是沙漠里本来就躺着的石头。
+       */
+      if (!item.placed) continue;
       const itemDistance = distance(wolf, item);
       // Acquire the barrier before the 3.2 m generic avoidance radius. Once
       // acquired, updateWolf deliberately approaches it until bite range.
@@ -3120,6 +3147,24 @@ export class GameSimulation {
    * 天然石头从生成时就是实体障碍；枯木只有被玩家放下后才组成路障。
    * `placed` 表示“被玩家布置过”，不能再被误用成“有没有碰撞”。
    */
+  /**
+   * 要让流场绕开的圆形障碍。
+   *
+   * 只收**天然**石头：它有碰撞却不该被啃（见 findBlockingItem），所以寻路必须自己绕。
+   * 玩家布置的路障故意**不**收 —— 那是专门给狗啃的，流场绕开它，布防就白做了。
+   *
+   * 半径按"狗的圆心能到哪儿"算（石头半径 + 狗半径），这样流场给出的路线
+   * 和 resolveCollisions 的判断是同一套，不会出现"寻路说能走、物理说不能"。
+   */
+  private getFlowFieldObstacles(): { x: number; z: number; radius: number }[] {
+    const out: { x: number; z: number; radius: number }[] = [];
+    for (const item of this.items) {
+      if (!this.isBlockingGroundItem(item) || item.placed) continue;
+      out.push({ x: item.x, z: item.z, radius: STONE_COLLIDE_RADIUS + WOLF_RADIUS });
+    }
+    return out;
+  }
+
   private isBlockingGroundItem(item: GroundItem): boolean {
     return item.active && (item.kind === "stone" || item.placed);
   }
@@ -3482,7 +3527,7 @@ export class GameSimulation {
       if (!collideWithItems) continue;
       for (const item of this.items) {
         if (!this.isBlockingGroundItem(item)) continue;
-        this.pushOutsideCircle(entity, radius, item, item.kind === "stone" ? 1.48 : 0.62);
+        this.pushOutsideCircle(entity, radius, item, item.kind === "stone" ? STONE_COLLIDE_RADIUS : 0.62);
       }
       for (const structure of this.structures) {
         if (!structure.active) continue;
@@ -3505,7 +3550,7 @@ export class GameSimulation {
     if (!collideWithItems) return false;
     for (const item of this.items) {
       if (!this.isBlockingGroundItem(item)) continue;
-      const obstacleRadius = item.kind === "stone" ? 1.48 : 0.62;
+      const obstacleRadius = item.kind === "stone" ? STONE_COLLIDE_RADIUS : 0.62;
       if (this.stepEntersCircle(from, to, item, radius + obstacleRadius)) return true;
     }
     for (const structure of this.structures) {
@@ -3534,12 +3579,12 @@ export class GameSimulation {
    * 以 desired 为中心向两侧张开，找第一个迈得动的方向；一圈都不行返回 null。
    * 先试小角度，让它尽量还朝着原来想去的地方走，而不是掉头。
    */
-  private findSteppableDirection(from: Vec2, desired: Vec2): Vec2 | null {
+  private findSteppableDirection(from: Vec2, desired: Vec2, collideWithItems = true): Vec2 | null {
     const base = Math.atan2(desired.z, desired.x);
     for (const offset of [0.6, -0.6, 1.2, -1.2, 1.8, -1.8, 2.4, -2.4, Math.PI]) {
       const angle = base + offset;
       const candidate = { x: Math.cos(angle), z: Math.sin(angle) };
-      if (this.canStepToward(from, candidate)) return candidate;
+      if (this.canStepToward(from, candidate, WOLF_RADIUS, collideWithItems)) return candidate;
     }
     return null;
   }
@@ -3560,9 +3605,22 @@ export class GameSimulation {
    * 改这两个函数中的任何一个，都要同时改另一个。
    */
   private canStepToward(from: Vec2, dir: Vec2, radius = WOLF_RADIUS, collideWithItems = true): boolean {
-    const probe = { x: from.x + dir.x * 0.45, z: from.z + dir.z * 0.45 };
-    return this.canTraverseTerrain(from, probe)
-      && !this.stepCrossesCollision(from, probe, radius, collideWithItems);
+    /*
+     * **分轴问**，不要问对角线。
+     *
+     * moveEntity 是分轴推进的（stepAxis 先走 x 再走 z，一轴被挡另一轴仍然生效，
+     * 这正是贴墙滑行的来源）。探针若按对角线问，就会在墙角处答错：对角线方向畅通，
+     * 可 x 和 z 各自都会撞角，于是探针说"这个方向能走"、stepAxis 三档 fallback
+     * 全被拒，狗一步不动。实测岩壁洞窟外一只巡逻犬就这么定住 10 秒。
+     *
+     * 只要有一个轴迈得动，moveEntity 就会产生位移 —— 判据必须和它一致。
+     */
+    const REACH = 0.45;
+    const axisClear = (target: Vec2): boolean => this.canTraverseTerrain(from, target)
+      && !this.stepCrossesCollision(from, target, radius, collideWithItems);
+    if (Math.abs(dir.x) > 1e-6 && axisClear({ x: from.x + dir.x * REACH, z: from.z })) return true;
+    if (Math.abs(dir.z) > 1e-6 && axisClear({ x: from.x, z: from.z + dir.z * REACH })) return true;
+    return false;
   }
 
   private canTraverseTerrain(from: Vec2, to: Vec2, terrainSlopeAllowance = 1): boolean {

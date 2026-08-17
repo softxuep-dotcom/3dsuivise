@@ -38,6 +38,12 @@ jobs:
       - name: Type-check
         run: npm run typecheck
 
+      # 模拟层回归测试（约 40 秒）。挡的是一类 typecheck 和肉眼都看不见的毛病：
+      # 狗卡在营地下面不上来咬、天亮撤不出去、营地大门被石头封死。
+      # 这些只有把一整夜跑完再看统计量才发现，所以必须进 CI。
+      - name: Test
+        run: npm test
+
       - name: Build game
         run: npm run build
 
