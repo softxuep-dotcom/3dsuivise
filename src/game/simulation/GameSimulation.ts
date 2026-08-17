@@ -3545,13 +3545,24 @@ export class GameSimulation {
   }
 
   /**
-   * 沿 dir 迈一步会不会被地形拒掉。用的是 stepAxis 同一个判定，所以答案和实际
-   * 移动结果一致；探针取 0.45 米 —— 比一帧的位移长（狗最快约 0.1 米/帧），
-   * 这样它在真正贴上崖壁之前就已经改走流场，而不是先撞上去再纠正。
+   * 沿 dir 迈一步会不会被拒掉。探针取 0.45 米 —— 比一帧的位移长（狗最快约 0.1 米/帧），
+   * 这样它在真正贴上障碍之前就已经改道，而不是先撞上去再纠正。
+   *
+   * **必须和 stepAxis 用同一组判定**，否则整套解卡机制会建立在错误的答案上：
+   * findSteppableDirection 问它"这个方向行不行"，它说行，stepAxis 却拒绝，
+   * 于是狗每帧都在"找到一个能走的方向"和"走不动"之间空转，站着不动。
+   *
+   * 这条不变式被破坏过一次：stepAxis 后来加了 stepCrossesCollision（连续碰撞），
+   * 这里没跟着加，于是探针只问地形、stepAxis 却还要过碰撞这一关，两边可能给出
+   * 相反的答案。补齐是为了让不变式重新成立 —— **但要说清楚：补齐之后，
+   * tests/wolfPathing 里那批"狗僵住 143 秒"的失败一条都没变**，所以那个 bug
+   * 另有原因，别把这次改动当成它的修复。
+   * 改这两个函数中的任何一个，都要同时改另一个。
    */
-  private canStepToward(from: Vec2, dir: Vec2): boolean {
+  private canStepToward(from: Vec2, dir: Vec2, radius = WOLF_RADIUS, collideWithItems = true): boolean {
     const probe = { x: from.x + dir.x * 0.45, z: from.z + dir.z * 0.45 };
-    return this.canTraverseTerrain(from, probe);
+    return this.canTraverseTerrain(from, probe)
+      && !this.stepCrossesCollision(from, probe, radius, collideWithItems);
   }
 
   private canTraverseTerrain(from: Vec2, to: Vec2, terrainSlopeAllowance = 1): boolean {
