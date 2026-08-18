@@ -90,12 +90,6 @@ const PACK_CAPTION_SECONDS = 2.6;
  * UI 不走这条路，见头注释里那段"两套机制"。
  */
 
-/**
- * HUD 里自带层叠上下文的那几个容器。点亮子元素时要连它们一起抬，
- * 否则子元素的 z-index 出不去（见 syncLit）。
- */
-const HIGHLIGHT_HOSTS = ".bottom-right, #touch-controls, .left-stack, .top-stack, .status-strip";
-
 const SVG_NS = "http://www.w3.org/2000/svg";
 const STORAGE_KEY = "desert-survivor.tutorial.v1";
 
@@ -145,6 +139,9 @@ export interface TutorialDeps {
 
 export class Tutorial {
   private readonly root = required<HTMLElement>("tutorial");
+  /** 幕布单独一层，排在 #hud **之前**（见 index.html 那段注释）。 */
+  private readonly veilLayer = required<HTMLElement>("tutorial-veil-layer");
+  private readonly hud = required<HTMLElement>("hud");
   private readonly veil = required<SVGElement>("tutorial-veil");
   private readonly holeGroup = required<SVGGElement>("tutorial-holes");
   private readonly caption = required<HTMLElement>("tutorial-caption");
@@ -263,6 +260,8 @@ export class Tutorial {
     this.skipButton.textContent = t("tutorial.skip");
     this.skipButton.classList.remove("hidden");
     this.root.classList.remove("hidden");
+    this.veilLayer.classList.remove("hidden");
+    this.hud.classList.add("tutorial-dim");
     this.renderCaption();
   }
 
@@ -310,6 +309,9 @@ export class Tutorial {
     // 否则教学结束后那颗键会一直发着光、而且一直压在别的 UI 之上。
     this.syncLit([]);
     this.root.classList.add("hidden");
+    this.root.classList.remove("over-pack");
+    this.veilLayer.classList.add("hidden");
+    this.hud.classList.remove("tutorial-dim");
     writeDone();
     this.deps.onFinish();
   }
@@ -325,9 +327,15 @@ export class Tutorial {
         this.packCaptionTime = PACK_CAPTION_SECONDS;
         this.line.textContent = t("tutorial.pack.done");
         this.sub.textContent = t("tutorial.pack.sub");
+        // 抬的是整个字幕层，不是这行字本身 —— .tutorial 是 fixed，子元素的
+        // z-index 爬不出它自己的层叠上下文（见 styles.css 里那段注释）。
+        this.root.classList.add("over-pack");
         this.caption.classList.add("over-pack");
         this.skipButton.classList.add("hidden");
-        this.veil.style.opacity = "0";
+        // 最后一句是"东西都在这里"，玩家的眼睛在刚打开的背包上 ——
+        // 这时候幕布和压暗都该退场，别再挡着他看那八个格子。
+        this.veilLayer.classList.add("hidden");
+        this.hud.classList.remove("tutorial-dim");
         this.syncDots();
         return;
       }
@@ -380,36 +388,27 @@ export class Tutorial {
   }
 
   /**
-   * 点亮这一步要按的那颗 UI 键：抬到幕布之上，加一圈搏动的光。
+   * 点亮这一步要按的那几颗 UI 键。
    *
-   * 容器必须一起抬。`.bottom-right` / `#touch-controls` 自带 z-index，
-   * 各自开了层叠上下文，子元素单独调 z-index 爬不出那个笼子。容器抬上来之后，
-   * 同容器里没被点名的兄弟由 CSS 逐个压暗（见 .tutorial-raise 那段），
-   * 于是"暗"是按元素给的 —— 这正是挖洞做不到的那件事。
+   * 只做一件事：给它们挂上 .tutorial-lit。压暗、发光全在 CSS 里 ——
+   * `#hud.tutorial-dim` 把面板和其余按键压下去，被点名的这几颗不压、并加一圈光。
+   *
+   * **没有任何 z-index 操作。** 早先试过把按键抬到幕布之上，抬不动：
+   * #hud 是 position: fixed，本身就创建层叠上下文，子元素爬不出去。
+   * 现在幕布整层排在 #hud 之前、z 比它低，压根不需要抬。
    */
   private syncLit(ids: string[]): void {
     const wanted = new Set(ids);
     for (const id of this.litIds) {
-      if (!wanted.has(id)) this.clearLit(id);
+      if (!wanted.has(id)) document.getElementById(id)?.classList.remove("tutorial-lit");
     }
+    this.litIds.clear();
     for (const id of wanted) {
-      if (this.litIds.has(id)) continue;
       const element = document.getElementById(id);
       if (!element) continue;
       element.classList.add("tutorial-lit");
-      element.closest(HIGHLIGHT_HOSTS)?.classList.add("tutorial-raise");
       this.litIds.add(id);
     }
-  }
-
-  private clearLit(id: string): void {
-    this.litIds.delete(id);
-    const element = document.getElementById(id);
-    if (!element) return;
-    element.classList.remove("tutorial-lit");
-    const host = element.closest(HIGHLIGHT_HOSTS);
-    // 同一个容器里可能还亮着别的键，最后一颗灭掉时才把容器放回去。
-    if (host && !host.querySelector(".tutorial-lit")) host.classList.remove("tutorial-raise");
   }
 
   private renderCaption(): void {
@@ -418,6 +417,7 @@ export class Tutorial {
     this.line.textContent = t(step.line);
     this.sub.textContent = t(typeof step.sub === "function" ? step.sub(this.touch) : step.sub);
     this.caption.classList.remove("over-pack");
+    this.root.classList.remove("over-pack");
     // urgent 由 paint() 每帧按 stepTime 自己决定，这里不碰 —— 转屏重排文案时
     // 顺手清掉它的话，卡住十秒的玩家会看见提示突然不闪了。
     this.veil.style.opacity = "";

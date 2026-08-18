@@ -50,9 +50,18 @@ button { font: inherit; }
   pointer-events: none;
 }
 
+/*
+ * z-index 写成显式的 2，不再靠 auto。
+ *
+ * #hud 和教学幕布都是 position: fixed —— 而 fixed **本身就创建层叠上下文**，
+ * 与有没有 z-index 无关。所以只要幕布的 z 比这里高，整块 HUD 就被盖死，
+ * 里面任何子元素调多大的 z-index 都爬不出去（这正是"点亮某颗键"第一版失败的原因）。
+ * 现在顺序写死：场景 → 幕布(1) → HUD(2) → 教学字幕(14) → 各种遮罩(20/35)。
+ */
 #hud {
   position: fixed;
   inset: 0;
+  z-index: 2;
   pointer-events: none;
 }
 
@@ -869,37 +878,77 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
   margin-bottom: 14px;
 }
 
+/*
+ * 标签在上、值在下，**不并排**。
+ *
+ * 原先是 flex + space-between：一列在手机上只有约 100px，而值可以长到
+ * "Knife · Attack 30"。两边各自换行之后，标签会垂直居中卡进值的两行之间，
+ * 出来是「Knife · / Weapon / Attack 30」这种读不出主谓的东西。
+ * 竖排就没有这个问题：一行标签、一到两行值，多长都只是往下走。
+ */
 .equipment-row > div {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
+  display: grid;
+  gap: 3px;
+  align-content: start;
+  padding: 9px 11px;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: rgba(255,255,255,.035);
-  font-size: 12px;
+  min-width: 0;
 }
 
-.equipment-row span { color: #91a9b1; }
-.equipment-row strong { color: #f1e7d1; }
+.equipment-row span {
+  color: #7e969e;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
 
+.equipment-row strong {
+  color: #f1e7d1;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.3;
+  /* 值本身可能带 " · " 分隔的两段，允许换行但不许撑破格子。 */
+  overflow-wrap: anywhere;
+}
+
+/*
+ * 四条属性，四列 —— 原先写的是三列，于是第四个「Defence」永远单独掉一行、
+ * 还被拉成整行宽，看着像个没放对地方的按钮。
+ */
 .stat-row {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 8px;
   margin: -4px 0 14px;
 }
 
 .stat-row span {
-  padding: 7px;
+  display: grid;
+  gap: 2px;
+  padding: 7px 4px;
   border-radius: 8px;
   background: rgba(124, 151, 157, .08);
-  color: #8fa8af;
-  font-size: 10px;
   text-align: center;
+  min-width: 0;
 }
 
-.stat-row b { color: #f2d29e; }
+.stat-row i {
+  color: #7e969e;
+  font-size: 9px;
+  font-weight: 800;
+  font-style: normal;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.stat-row b {
+  color: #f2d29e;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
 
 .inventory-grid {
   display: grid;
@@ -1007,7 +1056,17 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
 @keyframes combo-breathe { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
 
 .craft-button:disabled { opacity: .4; cursor: default; }
-.inventory-help { margin: 12px 4px 0; color: #849ba5; font-size: 10px; line-height: 1.6; text-align: center; }
+/*
+ * 说明段落左对齐，不居中。居中排版只适合两三行的短句；这是一段五六行的连续说明，
+ * 居中之后每一行的起点都不一样，眼睛每换一行都要重新找头 —— 长段落最难读的排法。
+ */
+.inventory-help {
+  margin: 12px 2px 0;
+  color: #849ba5;
+  font-size: 10px;
+  line-height: 1.65;
+  text-align: left;
+}
 
 #touch-controls { display: none; }
 
@@ -1338,13 +1397,26 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
  * 整个 .tutorial 是 pointer-events: none，只有"跳过"按钮自己收回点击。
  * 幕布挡住的是视线，不是手：教学每一步都要玩家真的去按那颗键。
  */
-.tutorial {
+/*
+ * 幕布层：**在 HUD 下面**（z 1 对 2）。它压暗的是 3D 场景，界面不归它管 ——
+ * 界面的明暗由下面 #hud.tutorial-dim 那组规则逐个给。
+ */
+.tutorial-veil-layer {
   position: fixed;
   inset: 0;
-  z-index: 12;
+  z-index: 1;
   pointer-events: none;
 }
 
+/* 字幕层：在 HUD 之上（z 14），但在暂停/结算/背包那几层遮罩之下（20 / 35）。 */
+.tutorial {
+  position: fixed;
+  inset: 0;
+  z-index: 14;
+  pointer-events: none;
+}
+
+.tutorial-veil-layer.hidden,
 .tutorial.hidden { display: none; }
 
 /*
@@ -1428,11 +1500,15 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
   50% { transform: scale(1.055); opacity: .88; }
 }
 
-/* 收尾那句压在背包（z-index 35）之上，否则它会被背包盖掉。 */
-.tutorial-caption.over-pack {
-  z-index: 40;
-  bottom: 7%;
-}
+/*
+ * 收尾那句要压在背包遮罩（z 35）之上。
+ *
+ * **必须抬整个字幕层**，不能只给这行字加 z-index —— .tutorial 是 position: fixed，
+ * 自己就是一个层叠上下文，里面的子元素调多大都出不去。同一个坑这个文件里踩过两次了。
+ */
+.tutorial.over-pack { z-index: 40; }
+
+.tutorial-caption.over-pack { bottom: 7%; }
 
 /*
  * 跳过键单独放在底部正中、文案下面 —— 不塞进文案那一组。
@@ -1510,23 +1586,40 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
 }
 
 /*
- * ── 教学高亮：UI 不挖洞，抬上来 ────────────────────────────────────────────
+ * ── 教学期间的界面明暗：逐元素给，不挖洞也不抬层 ──────────────────────────
  *
- * 早期版本连按键也走幕布挖洞，实测是错的：洞是圆的、必须比按钮大，而这四颗键排在
- * 半径 140px 的弧上、彼此只隔 77~89px —— 照亮背包的洞半径 97px，会把攻击、行动、
- * 体温一起照进去。**最需要精确指认的那一步反而指不准。**
+ * 走到这一版之前错过两次，都值得记下来：
  *
- * 现在改成把那颗键抬到幕布之上再给它一圈光。两个好处：只影响这一颗；
- * 而且能真的"变亮"，不只是"不变暗" —— 挖洞至多只能还原它本来的亮度。
+ * 一、**幕布上挖洞照亮按键**。洞是圆的、必须比按钮大，而右下四颗键排在半径 140px
+ *     的弧上、彼此只隔 77~89px —— 照亮背包的洞半径 97px，会把攻击、行动、体温
+ *     一起照进去。最需要精确指认的那一步反而指不准。
  *
- * 抬的时候必须连**容器**一起抬：.bottom-right / #touch-controls 自己带 z-index，
- * 各自开了层叠上下文，子元素单独调 z-index 出不去那个笼子。所以容器整体抬到幕布
- * 之上，再把没被点名的兄弟逐个压暗 —— 这样"暗"是按元素给的，不是按圆给的。
+ * 二、**把那颗键的容器 z-index 抬到幕布之上**。抬不动：`position: fixed` 本身就
+ *     创建层叠上下文，而 #hud 正是 fixed，整块 HUD 被幕布盖死，子元素的 z-index
+ *     再大也出不去。computed z-index 确实变成了 13，但绘制顺序纹丝不动 ——
+ *     这种错只有拿 elementFromPoint 量真实命中才看得出来。
+ *
+ * 现在幕布整个挪到 HUD 下面，界面明暗改成 CSS 按元素给：面板整块压暗，
+ * 按键逐颗压暗、被点名的那颗不压并加一圈光。想只亮一颗，那就该按颗给。
  */
-.tutorial-raise { z-index: 13; }
+#hud.tutorial-dim .left-stack,
+#hud.tutorial-dim .top-stack,
+#hud.tutorial-dim .status-strip,
+#hud.tutorial-dim .prompt { opacity: .2; }
 
-.bottom-right.tutorial-raise button:not(.tutorial-lit),
-#touch-controls.tutorial-raise .joystick:not(.tutorial-lit) { opacity: .14; }
+/*
+ * 按键逐颗给。**不能压在容器上** —— 子元素的 opacity 不可能超过父元素的，
+ * 压了 .bottom-right 就再也没法把其中一颗提回全亮。
+ */
+#hud.tutorial-dim .bottom-right button:not(.tutorial-lit),
+#hud.tutorial-dim .joystick:not(.tutorial-lit) { opacity: .14; }
+
+#hud.tutorial-dim .left-stack,
+#hud.tutorial-dim .top-stack,
+#hud.tutorial-dim .status-strip,
+#hud.tutorial-dim .prompt,
+#hud.tutorial-dim .bottom-right button,
+#hud.tutorial-dim .joystick { transition: opacity .28s ease; }
 
 .tutorial-lit {
   animation: tutorial-key-glow 1.5s ease-in-out infinite;

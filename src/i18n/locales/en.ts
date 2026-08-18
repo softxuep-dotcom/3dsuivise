@@ -257,7 +257,7 @@ export const en: Record<string, string> = {
   "pack.craft.aria": "Recipes",
   "pack.eyebrow": "8 slots · paused",
   "pack.grid.aria": "Pack slots",
-  "pack.help": "Buildings go two metres in front of you — walk to the spot before opening the pack. Stakes block the way and the dogs tear them down first. Fire only burns at camps: warmth, cooking and gear upgrades all need you back at a campfire (anything within 10 m counts). Raw meat feeds you but restores no health; cooked meat does. Night raiders drop nothing — meat and hide only come from daytime hunting.",
+  "pack.help": "Buildings go two metres in front of you — walk to the spot before opening the pack. Stakes block the way and the dogs tear them down first. Fire only burns at camps: warmth, cooking and gear upgrades all need you back at a campfire (anything within 10 m counts). Raw meat restores only half the health that cooked meat does. Night raiders drop nothing — meat and hide only come from daytime hunting.",
   "pack.slot.body": "Body",
   "pack.slot.empty": "Empty slot {index}",
   "pack.slot.filled": "{name} ×{count}",
