@@ -12,40 +12,6 @@
       <div id="render-root" data-i18n-attr="aria-label:hud.render.aria"></div>
       <div class="version-label" aria-label="Game version %APP_VERSION%">%APP_VERSION%</div>
 
-      <!--
-        教学幕布。**必须排在 #hud 之前、z-index 比它低** —— 它压暗的是 3D 场景，
-        不是界面。
-
-        踩过的坑：早先幕布压在 HUD 之上（z 12 对 5），想点亮某颗键就靠抬那颗键的
-        z-index。抬不动 —— `position: fixed` 本身就会创建层叠上下文，而 #hud 正是
-        fixed，于是整块 HUD 被幕布盖死，子元素的 z-index 再大也爬不出那个笼子。
-        （用 elementFromPoint 量真实绘制顺序才发现；只看 computed z-index 是量不出来的。）
-
-        现在幕布只管场景，界面的明暗由 #hud.tutorial-dim 那组规则逐个给 ——
-        既然要"只亮这一颗"，那就该按元素给，而不是按一个圆圈给。
-      -->
-      <div id="tutorial-veil-layer" class="tutorial-veil-layer hidden" aria-hidden="true">
-        <!--
-          挖洞用 SVG 遮罩，不是 CSS 的 radial-gradient mask：一条渐变只挖得动一个洞，
-          而场景里要照的目标以后可能不止一个。遮罩是亮度语义：白处照常挡，
-          圆里是黑的所以挖穿，圆边用渐变过渡成软边。
-        -->
-        <svg id="tutorial-veil" class="tutorial-veil">
-          <defs>
-            <radialGradient id="tutorial-hole-fade">
-              <stop offset="58%" stop-color="#000" />
-              <stop offset="100%" stop-color="#fff" />
-            </radialGradient>
-            <mask id="tutorial-mask">
-              <rect x="0" y="0" width="100%" height="100%" fill="#fff" />
-              <!-- 亮洞由 Tutorial.ts 每帧增删 -->
-              <g id="tutorial-holes"></g>
-            </mask>
-          </defs>
-          <rect x="0" y="0" width="100%" height="100%" fill="#060a0e" opacity="0.78" mask="url(#tutorial-mask)" />
-        </svg>
-      </div>
-
       <div id="hud" class="hidden" aria-live="polite">
         <div class="left-stack">
           <section class="objective-chip">

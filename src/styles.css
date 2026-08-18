@@ -1421,25 +1421,15 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
  * 开场教学
  * ============================================================================
  *
- * 层次：幕布 z-index 12，压在 HUD 面板（5）、卡车指示器（6）和触屏层（8）之上，
- * 但在暂停/结算遮罩（20）和背包（35）之下。于是"全场暗调"真的包括右下那四颗键
- * —— 每一步要照亮的那颗键才亮得出来 —— 而玩家一旦打开背包，背包是全亮的，
- * 最后一步正需要这样。
+ * 场景里的压暗**不在这里** —— 那是渲染层的一盏聚光灯（GameRenderer.spotlightOn）。
+ * 曾经是一张 z-index 12 的 SVG 幕布盖住全屏、在目标位置挖洞，已经整个删掉：
+ * 平台的会话录像抓画布不抓 DOM 覆盖层，幕布在回放里根本不存在；而一整屏 78%
+ * 的黑，对新玩家的第一眼来说也太重了。
  *
- * 整个 .tutorial 是 pointer-events: none，只有"跳过"按钮自己收回点击。
- * 幕布挡住的是视线，不是手：教学每一步都要玩家真的去按那颗键。
+ * 留在 DOM 这边的只有 #hud.tutorial-dim（把没被点名的面板和按键压下去）
+ * 和这一层字幕。整个 .tutorial 是 pointer-events: none，只有"跳过"按钮自己
+ * 收回点击 —— 教学每一步都要玩家真的去按那颗键。
  */
-/*
- * 幕布层：**在 HUD 下面**（z 1 对 2）。它压暗的是 3D 场景，界面不归它管 ——
- * 界面的明暗由下面 #hud.tutorial-dim 那组规则逐个给。
- */
-.tutorial-veil-layer {
-  position: fixed;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-}
-
 /* 字幕层：在 HUD 之上（z 14），但在暂停/结算/背包那几层遮罩之下（20 / 35）。 */
 .tutorial {
   position: fixed;
@@ -1448,22 +1438,7 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
   pointer-events: none;
 }
 
-.tutorial-veil-layer.hidden,
 .tutorial.hidden { display: none; }
-
-/*
- * 幕布是一张 SVG（结构见 index.html）。
- *
- * 不用 CSS 的 radial-gradient 遮罩，是因为一步要照亮**两个**东西：场景里的目标
- * 和它对应的那颗按键。一条渐变只挖得动一个洞。
- */
-.tutorial-veil {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  transition: opacity .3s ease;
-}
 
 /*
  * 文案：**不给框**。

@@ -176,7 +176,11 @@ async function bootstrap(): Promise<void> {
 
   const input = new InputController({
     onGameplayIntent: enterGame,
-    onAction: () => runGameplayAction(() => simulation.requestInteraction()),
+    onAction: () => runGameplayAction(() => {
+      // 教学第三步只要求"按过这颗键"，不要求真捡到东西 —— 见 Tutorial 里那段。
+      tutorial.noteAction();
+      simulation.requestInteraction();
+    }),
     onAttack: () => runGameplayAction(() => simulation.requestAttack()),
     onThermal: () => runGameplayAction(() => simulation.requestThermalAction()),
     onInventory: () => hud.toggleInventory(),
@@ -200,7 +204,7 @@ async function bootstrap(): Promise<void> {
   const tutorial = new Tutorial({
     simulation,
     stage,
-    project: (x, z) => renderer.worldToScreen(x, z),
+    spotlight: (target) => renderer.spotlightOn(target),
     isInventoryOpen: () => hud.isInventoryOpen(),
     // 广告和暂停要冻结教学计时；背包开着不算 —— 那正是最后一步要的状态。
     isTimerFrozen: () => hud.isGameplayBlocked() && !hud.isInventoryOpen(),
@@ -218,7 +222,7 @@ async function bootstrap(): Promise<void> {
   const nightIntro = new NightIntro({
     simulation,
     stage,
-    project: (x, z) => renderer.worldToScreen(x, z),
+    spotlight: (target) => renderer.spotlightOn(target),
     focusCamera: (target) => renderer.focusOn(target),
     setHold: (active) => simulation.setTutorialHold(active),
     setActionLabel: (hint) => hud.setActionOverride(hint),

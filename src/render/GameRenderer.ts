@@ -338,6 +338,25 @@ export class GameRenderer {
   private cameraPanAnchor: Vec2 | null = null;
   /** 0 = 看玩家，1 = 看过场目标。去程比回程慢一点，推出去的那一下才有分量。 */
   private cameraPan = 0;
+  /**
+   * 教学聚光灯。**这是一盏真的灯，不是一块盖在画面上的黑布。**
+   *
+   * 原先教学的压暗是 DOM 里一张 SVG 幕布（#tutorial-veil）。两个毛病：
+   *
+   *   1. **录不进去**。平台的会话录像抓的是画布，DOM 覆盖层不在里面 ——
+   *      于是我们自以为做了很强的视觉引导，回放里却是一片正常光照的沙漠，
+   *      根本看不出教学在指什么。看录像的人和玩游戏的人看到的不是同一个东西。
+   *   2. **太重**。一整屏 78% 不透明的黑，第一眼像加载失败或者游戏坏了。
+   *
+   * 换成场景内的光：环境光压到四成，一盏聚光打在这一步的目标上。
+   * 画布里发生的事，录像里就有；而"压暗一点 + 一束光"比"黑幕挖洞"温和得多。
+   */
+  private readonly tutorialSpot = new THREE.SpotLight(0xffe3b4, 0, 60, 0.5, 0.72, 1.1);
+  private readonly tutorialSpotTarget = new THREE.Object3D();
+  /** 聚光要照的世界坐标；null = 收灯。 */
+  private tutorialFocus: Vec2 | null = null;
+  /** 0~1 的淡入淡出，避免开关灯是硬切。 */
+  private tutorialLight = 0;
   /** 脚下的取暖光环，见 buildWarmthAura。 */
   private readonly warmthAura: THREE.Group;
   private readonly warmthRing: THREE.Mesh;
@@ -421,6 +440,10 @@ export class GameRenderer {
     this.warmthRing = aura.ring;
     this.warmthMotes = aura.motes;
     this.scene.add(this.warmthAura);
+    // 聚光灯不投阴影：教学要的是"这里亮"，不是多一层几何解算。
+    this.tutorialSpot.castShadow = false;
+    this.tutorialSpot.target = this.tutorialSpotTarget;
+    this.scene.add(this.tutorialSpot, this.tutorialSpotTarget);
 
     this.cameraFocus.set(simulation.player.x, this.worldHeight(simulation.player.x, simulation.player.z), simulation.player.z);
     this.resize();
@@ -450,6 +473,8 @@ export class GameRenderer {
     this.syncWolves(delta);
     this.syncDrops();
     this.syncFires();
+    // 排在 syncDayNight 之前：那一步要按这一步算出的 tutorialLight 去压环境光。
+    this.updateTutorialLight(delta);
     this.syncDayNight();
     this.updateCamera(delta);
     this.updateSand(delta);
@@ -467,6 +492,30 @@ export class GameRenderer {
   focusOn(target: Vec2 | null): void {
     this.cameraPanTarget = target;
     if (target) this.cameraPanAnchor = { x: target.x, z: target.z };
+  }
+
+  /**
+   * 教学聚光：压暗全场，把一束光打在这个世界坐标上。传 null 收灯。
+   * 每帧可以改目标（猎物会跑），插值由 updateTutorialLight 负责。
+   */
+  spotlightOn(target: Vec2 | null): void {
+    this.tutorialFocus = target;
+  }
+
+  private updateTutorialLight(delta: number): void {
+    const wants = this.tutorialFocus !== null;
+    // 0.45 秒亮起、0.7 秒退场：亮得干脆，收得从容。
+    this.tutorialLight = clamp(this.tutorialLight + delta / (wants ? 0.45 : -0.7), 0, 1);
+    if (this.tutorialFocus) {
+      const { x, z } = this.tutorialFocus;
+      const ground = this.worldHeight(x, z);
+      this.tutorialSpotTarget.position.set(x, ground, z);
+      this.tutorialSpotTarget.updateMatrixWorld();
+      // 灯挂在目标正上方偏相机一侧，光斑才不会被角色自己挡住。
+      this.tutorialSpot.position.set(x + 4.5, ground + 17, z + 4.5);
+    }
+    this.tutorialSpot.intensity = this.tutorialLight * 165;
+    this.tutorialSpot.visible = this.tutorialLight > 0.01;
   }
 
   screenToWorld(clientX: number, clientY: number): Vec2 | null {
@@ -2242,12 +2291,28 @@ export class GameRenderer {
     this.hemisphere.color.lerpColors(new THREE.Color(0x8fa6cf), new THREE.Color(0xffeec4), daylight);
     this.hemisphere.groundColor.lerpColors(new THREE.Color(0x3a4356), new THREE.Color(0x8a6a44), daylight);
     // 夜晚半球光强度从 1.34 提到 1.85，让地形细节可见
-    this.hemisphere.intensity = lerp(1.85, 2.2, daylight);
+    /*
+     * 教学期间把环境光压到四成。
+     *
+     * 压的是**环境光**而不是画面：曝光和天空色都跟着走，于是画面看起来像
+     * 一片被云遮住的沙漠，而那盏聚光灯下面还是亮的 —— 这正是"很低的灯光 +
+     * 一束聚光"该有的样子，而且它整个发生在画布里，录像抓得到。
+     *
+     * 不压到零：全黑的话玩家看不见自己要走去的方向，教学第一步就废了。
+     * 四成是实测下来"明显暗了但仍然认得出地形"的位置。
+     */
+    const dim = lerp(1, 0.4, this.tutorialLight);
+    this.hemisphere.intensity = lerp(1.85, 2.2, daylight) * dim;
     this.sun.color.lerpColors(new THREE.Color(0xa8bce0), new THREE.Color(0xfff0cc), daylight);
     // 夜晚太阳（当作月光）强度从 0.82 提到 1.45，地面不再糊成一片
-    this.sun.intensity = lerp(1.45, 3.2, daylight);
+    this.sun.intensity = lerp(1.45, 3.2, daylight) * dim;
     // 夜晚曝光略提，让篝火光圈外也能辨识
-    this.renderer.toneMappingExposure = lerp(1.12, 1.05, daylight);
+    this.renderer.toneMappingExposure = lerp(1.12, 1.05, daylight) * lerp(1, 0.82, this.tutorialLight);
+    if (this.tutorialLight > 0.01 && this.scene.background instanceof THREE.Color) {
+      // 天空也要跟着暗，否则地面压下去了、天边还亮着，像贴了张纸。
+      this.scene.background.multiplyScalar(lerp(1, 0.45, this.tutorialLight));
+      this.scene.fog?.color.copy(this.scene.background);
+    }
   }
 
   private updateCamera(delta: number): void {

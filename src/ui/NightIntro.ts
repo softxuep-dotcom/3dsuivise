@@ -2,7 +2,7 @@ import type { GameSimulation } from "../game/simulation/GameSimulation";
 import type { CampDefinition, GameEvent, LocalizedText, Vec2 } from "../game/simulation/types";
 import { t } from "../i18n";
 import { readTutorialFlag, writeTutorialFlag } from "./Tutorial";
-import type { TutorialStage, Hole } from "./TutorialStage";
+import type { TutorialStage } from "./TutorialStage";
 
 /**
  * 第一夜教学：三拍，二十秒。
@@ -38,14 +38,12 @@ import type { TutorialStage, Hole } from "./TutorialStage";
  * 对着一堆冷灰说"待在火边"是句假话。
  */
 
-type Projector = (x: number, z: number) => { x: number; y: number; behind: boolean };
-
 interface Beat {
   /** 主/副文案键。副文案给函数是为了按当下的处境换说法（比如包里有没有柴）。 */
   line: string;
   sub: () => string;
-  /** 场景里要挖的亮洞。 */
-  targets: () => Hole[];
+  /** 这一拍聚光灯打在哪（世界坐标）；null = 收灯。 */
+  spot: () => Vec2 | null;
   /** 要提亮的 UI 元素 id。 */
   lit: () => string[];
   /** 这一拍期间镜头看哪；null = 看玩家。 */
@@ -76,7 +74,8 @@ const TOTAL_TIMEOUT_SECONDS = 46;
 export interface NightIntroDeps {
   simulation: GameSimulation;
   stage: TutorialStage;
-  project: Projector;
+  /** 把聚光灯打到某个世界坐标上；null = 收灯。 */
+  spotlight: (target: Vec2 | null) => void;
   /** 把镜头推到某点 / 收回来。渲染层提供。 */
   focusCamera: (target: Vec2 | null) => void;
   /** 时钟闸。和开场教学共用同一道，见 GameSimulation.setTutorialHold。 */
@@ -100,14 +99,7 @@ export class NightIntro {
   private camp: CampDefinition | null = null;
 
   constructor(private readonly deps: NightIntroDeps) {
-    const { simulation, project } = deps;
-
-    const worldHole = (point: Vec2 | null, radius: number): Hole[] => {
-      if (!point) return [];
-      const screen = project(point.x, point.z);
-      if (screen.behind) return [];
-      return [{ x: screen.x, y: screen.y, radius }];
-    };
+    const { simulation } = deps;
 
     const hasWood = (): boolean => simulation.getInventoryCount("wood") > 0;
 
@@ -115,8 +107,8 @@ export class NightIntro {
       {
         line: "night.howl",
         sub: () => "night.howl.sub",
-        // 镜头这时正推向营火，洞跟着营火走 —— 玩家的眼睛和镜头看同一个地方。
-        targets: () => worldHole(this.camp, 128),
+        // 镜头这时正推向营火，灯也打在营火上 —— 玩家的眼睛和镜头看同一个地方。
+        spot: () => this.camp,
         lit: () => [],
         focus: () => this.camp,
         hold: true,
@@ -128,7 +120,7 @@ export class NightIntro {
         line: "night.fire",
         // 包里没柴时这一拍教的是另一件事，文案必须跟着换。
         sub: () => (hasWood() ? "night.fire.sub" : "night.fire.noWood"),
-        targets: () => worldHole(this.camp, 104),
+        spot: () => this.camp,
         lit: () => ["action-button"],
         focus: () => null,
         hold: true,
@@ -146,7 +138,7 @@ export class NightIntro {
         line: "night.warm",
         sub: () => "night.warm.sub",
         // 这一拍照的是玩家自己：要看的是他脚下那圈取暖光环亮起来。
-        targets: () => worldHole(simulation.player, 108),
+        spot: () => simulation.player,
         lit: () => ["warmth-meter"],
         focus: () => null,
         // **放开时钟**：体温要真的往回涨，这一拍才有东西可看。
@@ -215,7 +207,7 @@ export class NightIntro {
       this.finish();
       return;
     }
-    this.deps.stage.setHoles(beat.targets());
+    this.deps.spotlight(beat.spot());
     this.deps.stage.setLit(beat.lit());
 
     const satisfied = this.beatTime >= beat.minSeconds && beat.done();
@@ -252,6 +244,7 @@ export class NightIntro {
   private finish(): void {
     if (!this.running) return;
     this.running = false;
+    this.deps.spotlight(null);
     this.deps.focusCamera(null);
     this.deps.setHold(false);
     this.deps.setActionLabel(null);

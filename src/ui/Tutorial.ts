@@ -1,8 +1,8 @@
 import type { GameSimulation } from "../game/simulation/GameSimulation";
 import { TUTORIAL_PREY } from "../game/simulation/GameSimulation";
-import type { GameEvent } from "../game/simulation/types";
+import type { GameEvent, Vec2 } from "../game/simulation/types";
 import { t } from "../i18n";
-import { TutorialStage, type Hole } from "./TutorialStage";
+import { TutorialStage } from "./TutorialStage";
 
 /**
  * 开场教学：四个动词，二十秒。
@@ -40,8 +40,6 @@ import { TutorialStage, type Hole } from "./TutorialStage";
  * 入夜的第二段教学是另一个类，见 NightIntro.ts。
  */
 
-type Projector = (x: number, z: number) => { x: number; y: number; behind: boolean };
-
 type StepId = "move" | "attack" | "act" | "pack";
 
 interface StepDefinition {
@@ -50,28 +48,33 @@ interface StepDefinition {
   line: string;
   /** 副文案键；触屏和键鼠不同的那一步给函数。 */
   sub: string | ((touch: boolean) => string);
-  /** 这一步要在**场景里**照亮的东西（幕布挖洞）。空数组表示这一帧维持全暗。 */
-  targets: () => Hole[];
+  /** 这一步聚光灯打在哪（世界坐标）。null = 不打灯，全场恢复常亮。 */
+  spot: () => Vec2 | null;
   /** 这一步要点亮的 **UI 元素** id（提亮，不挖洞）。 */
   lit: () => string[];
   /** 完成判定。事件驱动的那两步靠标记位，其余靠即时状态。 */
   done: () => boolean;
 }
 
-/** 每步的软/硬上限：10 秒把提示加重，18 秒直接放行。 */
-const STEP_NUDGE_SECONDS = 10;
-const STEP_TIMEOUT_SECONDS = 18;
-/** 整段教学的硬上限。任何一步卡住都不至于把人锁在这里。 */
-const TOTAL_TIMEOUT_SECONDS = 60;
+/**
+ * 每步的软/硬上限：4 秒把提示加重，**7 秒直接放行**。
+ *
+ * 原先是 10 / 18 秒，整段封顶 60 秒 —— 而平台实测的会话时长中位数只有 15 秒左右。
+ * 把这两个数摆在一起就看明白了：光是"走两步"和"挥一刀"两步的超时相加就有 36 秒，
+ * 也就是说**一半以上的玩家从来没看到过第三步**（捡枯木）。他们不是没通过那一步，
+ * 是那一步压根没在他们的屏幕上出现过。
+ *
+ * 7 秒的意思是：这一步你做没做我都往下走。教学因此从"一道要通过的关"
+ * 变成"开头二十秒里飘过去的四句话"，而玩家全程都在玩。
+ */
+const STEP_NUDGE_SECONDS = 4;
+const STEP_TIMEOUT_SECONDS = 7;
+/** 整段教学的硬上限。四步 × 7 秒再留一点余量。 */
+const TOTAL_TIMEOUT_SECONDS = 30;
 /** 第一步要走出去多远才算学会"走"。按一下键不算。 */
 const MOVE_DISTANCE = 3;
 /** 最后一步（打开背包）之后，那句"东西都在这里"停留多久。 */
-const PACK_CAPTION_SECONDS = 2.6;
-/*
- * 亮洞只用在场景目标上（角色、猎物、枯木），半径由各步自己按体型给 ——
- * index.html 的遮罩渐变里 0~58% 是纯黑（真正挖穿的那一圈），外面才是软边，
- * 所以下面那几个半径都要按"再打个七折才是实亮区"来读。
- */
+const PACK_CAPTION_SECONDS = 2.2;
 
 const STORAGE_KEY = "desert-survivor.tutorial.v1";
 
@@ -99,8 +102,8 @@ export interface TutorialDeps {
   simulation: GameSimulation;
   /** 共享舞台。开场和第一夜是同一块 DOM，不能各建各的。 */
   stage: TutorialStage;
-  /** 世界坐标 → 画布像素。渲染层提供，和卡车边缘指示器共用同一个投影。 */
-  project: Projector;
+  /** 把聚光灯打到某个世界坐标上（渲染层提供）；null = 收灯。 */
+  spotlight: (target: Vec2 | null) => void;
   /** 背包当前开着没有。第四步的完成判定。 */
   isInventoryOpen: () => boolean;
   /**
@@ -123,41 +126,30 @@ export class Tutorial {
   private totalTime = 0;
   private running = false;
   private packCaptionTime = 0;
-  /** 事件驱动的完成标记：砍死教学猎物、捡到枯木。 */
-  private killedPrey = false;
+  /** 事件驱动的完成标记。挥刀/按行动只要发生过就算，见各步的 done()。 */
+  private swung = false;
+  private acted = false;
   private pickedWood = false;
   private origin = { x: 0, z: 0 };
   private touch = isTouchLayout();
 
   constructor(private readonly deps: TutorialDeps) {
-    const { simulation, project } = deps;
+    const { simulation } = deps;
     this.stage = deps.stage;
 
-    const worldHole = (point: { x: number; z: number } | null, radius: number): Hole | null => {
-      if (!point) return null;
-      const screen = project(point.x, point.z);
-      // 目标转到镜头背后时不画洞（等距视角下极少见，切屏尺寸时会短暂发生）。
-      if (screen.behind) return null;
-      return { x: screen.x, y: screen.y, radius };
-    };
-
-    const nearestPrey = (): { x: number; z: number } | null => {
+    const nearestPrey = (): Vec2 | null => {
       const alive = simulation.critters
         .filter((critter) => critter.kind === TUTORIAL_PREY && critter.mode !== "dead")
         .sort((a, b) => this.distanceToPlayer(a) - this.distanceToPlayer(b));
       return alive[0] ?? null;
     };
 
-    const nearestWood = (): { x: number; z: number } | null => {
+    const nearestWood = (): Vec2 | null => {
       const logs = simulation.items
         .filter((item) => item.active && item.kind === "wood")
         .sort((a, b) => this.distanceToPlayer(a) - this.distanceToPlayer(b));
       return logs[0] ?? null;
     };
-
-    /** 收拢一组可能为 null 的洞。 */
-    const holes = (...candidates: Array<Hole | null>): Hole[] =>
-      candidates.filter((hole): hole is Hole => hole !== null);
 
     this.steps = [
       {
@@ -165,7 +157,7 @@ export class Tutorial {
         line: "tutorial.move",
         // 触屏是按下即生成的浮动摇杆，键鼠是 WASD 或点地。这一条必须分开说。
         sub: (touch) => (touch ? "tutorial.move.touch" : "tutorial.move.pc"),
-        targets: () => holes(worldHole(simulation.player, this.touch ? 104 : 92)),
+        spot: () => simulation.player,
         // 摇杆只是"待机位"的显示件（真正的操作区是整个左半屏），但它是触屏玩家
         // 唯一看得见的"手放这里"，不点亮等于只教了走、没教怎么走。键鼠档没有对应控件。
         lit: () => (this.touch ? ["joystick"] : []),
@@ -175,26 +167,37 @@ export class Tutorial {
         id: "attack",
         line: "tutorial.attack",
         sub: "tutorial.attack.sub",
-        targets: () => holes(worldHole(nearestPrey(), 96)),
+        spot: () => nearestPrey() ?? simulation.player,
         lit: () => ["attack-button"],
-        // 判定是"打死"而不是"打中"：拾骨鸦 10 血、匕首 30 伤害，一刀就死，
-        // 等它死才凑得齐"挥刀 → 命中 → 掉东西 → 进包"这条完整反馈。
-        done: () => this.killedPrey,
+        /*
+         * 判定是**挥过一刀**，不是"打死"。
+         *
+         * 原先要等猎物死。理由是"挥刀 → 命中 → 掉东西 → 进包"这条完整反馈值得凑齐，
+         * 那话没错，但它把一步教学变成了一次考试：玩家得先走过去、对准、还要打中。
+         * 实测下来卡在这一步的人多到让第三步根本没机会出现。
+         *
+         * 现在按一下就过。那条完整反馈链**并没有消失** —— 猎物就在六七米外，
+         * 玩家多半会追上去砍死它，只是这件事不再挡着教学往下走。
+         */
+        done: () => this.swung,
       },
       {
         id: "act",
         line: "tutorial.act",
         sub: "tutorial.act.sub",
-        targets: () => holes(worldHole(nearestWood(), 92)),
+        spot: () => nearestWood() ?? simulation.player,
         lit: () => ["action-button"],
-        done: () => this.pickedWood,
+        // 同上：按过一次行动键就算学会，不要求真的捡到 ——
+        // 脚边有没有东西、劳力够不够，都不该是"学会这颗键"的前提。
+        done: () => this.pickedWood || this.acted,
       },
       {
         id: "pack",
         line: "tutorial.pack",
         sub: "tutorial.pack.sub",
-        // 这一步的目标本来就是一颗按键，场景里没有东西要照。
-        targets: () => [],
+        // 这一步的目标本来就是一颗按键，场景里没有东西要照 —— 灯收掉，
+        // 玩家的眼睛该在右下角，不该被地上那束光拽回去。
+        spot: () => null,
         lit: () => ["backpack-button"],
         done: () => deps.isInventoryOpen(),
       },
@@ -226,8 +229,13 @@ export class Tutorial {
 
   handle(event: GameEvent): void {
     if (!this.running) return;
-    if (event.type === "critter-killed" && event.kind === TUTORIAL_PREY) this.killedPrey = true;
+    if (event.type === "attack") this.swung = true;
     if (event.type === "pickup" && event.kind === "wood") this.pickedWood = true;
+  }
+
+  /** 玩家按了行动键。main.ts 在派发 requestInteraction 时顺手告诉这里。 */
+  noteAction(): void {
+    if (this.running) this.acted = true;
   }
 
   update(delta: number): void {
@@ -264,6 +272,7 @@ export class Tutorial {
   private finish(): void {
     if (!this.running) return;
     this.running = false;
+    this.deps.spotlight(null);
     this.stage.hide();
     writeTutorialFlag(STORAGE_KEY);
     this.deps.onFinish();
@@ -283,7 +292,8 @@ export class Tutorial {
         this.stage.setSkipVisible(false);
         // 最后一句是"东西都在这里"，玩家的眼睛在刚打开的背包上 ——
         // 这时候幕布和压暗都该退场，别再挡着他看那八个格子。
-        this.stage.setVeilVisible(false);
+        this.stage.setDimVisible(false);
+        this.deps.spotlight(null);
         this.stage.setDots(this.index);
         return;
       }
@@ -294,7 +304,7 @@ export class Tutorial {
   }
 
   private paint(step: StepDefinition): void {
-    this.stage.setHoles(step.targets());
+    this.deps.spotlight(step.spot());
     this.stage.setLit(step.lit());
     this.stage.setUrgent(this.stepTime >= STEP_NUDGE_SECONDS);
 
