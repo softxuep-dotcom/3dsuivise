@@ -211,6 +211,16 @@ export class HudController {
   }
 
   /**
+   * 背包这一刻是不是开着。
+   *
+   * 教学第四步的完成判定要的就是这一条，而 isGameplayBlocked() 不够用 ——
+   * 它把广告和暂停也算进去，教学会被一次广告误判成"玩家学会开背包了"。
+   */
+  isInventoryOpen(): boolean {
+    return this.inventoryOpen;
+  }
+
+  /**
    * 暂停 / 继续。Poki 的 Requirements 第 15 条要求键盘游戏提供 ESC 或空格
    * 的暂停恢复，而我们的空格已经是攻击键，所以只能是 ESC；手机上没有 ESC，
    * 另配了一个 HUD 按钮。

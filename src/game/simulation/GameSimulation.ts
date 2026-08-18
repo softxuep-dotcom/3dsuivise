@@ -320,6 +320,30 @@ const JUICE_HUNGER: readonly [number, number] = [1, 5];
 const JUICE_WARMTH: readonly [number, number] = [8, 14];
 const DROP_LIFETIME = 180;
 
+/**
+ * 出生点脚边的教学甲虫数量与落点。
+ *
+ * 三只：一只在正前方（玩家开局面朝卡车，它必定在画面里），左右各一只岔开约 30°，
+ * 于是无论玩家先转向哪边都会撞见一只。半径 4.4~5.8 米 —— 跑过去半秒多，
+ * 又超出铠甲虫 3.5 米的警觉半径，所以它们开局是静止的，看得清。
+ */
+const TUTORIAL_BEETLES = 3;
+const TUTORIAL_BEETLE_SPREAD: readonly number[] = [0.08, -0.55, 0.62];
+const TUTORIAL_BEETLE_RADIUS: readonly number[] = [4.4, 5.8, 5.0];
+
+/**
+ * 教学枯木：教「行动键」用的那一根，撒在出生点侧后方 6.5 米。
+ *
+ * 为什么非得新加一根：全图 53 根枯木最近的一根在 18 米外，而教学的四个目标
+ * 都该在一屏之内。角度特意岔开甲虫那三只（它们在 −0.55~+0.62 弧度），
+ * 于是"打虫"和"捡柴"是两个方向，玩家不会一次站定就把两步都做完。
+ *
+ * 选枯木而不是别的：枯木 → 生火 → 活过第一夜是唯一一条真救命的链，而且教学一结束，
+ * objectiveStage 因为背包里有柴会直接跳到第 1 阶「走到篝火旁添柴」，交接是无缝的。
+ */
+const TUTORIAL_WOOD_SPREAD = 1.15;
+const TUTORIAL_WOOD_RADIUS = 6.5;
+
 // ============================================================================
 // 五轴生存模型
 //
@@ -599,6 +623,25 @@ export class GameSimulation {
   /** 本局的难度倍率。构造时定死，中途不重读 —— 见 difficulty.ts。 */
   private readonly tuning: DifficultyTuning;
 
+  /**
+   * 出生点与初始朝向，构造时定死。
+   *
+   * 教学甲虫要撒在**这里**，不能用 `this.player` 当锚点：seedCritters() 是等
+   * Deer.glb 下载完才跑的，那一刻玩家早就走开了，按当前位置撒等于撒在半路上。
+   */
+  private readonly spawnAnchor: Vec2;
+  private readonly spawnFacing: number;
+
+  /**
+   * 教学期间挂起世界时钟。
+   *
+   * 光靠 `clockStarted` 不够：`noteActivity()` 在**任何一次移动**时就把它置 true，
+   * 而教学第一步教的正是移动 —— 玩家一推摇杆，40 秒白天就开始倒数，
+   * 后面三步全在啃第一天的预算。这道闸挡在 noteActivity 前面，
+   * 教学结束时由 setTutorialHold(false) 放开。
+   */
+  private tutorialHold = false;
+
   constructor(world: WorldDefinition, difficulty: Difficulty = DEFAULT_DIFFICULTY) {
     this.tuning = tuningFor(difficulty);
     this.world = world;
@@ -646,6 +689,9 @@ export class GameSimulation {
     const rampWorld = startCamp.approach.map((local) => campLocalToWorld(startCamp, local));
     const startSpot = rampWorld[rampWorld.length - 1] ?? campGatePosition(startCamp);
     const startFacing = normalize({ x: world.truck.x - startSpot.x, z: world.truck.z - startSpot.z });
+    this.spawnAnchor = { x: startSpot.x, z: startSpot.z };
+    this.spawnFacing = Math.atan2(startFacing.z, startFacing.x);
+    this.addTutorialWood();
     this.player = {
       x: startSpot.x,
       z: startSpot.z,
@@ -745,6 +791,22 @@ export class GameSimulation {
     this.events.push({ type: "message", key: "msg.1" });
   }
 
+  /**
+   * 教学开始时挂起时钟，结束时放开。
+   *
+   * 放开的那一刻**不**主动点亮 clockStarted —— 仍然等玩家的下一次移动。
+   * 教学最后一步是"打开背包"，站着不动就能做完；放开就开始倒数的话，
+   * 玩家还在看背包，第一天已经在流逝了。
+   */
+  setTutorialHold(active: boolean): void {
+    this.tutorialHold = active;
+  }
+
+  /** 教学期间时钟是否被挂起。渲染层用它决定要不要画昼夜推进。 */
+  get tutorialHeld(): boolean {
+    return this.tutorialHold;
+  }
+
   update(deltaSeconds: number, movement: Vec2): void {
     if (!this.running) return;
     const delta = Math.min(deltaSeconds, 0.05);
@@ -759,6 +821,19 @@ export class GameSimulation {
     this.player.hurtFlash = Math.max(0, this.player.hurtFlash - delta);
     const isMoving = Math.hypot(movement.x, movement.z) >= 0.08;
     this.updatePlayerMovement(delta, movement, isMoving);
+    /*
+     * 拾取在时钟闸**之前**结算。
+     *
+     * 掉落物是玩家自己动作的直接结果（砍死一只虫 → 掉肉 → 进包），这条反馈链
+     * 不该受"时钟有没有开始"影响。原先它排在闸后面，于是教学冻结时钟时，
+     * 肉会掉在地上一动不动 —— 第一次击杀的收尾断在最后一环，而那正是
+     * 整个教学最该给足反馈的一步。
+     *
+     * 挪上来对正常游戏没有影响：闸打开之前玩家除了走动什么也做不了，
+     * 地上本来就不会有掉落物。过期判定用的 this.elapsed 在闸后才累加，
+     * 所以冻结期间掉落物也不会计时消失。
+     */
+    this.updateDrops();
     if (!this.clockStarted) return;
 
     this.elapsed += delta;
@@ -780,7 +855,6 @@ export class GameSimulation {
     this.updateCacti();
     this.updateWells();
     this.updateStructures(delta);
-    this.updateDrops();
     if (this.crittersEnabled) this.updateCritters(delta);
     if (this.wolvesEnabled) this.wolfDirector.updateWolves(delta);
     this.updateRest(delta);
@@ -2216,7 +2290,8 @@ export class GameSimulation {
   }
 
   private noteActivity(): void {
-    this.clockStarted = true;
+    // 教学期间只清静止计时、不点时钟：第一步就是教移动，不挡的话教学越完整死得越快。
+    if (!this.tutorialHold) this.clockStarted = true;
     this.player.idleTime = 0;
     this.setResting(false);
   }
@@ -2227,7 +2302,7 @@ export class GameSimulation {
    * 每喝一口水就被踢出休息、还要再站满 5 秒，劳力等于回不上来。
    */
   private noteInPlaceAction(): void {
-    this.clockStarted = true;
+    if (!this.tutorialHold) this.clockStarted = true;
   }
 
   private updateFires(delta: number): void {
@@ -2340,11 +2415,68 @@ export class GameSimulation {
     for (const kind of Object.keys(CRITTER_SPECS) as CritterKind[]) {
       const spec = CRITTER_SPECS[kind];
       for (let index = 0; index < spec.population; index += 1) {
-        // 开局允许离玩家近一些，否则第一天要跑很远才见得到活物。
-        const point = this.findCritterSpawnPoint(14);
+        // 头几只铠甲虫撒在出生点脚边（见 tutorialBeetleSpot），其余照旧满图散。
+        // 它们**算在 population 9 里面**，所以 replenishCritters 的账不变：
+        // 教学虫被打死之后由常规补充在远处补回，脚边不会源源不断地刷。
+        const point = kind === "beetle" && index < TUTORIAL_BEETLES
+          ? this.tutorialBeetleSpot(index)
+          // 开局允许离玩家近一些，否则第一天要跑很远才见得到活物。
+          : this.findCritterSpawnPoint(14);
         if (point) this.spawnCritter(kind, point);
       }
     }
+  }
+
+  /**
+   * 教学甲虫的落点：出生点前方 4.4~5.8 米，散在初始朝向的左中右。
+   *
+   * 为什么是铠甲虫、为什么这么近：全图八种猎物里只有它站得住（逃速 2.6 对玩家 8.2、
+   * 警觉半径 3.5 对匕首刀长 3.1），而且 8 血对初始匕首的 30 伤害是**一刀**——
+   * 和入夜后扑上来那只教学犬（28 血 / 防御 0）完全相同的结算。玩家在虫子身上
+   * 学到的不是"这游戏能打猎"，是"按这个键，眼前的东西就没了"，而那正是
+   * 30 秒后救他命的那一句。
+   *
+   * 之前最近的铠甲虫在 92 米外，一直挥刀的玩家第一次命中要到第 43 秒 ——
+   * 入夜之后 3 秒，考试比课先到。
+   *
+   * 角度和半径都是写死的常量，不走 this.random()：一是这三只本来就该稳定出现在
+   * 同一个地方，二是不额外消费随机流，免得整张地图的布局跟着抖。
+   */
+  private tutorialBeetleSpot(index: number): Vec2 {
+    const spread = TUTORIAL_BEETLE_SPREAD[index] ?? 0;
+    const radius = TUTORIAL_BEETLE_RADIUS[index] ?? 5;
+    const angle = this.spawnFacing + spread;
+    return {
+      x: this.spawnAnchor.x + Math.cos(angle) * radius,
+      z: this.spawnAnchor.z + Math.sin(angle) * radius,
+    };
+  }
+
+  /**
+   * 出生点侧后方那一根教学枯木（见 TUTORIAL_WOOD_* 的注释）。
+   *
+   * 直接追加进 this.items，不进 world.initialItems —— 后者被 retreatNavigations
+   * 拿去建撤退流场（只筛石头），也被别的只读用途共享，往里塞东西等于改世界定义。
+   * 未放置的枯木不参与碰撞（isBlockingGroundItem 只认石头和 placed），所以它
+   * 不会在出生点旁边立起一堵墙。
+   */
+  private addTutorialWood(): void {
+    const angle = this.spawnFacing + TUTORIAL_WOOD_SPREAD;
+    const spot = this.findNearestWalkablePoint({
+      x: this.spawnAnchor.x + Math.cos(angle) * TUTORIAL_WOOD_RADIUS,
+      z: this.spawnAnchor.z + Math.sin(angle) * TUTORIAL_WOOD_RADIUS,
+    });
+    this.items.push({
+      id: this.items.length,
+      kind: "wood",
+      x: spot.x,
+      z: spot.z,
+      hp: BARRIER_STATS.wood.hp,
+      placed: false,
+      active: true,
+      // 朝向写死，不消费 this.random()：这一根要稳定出现在同一个地方。
+      rotation: angle,
+    });
   }
 
   private replenishCritters(): void {

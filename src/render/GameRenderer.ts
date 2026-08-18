@@ -46,7 +46,7 @@ interface WolfView {
  */
 /** 相机距离系数。竖屏拉远补视野，横屏拉近补可读性 —— 见 updateCamera。 */
 const PORTRAIT_CAMERA_SCALE = 1.18;
-const LANDSCAPE_CAMERA_SCALE = 0.80;
+const LANDSCAPE_CAMERA_SCALE = 0.70;
 
 /** 可搬运物的本色，以及被啃到快碎时染向的暗红。 */
 const STONE_COLOR = 0x748084;
@@ -55,6 +55,9 @@ const BARRIER_DAMAGE_TINT = new THREE.Color(0x47231c);
 
 /** 长角羚的沙褐主色。 */
 const ORYX_COAT = 0xc19a63;
+
+/** 动物素材下载的重试退避（毫秒）。长度 = 重试次数，所以一共尝试 3 次。 */
+const ANIMAL_ASSET_RETRY_BACKOFF: readonly number[] = [700, 1800];
 /** 长角羚的站立高度：2.3，比壮犬(1.7)高、比玩家(2.6)矮 —— 最值得追的那个剪影。 */
 const ORYX_HEIGHT = 2.3;
 
@@ -1458,6 +1461,17 @@ export class GameRenderer {
    *
    * 每个资源独立成功、独立启用：鹿先到就只生成猎物，狼先到就只生成狼群。
    * 加载失败时不回退到程序化动物，也不通知模拟层生成对应实体，避免隐形攻击。
+   *
+   * ## 为什么要重试
+   *
+   * 这两个回调是**整局唯一**的启用入口：`onReady("deer")` 不来，模拟层的
+   * `crittersEnabled` 就一直是 false，于是 `seedCritters()` 没跑过、
+   * `updateCritters()` 被短路（连每 6 秒补一只的 `replenishCritters()` 也不跑），
+   * 全图零猎物直到这一局结束。原先这里 catch 完只打一行 warn 就完了 ——
+   * 一次网络抖动 = 这一局再也不会有任何猎物，而且没有任何补救路径。
+   *
+   * 三次尝试、退避 0.7s / 1.8s。不重试更多次是因为 404 这类确定性失败重试也没用，
+   * 而移动网络的瞬时抖动一两次退避就够了；整个过程在后台，玩家看不见。
    */
   loadDeferredAnimalAssets(onReady: (kind: "wolf" | "deer") => void): void {
     if (this.animalAssetLoadingStarted) return;
@@ -1467,11 +1481,20 @@ export class GameRenderer {
     loader.setMeshoptDecoder(MeshoptDecoder);
     const assetRoot = `${import.meta.env.BASE_URL}assets/animals`;
     const load = async (name: string, kind: "wolf" | "deer", assign: (asset: AnimalAsset) => void): Promise<void> => {
-      try {
-        assign(await loadAnimal(loader, `${assetRoot}/${name}`));
-        onReady(kind);
-      } catch (error) {
-        console.warn(`${name} failed to load; ${kind} population will stay disabled.`, error);
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          assign(await loadAnimal(loader, `${assetRoot}/${name}`));
+          onReady(kind);
+          return;
+        } catch (error) {
+          const backoff = ANIMAL_ASSET_RETRY_BACKOFF[attempt];
+          if (backoff === undefined) {
+            console.warn(`${name} failed after ${attempt + 1} attempts; ${kind} population will stay disabled.`, error);
+            return;
+          }
+          console.warn(`${name} attempt ${attempt + 1} failed; retrying in ${backoff}ms.`, error);
+          await new Promise((resolve) => setTimeout(resolve, backoff));
+        }
       }
     };
 
@@ -2204,10 +2227,14 @@ export class GameRenderer {
     this.cameraFocus.y = lerp(this.cameraFocus.y, this.worldHeight(player.x, player.z), smoothing);
     /*
      * 竖屏（小屏且高大于宽）拉远到 1.18：那个比例下横向只剩一条窄缝，不拉远看不到两侧。
-     * 其余一律是横屏 —— 拉近到 0.80，手机上物体更容易辨认。
+     * 其余一律是横屏 —— 拉近到 0.70，手机上物体更容易辨认。
      *
-     * 这两档是**分开调的**：竖屏的 1.18 是为了补视野，横屏的 0.80 是为了补可读性，
+     * 这两档是**分开调的**：竖屏的 1.18 是为了补视野，横屏的 0.70 是为了补可读性，
      * 合成一个系数的话动一个必然弄坏另一个。
+     *
+     * 横屏这一档从 0.80 调到 0.70（相机距离 28.8 → 25.2）。按 47° FOV、844×390 算，
+     * 焦点平面上的横向可见范围 54.2m → 47.5m，角色占屏高 10.4% → 11.9%。
+     * 还剩多少视野是这条的下限：开场斥候在 27 米、教学甲虫在 4.4 米，两个都还在画面里。
      */
     const portrait = window.innerWidth < 760 && window.innerWidth < window.innerHeight;
     const distanceScale = portrait ? PORTRAIT_CAMERA_SCALE : LANDSCAPE_CAMERA_SCALE;

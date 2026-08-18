@@ -14,11 +14,6 @@
 
       <div id="hud" class="hidden" aria-live="polite">
         <div class="left-stack">
-          <!--
-            设置入口。它同时**就是暂停键** —— 打开设置会把游戏停住，面板里那颗
-            "继续"就是恢复。这样底排只留四个操作键，而过审要找的暂停控件仍然在。
-          -->
-          <button id="settings-button" class="icon-button" type="button" data-i18n-attr="aria-label:settings.open">⚙</button>
           <section class="objective-chip">
             <span class="eyebrow" id="day-label"></span>
             <strong id="objective"></strong>
@@ -51,7 +46,20 @@
           原先每个元素各写一套 top 偏移，每加一档响应式断点就要重算一遍，迟早叠在一起。
         -->
         <div class="top-stack">
-          <div class="clock" id="clock"><span id="phase-label"></span><b id="time-label">00:50</b></div>
+          <!--
+            时钟和设置键同一行。
+
+            齿轮原先压在左上角目标条的**上方**，于是那条常驻文案被整体顶下去一格 ——
+            目标行是玩家全程唯一"我现在该干什么"的出口，不该给一个几乎不点的按钮让位。
+            挪到时钟右边之后，左列从顶端就开始放目标条，宽度预算也全留给它。
+
+            设置键同时**就是暂停键** —— 打开设置会把游戏停住，面板里那颗"继续"就是恢复。
+            所以底排只留四个操作键，而过审要找的暂停控件仍然在。
+          -->
+          <div class="clock-row">
+            <div class="clock" id="clock"><span id="phase-label"></span><b id="time-label">00:50</b></div>
+            <button id="settings-button" class="icon-button" type="button" data-i18n-attr="aria-label:settings.open">⚙</button>
+          </div>
           <div id="toast" class="toast hidden"></div>
           <div id="gather-indicator" class="status-pill gather-indicator hidden"></div>
           <div id="rest-indicator" class="status-pill rest-indicator hidden"></div>
@@ -86,6 +94,22 @@
             <button id="attack-button" class="round-button attack" type="button"><i id="combo-arc" class="combo-arc"></i><i class="hud-sprite" data-icon="attack" aria-hidden="true"></i><span class="button-label" data-i18n="hud.attack.label">Attack</span></button>
             <button id="action-button" class="round-button action" type="button" data-i18n-attr="aria-label:hud.act.aria"><i id="action-icon" class="hud-sprite" data-icon="action" aria-hidden="true"></i><span id="action-label" class="button-label" data-i18n="hud.act.label">Act</span></button>
           </div>
+        </div>
+      </div>
+
+      <!--
+        开场教学的幕布。四个动词、一屏之内，见 src/ui/Tutorial.ts 的头注释。
+
+        它压在 HUD 按键**之上**（z-index 12 对 5），所以"全场暗调"才真的包括那四颗键；
+        幕布本身 pointer-events: none，点击照样穿透下去按到按钮 ——
+        教学要玩家真的去按，不能把他要按的东西挡住。
+      -->
+      <div id="tutorial" class="tutorial hidden" aria-live="polite">
+        <div id="tutorial-veil" class="tutorial-veil"></div>
+        <div id="tutorial-caption" class="tutorial-caption">
+          <strong id="tutorial-line"></strong>
+          <span id="tutorial-sub"></span>
+          <button id="tutorial-skip" class="tutorial-skip" type="button"></button>
         </div>
       </div>
 

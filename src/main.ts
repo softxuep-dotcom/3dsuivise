@@ -6,6 +6,7 @@ import { InputController } from "./game/input/InputController";
 import { GameSimulation } from "./game/simulation/GameSimulation";
 import { GameRenderer } from "./render/GameRenderer";
 import { HudController } from "./ui/HudController";
+import { Tutorial } from "./ui/Tutorial";
 import { loadDifficulty, saveDifficulty } from "./ui/Settings";
 import { normalizeDifficulty } from "./game/simulation/difficulty";
 import { createPlatform } from "./platform";
@@ -181,6 +182,25 @@ async function bootstrap(): Promise<void> {
   input.bindCanvas(renderer.canvas, (x, y) => renderer.screenToWorld(x, y));
   // 卡车的屏幕边缘指示器要把世界坐标投到画布上，投影只有渲染层知道怎么做。
   hud.setProjector((x, z) => renderer.worldToScreen(x, z));
+
+  /*
+   * 开场教学。四个动词、一屏之内，详见 ui/Tutorial.ts 的头注释。
+   *
+   * 时钟闸在这里一开一关：教学期间 setTutorialHold(true)，五轴不掉、相位不走、
+   * 狗不动。**必须挡**，因为教学第一步教的就是移动，而移动本身会点亮时钟 ——
+   * 不挡的话，教学做得越完整，玩家在第一夜被咬死得越快。
+   *
+   * 放开的那一刻不主动开表，仍然等玩家的下一次移动（见 setTutorialHold 的注释）。
+   */
+  const tutorial = new Tutorial({
+    simulation,
+    project: (x, z) => renderer.worldToScreen(x, z),
+    isInventoryOpen: () => hud.isInventoryOpen(),
+    // 广告和暂停要冻结教学计时；背包开着不算 —— 那正是最后一步要的状态。
+    isTimerFrozen: () => hud.isGameplayBlocked() && !hud.isInventoryOpen(),
+    onFinish: () => simulation.setTutorialHold(false),
+  });
+  if (Tutorial.shouldRun()) simulation.setTutorialHold(true);
   // 点击移动走模拟层的流场，不走直线 —— 直线在这张有山脊的图上只有四成能走到。
   input.setRouter((target) => simulation.directionToClickTarget(target));
 
@@ -289,6 +309,7 @@ async function bootstrap(): Promise<void> {
       for (const event of events) {
         audio.handle(event);
         hud.handle(event);
+        tutorial.handle(event);
         if (event.type === "player-hit") renderer.impact(0.22);
         if (event.type === "wolf-hit") renderer.impact(0.09);
         if (event.type === "barrier-hit") {
@@ -308,6 +329,8 @@ async function bootstrap(): Promise<void> {
         started && simulation.running && !hud.isGameplayBlocked(),
       );
       hud.update(delta);
+      // 教学走在 HUD 之后：它要读背包的开合状态，也要按最新的一帧投影去挖亮洞。
+      tutorial.update(delta);
       renderer.render(delta);
     }
     requestAnimationFrame(frame);
@@ -319,6 +342,7 @@ async function bootstrap(): Promise<void> {
   // 场景可以先展示，但 gameplayStart 与模拟层都必须等玩家第一次实际游戏输入。
   // HUD 已经提示“移动或拿起枯木，开始第一天”，无需重新加一层开始按钮。
   hud.showGame();
+  if (Tutorial.shouldRun()) tutorial.start();
   // 先把可玩的第一帧交给浏览器，再在后台下载动物；它们不再占开场进度条。
   // 哪个模型先到就只启用哪类种群，未下载成功的动物不会生成。
   requestAnimationFrame(() => {
