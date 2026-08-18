@@ -11,6 +11,7 @@ export const en: Record<string, string> = {
   "action.cactus": "Cut",
   "action.drop": "Place",
   "action.feed": "Add fuel",
+  "action.ignite": "Ignite",
   "action.load": "Load",
   "action.mine": "Mine",
   "action.none": "Act",

@@ -78,13 +78,13 @@
         -->
         <div class="bottom-right">
           <div class="utility-buttons">
-            <button id="thermal-button" class="utility-button" type="button" data-i18n-attr="aria-label:hud.thermal.aria"><b id="thermal-state">—</b></button>
-            <button id="backpack-button" class="utility-button" type="button" data-i18n-attr="aria-label:hud.pack.aria"><span data-i18n="hud.pack.label">Pack</span> <b id="bag-usage">0/8</b></button>
+            <button id="thermal-button" class="utility-button" type="button" data-i18n-attr="aria-label:hud.thermal.aria"><i id="thermal-icon" class="hud-sprite" data-icon="warm" aria-hidden="true"></i><b id="thermal-state">—</b></button>
+            <button id="backpack-button" class="utility-button" type="button" data-i18n-attr="aria-label:hud.pack.aria"><i class="hud-sprite" data-icon="backpack" aria-hidden="true"></i><span class="button-label"><span data-i18n="hud.pack.label">Pack</span><b id="bag-usage">0/8</b></span></button>
           </div>
           <div class="action-buttons">
             <!-- 外圈那道弧是剑线的连击层数：打架时盯着狼看，用余光扫这一眼。 -->
-            <button id="attack-button" class="round-button attack" type="button"><i id="combo-arc" class="combo-arc"></i><span data-i18n="hud.attack.label">Attack</span></button>
-            <button id="action-button" class="round-button action" type="button" data-i18n-attr="aria-label:hud.act.aria" data-i18n="hud.act.label">Act</button>
+            <button id="attack-button" class="round-button attack" type="button"><i id="combo-arc" class="combo-arc"></i><i class="hud-sprite" data-icon="attack" aria-hidden="true"></i><span class="button-label" data-i18n="hud.attack.label">Attack</span></button>
+            <button id="action-button" class="round-button action" type="button" data-i18n-attr="aria-label:hud.act.aria"><i id="action-icon" class="hud-sprite" data-icon="action" aria-hidden="true"></i><span id="action-label" class="button-label" data-i18n="hud.act.label">Act</span></button>
           </div>
         </div>
       </div>

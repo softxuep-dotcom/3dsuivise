@@ -516,7 +516,7 @@ export type GameEvent =
   | { type: "game-over" };
 
 export interface InteractionHint {
-  action: "pickup" | "drop" | "feed" | "cactus" | "mine" | "well" | "load" | "board" | "none";
+  action: "pickup" | "drop" | "ignite" | "feed" | "cactus" | "mine" | "well" | "load" | "board" | "none";
   text: LocalizedText;
 }
 

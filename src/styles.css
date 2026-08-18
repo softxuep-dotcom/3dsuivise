@@ -280,13 +280,66 @@ button { font: inherit; }
 /* 冷却中的体温键：整颗压暗，数字仍然读得出来还要等多久。 */
 .utility-button:disabled b { color: #9fb4bd; }
 
+/*
+ * 4×4 动作图集。图片本身没有文字，按钮标题仍由 i18n 输出。
+ * 512px 图集对应每格 128px，缩到 34–42px 后仍有足够轮廓细节。
+ */
+.hud-sprite {
+  display: block;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  background-image: url("./assets/action-icon-atlas.webp");
+  background-repeat: no-repeat;
+  background-size: 400% 400%;
+  filter: drop-shadow(0 2px 2px rgba(0,0,0,.38));
+  pointer-events: none;
+}
+
+.hud-sprite[data-icon="attack"]   { background-position: 0 0; }
+.hud-sprite[data-icon="backpack"] { background-position: 33.333% 0; }
+.hud-sprite[data-icon="juice"]    { background-position: 66.667% 0; }
+.hud-sprite[data-icon="water"]    { background-position: 100% 0; }
+.hud-sprite[data-icon="ignite"]   { background-position: 0 33.333%; }
+.hud-sprite[data-icon="feed"]     { background-position: 33.333% 33.333%; }
+.hud-sprite[data-icon="cool"]     { background-position: 66.667% 33.333%; }
+.hud-sprite[data-icon="warm"]     { background-position: 100% 33.333%; }
+.hud-sprite[data-icon="pickup"]   { background-position: 0 66.667%; }
+.hud-sprite[data-icon="drop"]     { background-position: 33.333% 66.667%; }
+.hud-sprite[data-icon="mine"]     { background-position: 66.667% 66.667%; }
+.hud-sprite[data-icon="load"]     { background-position: 100% 66.667%; }
+.hud-sprite[data-icon="drive"]    { background-position: 0 100%; }
+.hud-sprite[data-icon="action"]   { background-position: 33.333% 100%; }
+.hud-sprite[data-icon="build"]    { background-position: 66.667% 100%; }
+.hud-sprite[data-icon="consume"]  { background-position: 100% 100%; }
+
+.button-label {
+  display: grid;
+  min-height: 17px;
+  place-items: center;
+  color: #f5f8f8;
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 1;
+  text-align: center;
+  text-shadow: 0 1px 2px rgba(0,0,0,.72);
+}
+
+#backpack-button .button-label { gap: 1px; }
+#thermal-state { max-width: 58px; line-height: 1.05; text-align: center; }
+
 /* 四个右下操作键在所有设备上都可见；输入方式不同，HUD 不分两套。 */
 .action-buttons { display: flex; align-items: flex-end; gap: 8px; }
 
 .round-button {
   position: relative;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 0;
   width: 68px;
   height: 68px;
+  padding: 3px;
   border: 1px solid rgba(255,255,255,.25);
   border-radius: 50%;
   color: white;
@@ -296,6 +349,9 @@ button { font: inherit; }
   cursor: pointer;
   touch-action: manipulation;
 }
+
+.round-button .hud-sprite { width: 38px; height: 38px; }
+.round-button.attack .hud-sprite { width: 42px; height: 42px; }
 
 .round-button.action { background: rgba(48, 110, 127, .7); }
 .round-button.attack { width: 78px; height: 78px; background: rgba(147, 62, 48, .72); }

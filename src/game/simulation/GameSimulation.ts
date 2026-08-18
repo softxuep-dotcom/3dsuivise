@@ -1707,7 +1707,10 @@ export class GameSimulation {
     if (this.getInventoryCount("wood") > 0) {
       const hearth = this.findNearestHearth(FIRE_WARMTH_RADIUS);
       if (hearth && !this.hasNearerTarget(hearth.distance)) {
-        return { action: "feed", text: loc("hint.feed", { left: this.getInventoryCount("wood") }) };
+        return {
+          action: this.camps[hearth.campId].fuel > 0 ? "feed" : "ignite",
+          text: loc("hint.feed", { left: this.getInventoryCount("wood") }),
+        };
       }
     }
     if (this.findNearestBarrel(FUEL_PICKUP_REACH)) {

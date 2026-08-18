@@ -16,6 +16,7 @@ const copy: Record<string, WesternText> = {
   "action.cactus": w("Couper", "Schneiden", "Taglia", "Cortar"),
   "action.drop": w("Poser", "Ablegen", "Posa", "Colocar"),
   "action.feed": w("Ajouter du bois", "Holz nachlegen", "Aggiungi legna", "Pôr lenha"),
+  "action.ignite": w("Allumer", "Anzünden", "Accendi", "Acender"),
   "action.load": w("Charger", "Verladen", "Carica", "Carregar"),
   "action.mine": w("Miner", "Abbauen", "Estrai", "Minerar"),
   "action.none": w("Agir", "Handeln", "Agisci", "Agir"),

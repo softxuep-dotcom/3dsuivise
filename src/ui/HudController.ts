@@ -8,6 +8,7 @@ import { STRUCTURE_SPECS } from "../game/simulation/types";
 import { itemIcon } from "./ItemIcons";
 import type {
   GameEvent,
+  InteractionHint,
   InventoryItemKind,
   StructureKind,
 } from "../game/simulation/types";
@@ -16,6 +17,19 @@ const required = <T extends HTMLElement>(id: string): T => {
   const element = document.getElementById(id);
   if (!element) throw new Error(`Missing UI element: ${id}`);
   return element as T;
+};
+
+const ACTION_ICON: Record<InteractionHint["action"], string> = {
+  pickup: "pickup",
+  drop: "drop",
+  ignite: "ignite",
+  feed: "feed",
+  cactus: "juice",
+  mine: "mine",
+  well: "water",
+  load: "load",
+  board: "drive",
+  none: "action",
 };
 
 /**
@@ -78,6 +92,7 @@ export class HudController {
   ];
   private readonly bagUsage = required<HTMLElement>("bag-usage");
   private readonly thermalButton = required<HTMLButtonElement>("thermal-button");
+  private readonly thermalIcon = required<HTMLElement>("thermal-icon");
   private readonly thermalState = required<HTMLElement>("thermal-state");
 
   /**
@@ -88,6 +103,7 @@ export class HudController {
     const hot = warmth > 62;
     const cold = warmth < 35;
     const cooldown = hot ? this.simulation.coolCooldown : this.simulation.warmCooldown;
+    this.thermalIcon.dataset.icon = hot || (!cold && warmth >= 50) ? "cool" : "warm";
     // 按钮原先是「静态标签 Warmth」+「状态词」两行，读出来是 "Warmth / Warm"。
     // 现在只剩一行，由状态词自己把话说完：两个可按的状态是动词短语（Cool down /
     // Warm up），两个不可按的状态自己带上名词（Warmth OK / Warmth 120s）——
@@ -113,7 +129,8 @@ export class HudController {
   private readonly prompt = required<HTMLElement>("prompt");
   private readonly restIndicator = required<HTMLElement>("rest-indicator");
   private readonly gatherIndicator = required<HTMLElement>("gather-indicator");
-  private readonly actionButton = required<HTMLButtonElement>("action-button");
+  private readonly actionIcon = required<HTMLElement>("action-icon");
+  private readonly actionLabel = required<HTMLElement>("action-label");
   private readonly recordsLine = required<HTMLElement>("records-line");
   private readonly toast = required<HTMLElement>("toast");
   private readonly resultCopy = required<HTMLElement>("result-copy");
@@ -367,7 +384,8 @@ export class HudController {
 
     const hint = this.simulation.getInteractionHint();
     const touchLayout = matchMedia("(pointer: coarse)").matches || window.innerWidth <= 760;
-    this.actionButton.textContent = t(`action.${hint.action}`);
+    this.actionIcon.dataset.icon = ACTION_ICON[hint.action];
+    this.actionLabel.textContent = t(`action.${hint.action}`);
     if (hint.action === "none") {
       /*
        * 键鼠玩家开局什么操作说明都没有。
