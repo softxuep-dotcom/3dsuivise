@@ -92,7 +92,6 @@
         <div class="top-stack">
           <div class="clock" id="clock"><span id="phase-label"></span><b id="time-label">00:50</b></div>
           <div id="toast" class="toast hidden"></div>
-          <div id="gather-indicator" class="status-pill gather-indicator hidden"></div>
           <div id="rest-indicator" class="status-pill rest-indicator hidden"></div>
         </div>
 
@@ -123,15 +122,21 @@
           原先却待在横屏最难够到的右上角；背包是吃/烤/建造的总入口，同样高频。
           两者都挪到拇指底下，和攻击/行动排成一行，中间留出更大的间距防误触。
         -->
+        <!--
+          四枚 .key-hint 角标只在键鼠档出现（CSS 里 pointer: fine 才显示）。
+          键鼠玩家原先只在"还没动过"的那几秒看得到一行操作说明，一移动就永远消失，
+          此后能学到的键只有 E（走到可交互物旁边才冒出来）—— 空格、B、Q 全靠猜。
+          角标把键名钉在它对应的那颗按钮上，既不占版面，也不需要谁来教。
+        -->
         <div class="bottom-right">
           <div class="utility-buttons">
-            <button id="thermal-button" class="utility-button" type="button" data-i18n-attr="aria-label:hud.thermal.aria"><i id="thermal-icon" class="hud-sprite" data-icon="warm" aria-hidden="true"></i><span class="button-label"><b id="thermal-state">—</b></span></button>
-            <button id="backpack-button" class="utility-button" type="button" data-i18n-attr="aria-label:hud.pack.aria"><i class="hud-sprite" data-icon="backpack" aria-hidden="true"></i><span class="button-label"><span data-i18n="hud.pack.label">Pack</span><b id="bag-usage">0/8</b></span></button>
+            <button id="thermal-button" class="utility-button" type="button" data-i18n-attr="aria-label:hud.thermal.aria"><kbd class="key-hint" aria-hidden="true">Q</kbd><i id="thermal-icon" class="hud-sprite" data-icon="warm" aria-hidden="true"></i><span class="button-label"><b id="thermal-state">—</b></span></button>
+            <button id="backpack-button" class="utility-button" type="button" data-i18n-attr="aria-label:hud.pack.aria"><kbd class="key-hint" aria-hidden="true">B</kbd><i class="hud-sprite" data-icon="backpack" aria-hidden="true"></i><span class="button-label"><span data-i18n="hud.pack.label">Pack</span><b id="bag-usage">0/8</b></span></button>
           </div>
           <div class="action-buttons">
             <!-- 外圈那道弧是剑线的连击层数：打架时盯着狼看，用余光扫这一眼。 -->
-            <button id="attack-button" class="round-button attack" type="button"><i id="combo-arc" class="combo-arc"></i><i class="hud-sprite" data-icon="attack" aria-hidden="true"></i><span class="button-label" data-i18n="hud.attack.label">Attack</span></button>
-            <button id="action-button" class="round-button action" type="button" data-i18n-attr="aria-label:hud.act.aria"><i id="action-icon" class="hud-sprite" data-icon="action" aria-hidden="true"></i><span id="action-label" class="button-label" data-i18n="hud.act.label">Act</span></button>
+            <button id="attack-button" class="round-button attack" type="button"><kbd class="key-hint" data-i18n="key.space" aria-hidden="true">Space</kbd><i id="combo-arc" class="combo-arc"></i><i class="hud-sprite" data-icon="attack" aria-hidden="true"></i><span class="button-label" data-i18n="hud.attack.label">Attack</span></button>
+            <button id="action-button" class="round-button action" type="button" data-i18n-attr="aria-label:hud.act.aria"><kbd class="key-hint" aria-hidden="true">E</kbd><i id="action-icon" class="hud-sprite" data-icon="action" aria-hidden="true"></i><span id="action-label" class="button-label" data-i18n="hud.act.label">Act</span></button>
           </div>
         </div>
       </div>

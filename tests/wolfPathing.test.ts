@@ -163,7 +163,8 @@ describe("攻营犬 · 追丢之后必须再来", () => {
       // 每 12 秒挪 2 秒位，才是守夜的真实节奏。
       onStep: (sim, step) => {
         for (const w of sim.wolves) {
-          if (w.mode !== "patrol" || !w.raider) continue;
+          // 还排着班、在巢边等着动身的不算 —— 那是设计好的分波，不是"退役"。
+          if (w.mode !== "patrol" || !w.raider || w.raidAt > 0) continue;
           patrolSeconds.set(w.id, (patrolSeconds.get(w.id) ?? 0) + STEP);
         }
         void step;

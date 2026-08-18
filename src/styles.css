@@ -303,6 +303,44 @@ button { font: inherit; }
   touch-action: manipulation;
 }
 
+/*
+ * 键名角标。**只在键鼠档出现** —— 触屏没有键盘，那枚 Q 只会让人困惑。
+ *
+ * 它解决的是一个很具体的缺口：键鼠玩家原先只在"还没动过"的那几秒看得到一行
+ * 操作说明（hud.pcControls），一移动就永远消失；此后唯一会再出现的键提示是 E，
+ * 而且要走到可交互物旁边才冒出来。空格、B、Q 从头到尾没人说过。
+ *
+ * 钉在按钮上而不是再写一行常驻说明：这样"这个功能"和"这颗键"是同一个东西，
+ * 不需要玩家自己在两处之间对应；而且开场教学点亮某颗键时，键名正好跟着一起亮。
+ */
+.key-hint {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  z-index: 1;
+  display: none;
+  min-width: 18px;
+  padding: 1px 5px;
+  border: 1px solid rgba(255, 255, 255, .28);
+  border-radius: 6px;
+  background: rgba(12, 26, 32, .92);
+  color: #cfe4ea;
+  font-family: inherit;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1.5;
+  letter-spacing: .04em;
+  text-align: center;
+  text-shadow: none;
+}
+
+/* 攻击键大一圈，角标跟着往外挪一点，别压在连击弧上。 */
+.round-button.attack .key-hint { top: -2px; right: -2px; }
+
+@media (pointer: fine) {
+  .key-hint { display: block; }
+}
+
 .utility-button b { color: #ffcf9e; font-size: 12px; }
 .utility-button:disabled { opacity: .42; cursor: default; }
 /* 冷却中的体温键：整颗压暗，数字仍然读得出来还要等多久。 */
@@ -579,12 +617,6 @@ button { font: inherit; }
   font-weight: 800;
   white-space: nowrap;
   backdrop-filter: blur(7px);
-}
-
-.gather-indicator {
-  border-color: rgba(140, 200, 235, .38);
-  background: rgba(20, 44, 62, .84);
-  color: #bfe2f5;
 }
 
 .overlay {

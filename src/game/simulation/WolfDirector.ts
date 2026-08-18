@@ -16,6 +16,37 @@ const EARLY_NIGHT_WOLF_TARGETS = [30, 45, 60] as const;
 /** 前三夜真正扑向玩家/营地的固定配额，避免独立抽签造成难度尖峰。 */
 const EARLY_NIGHT_RAID_TARGETS = [5, 9, 14] as const;
 
+/**
+ * 攻营犬**分波**动身，一夜三波。
+ *
+ * 为什么非要排这个班：刷怪间隔是 0.7 + progress^0.8 × 3.3 秒，积分下来
+ * **30 只狗全在夜晚的前 45 秒刷完**；而它们从同一个巢口出发、跟同一张流场、
+ * 速度只差一点，于是排着队一起到 —— 实测第 1 夜五只攻营犬的到达时刻是
+ * 63/64/65/66/68 秒，相邻间隔 0.4~2.5 秒，之后一百多秒一只不来。
+ * 玩家看到的就是"几只狗同时出现"，然后整夜没事。
+ *
+ * **分波而不是一只一只放**：把 5 只摊成 5 个单独时刻试过，那不叫"陆续到达"，
+ * 那叫"一整夜零星来五只"，而且落单的那只在台地营地经常自己卡在坡下 ——
+ * 实测风脊营地整夜只剩 1 只摸到玩家（回归测试要求至少 2 只）。
+ * 一波两三只则既有节奏又有分量：一波打完能喘口气，喘完下一波又来。
+ *
+ * 末尾留出的那 40% 是给路上用的：巢到营地约 53 米，跑完要三十多秒，
+ * 最后一波再晚就赶不上天亮前咬到人了。
+ */
+const RAID_WAVES_PER_NIGHT = 3;
+/**
+ * 一波至少这么多只。
+ *
+ * 台地营地（风脊）逼出来的下限：单只狗常常自己卡在坡下十来米上不来，
+ * 而两三只挤在同一条坡道上会互相推着过去 —— 实测第 1 夜按"五只摊成五个时刻"
+ * 放，风脊整夜只有 1 只摸到玩家；按每波 2~3 只放就回到 2 只以上。
+ * 所以波数不是死的 3，而是"先保证每波有分量，再看能分几波"。
+ */
+const RAID_MIN_WAVE_SIZE = 2.5;
+const RAID_RELEASE_WINDOW = 0.6;
+/** 同一波内的错身抖动（占一波间隔的比例）：一起来，但不要像列队一样整齐。 */
+const RAID_RELEASE_JITTER = 0.16;
+
 const REST_COMBAT_LOCK = 6;
 
 /** 小狼与大狼的数值封顶在第几夜。到这一夜为止照常成长，之后不再变强。 */
@@ -105,6 +136,8 @@ export class WolfDirector {
   private raidersSpawnedThisNight = 0;
   private wildRespawnCountdown = 0;
   private largeWolfAnnounced = false;
+  /** 今晚计划放出的攻营犬总数，见 getRaidQuota。 */
+  private raidQuotaThisNight = 1;
 
   constructor(private readonly ctx: WolfWorld) {}
 
@@ -113,6 +146,45 @@ export class WolfDirector {
     this.spawnCountdown = 0.45;
     this.spawnedThisNight = 0;
     this.raidersSpawnedThisNight = 0;
+    this.raidQuotaThisNight = this.getRaidQuota();
+  }
+
+  /**
+   * 今晚一共会有几只攻营犬 —— 排放行班次要先知道分母。
+   *
+   * 前三夜是写死的配额（乘难度倍率）；第 4 夜起走概率式，那就用期望值，
+   * 反正只是用来均分时间窗，差一两只不影响节奏。
+   */
+  private getRaidQuota(): number {
+    const base = EARLY_NIGHT_RAID_TARGETS[this.ctx.day - 1];
+    if (base !== undefined) return Math.max(1, Math.round(base * this.ctx.tuning.raid));
+    const chance = Math.min(1, Math.min(0.35, 0.2 + (this.ctx.day - 1) * 0.05) * this.ctx.tuning.raid);
+    return Math.max(1, Math.round(this.getNightWolfTarget() * chance));
+  }
+
+  /**
+   * 这一只该跟着第几波动身，换算成绝对时刻。返回 0 表示"现在就走"。
+   *
+   * 波次按**出生顺序**分组（第 1~2 只是第一波、第 3~4 只是第二波……），
+   * 而不是按时间分组 —— 刷怪全挤在前 45 秒，按时间分会把整夜的狗都塞进第一波。
+   *
+   * 已经过去的夜晚时间要扣掉：第 5 只出生时夜晚才走了三十几秒，
+   * 而它那一波排在 50% 处，真正的等待就发生在这个差值上。
+   */
+  private scheduleRaidRelease(): number {
+    const quota = Math.max(1, this.raidQuotaThisNight);
+    const waveCount = clamp(Math.round(quota / RAID_MIN_WAVE_SIZE), 1, RAID_WAVES_PER_NIGHT);
+    const waveSize = Math.max(1, Math.ceil(quota / waveCount));
+    // raidersSpawnedThisNight 在调用处已经自增过，所以这里减 1 回到 0 基。
+    const wave = Math.min(waveCount - 1, Math.floor((this.raidersSpawnedThisNight - 1) / waveSize));
+    const nightDuration = this.ctx.getPhaseDuration();
+    const nightElapsed = nightDuration - this.ctx.phaseTime;
+    const window = nightDuration * RAID_RELEASE_WINDOW;
+    const gap = window / waveCount;
+    const jitter = (this.ctx.random() - 0.5) * gap * RAID_RELEASE_JITTER * 2;
+    const releaseIn = (wave + 0.5) * gap + jitter - nightElapsed;
+    // 半秒以内的等待没有意义，直接放行 —— 第一波多半落在这里。
+    return releaseIn > 0.5 ? this.ctx.elapsed + releaseIn : 0;
   }
 
   /** 天亮：白天的野狗过两秒开始补员。 */
@@ -228,6 +300,7 @@ export class WolfDirector {
     }
 
     for (const wolf of this.wolves) {
+      if (wolf.raidAt > 0 && this.ctx.elapsed >= wolf.raidAt) this.releaseRaider(wolf);
       if (wolf.retreatAt > 0 && this.ctx.elapsed >= wolf.retreatAt) this.beginRetreat(wolf);
       this.updateWolf(wolf, delta);
     }
@@ -291,7 +364,7 @@ export class WolfDirector {
          * 扑过来，而不是原地发呆。天亮的撤退调度先把 retreatAt 打上再切 patrol，
          * 所以这里要放过已排队撤退的狗，否则黎明那批会掉头回来。
          */
-        wolf.mode = wolf.raider && wolf.retreatAt <= 0 && this.ctx.phase === "night"
+        wolf.mode = wolf.raider && wolf.raidAt <= 0 && wolf.retreatAt <= 0 && this.ctx.phase === "night"
           ? "raid"
           : "patrol";
         wolf.lostTimer = 0;
@@ -303,7 +376,10 @@ export class WolfDirector {
       target = wolf.anchor;
     } else if (wolf.mode === "entering") {
       target = wolf.anchor;
-      if (distanceSquared(wolf, wolf.anchor) < 3 * 3) wolf.mode = wolf.raider ? "raid" : "patrol";
+      // 排到班还没到点的攻营犬，先当巡逻犬在巢边待着（raidAt 到点后由 releaseRaider 切进 raid）。
+      if (distanceSquared(wolf, wolf.anchor) < 3 * 3) {
+        wolf.mode = wolf.raider && wolf.raidAt <= 0 ? "raid" : "patrol";
+      }
     } else if (wolf.mode === "chase") {
       target = this.ctx.player;
     } else if (wolf.mode === "raid") {
@@ -478,6 +554,27 @@ export class WolfDirector {
     wolf.retreatStuckTimer = advanced < pace * delta * 0.12 ? wolf.retreatStuckTimer + delta : 0;
   }
 
+  /**
+   * 到点动身：这只攻营犬从"在巢边等着"切进 raid。
+   *
+   * 锚点**在这一刻才算**，不在出生时算 —— 它是这只狗被打退后要退回去的地方，
+   * 而玩家在等待的这几十秒里完全可能换了营地。出生时定死的话，
+   * 前半夜刷出来的那几只会退回一座玩家早就离开的空营地。
+   */
+  private releaseRaider(wolf: WolfState): void {
+    wolf.raidAt = 0;
+    if (wolf.mode === "dead" || wolf.mode === "retreating") return;
+    wolf.mode = "raid";
+    wolf.lostTimer = 0;
+    const centre = this.ctx.getPlayerShelter() ?? this.ctx.player;
+    const angle = this.ctx.random() * TAU;
+    const spread = 12 + this.ctx.random() * 10;
+    wolf.anchor = this.ctx.findNearestWalkablePoint({
+      x: centre.x + Math.cos(angle) * spread,
+      z: centre.z + Math.sin(angle) * spread,
+    });
+  }
+
   private beginRetreat(wolf: WolfState): void {
     if (wolf.mode === "dead") return;
     const half = this.ctx.world.size / 2 + 2;
@@ -512,6 +609,8 @@ export class WolfDirector {
       wolf.provoked = false;
       wolf.anchor = { x: wolf.x, z: wolf.z };
       wolf.lostTimer = 0;
+      // 天亮了就别再放行了 —— 还排着班的那几只直接跟着撤，不然会在黎明反向冲一波。
+      wolf.raidAt = 0;
       wolf.retreatStuckTimer = 0;
       wolf.retreatAt = this.ctx.elapsed
         + 0.6
@@ -707,9 +806,19 @@ export class WolfDirector {
       : remainingRaiders / remainingSpawns;
     const raider = role === "raider" && (tutorialWolf || this.ctx.random() < raiderChance);
     if (raider) this.raidersSpawnedThisNight += 1;
-    // 攻营犬直接进 raid 模式（见下方 mode 字段），目标每帧由 getRaidTarget() 重算，
-    // 所以锚点只在它们被打退、退回 patrol 时才用得上 —— 落在玩家当前位置附近即可。
+    /*
+     * 攻营犬的动身时刻。**教学犬（第一夜第一只）不排班**，它就是要立刻来 ——
+     * 那只狗的全部作用是让玩家学会"面对它、挥一刀"，让他等三十秒等于没教。
+     *
+     * 其余的按第几只均分整夜的前 78%：第 i 只（从 0 数）在 (i+0.5)/N 那一档动身。
+     * 已经过去的夜晚时间要扣掉 —— 刷怪全挤在前 45 秒，第 5 只出生时夜晚才走了
+     * 三十几秒，而它那一档在 70% 处，所以真正的等待发生在这里。
+     */
+    const raidAt = raider && !tutorialWolf ? this.scheduleRaidRelease() : 0;
+    // 排到班的那些先在**巢边**等，等到点由 releaseRaider 现算攻击锚点；
+    // 立刻动身的（教学犬、以及班次已经过点的）沿用老路：锚点落在玩家附近。
     const assaultCamp = den ? (this.ctx.getPlayerShelter() ?? this.ctx.player) : camp;
+    const waiting = raidAt > 0;
 
     const anchorAngle = this.ctx.random() * TAU;
     const anchorDistance = 12 + this.ctx.random() * 10;
@@ -726,7 +835,7 @@ export class WolfDirector {
     // 守巢犬就地生根：锚点即出生点，也就是那三桶油旁边。
     const anchor = role === "wild" || role === "guard"
       ? this.ctx.findNearestWalkablePoint({ x: spawn.x, z: spawn.z })
-      : raider
+      : raider && !waiting
         ? this.ctx.findNearestWalkablePoint({
           x: assaultCamp.x + Math.cos(anchorAngle) * anchorDistance,
           z: assaultCamp.z + Math.sin(anchorAngle) * anchorDistance,
@@ -750,7 +859,7 @@ export class WolfDirector {
       maxHealth,
       attack,
       defense,
-      mode: role === "wild" || role === "guard" ? "patrol" : raider ? "raid" : "entering",
+      mode: role === "wild" || role === "guard" ? "patrol" : raider && !waiting ? "raid" : "entering",
       raider,
       provoked: false,
       anchor,
@@ -758,6 +867,7 @@ export class WolfDirector {
       speed,
       attackCooldown: this.ctx.random(),
       lostTimer: 0,
+      raidAt,
       retreatAt: 0,
       retreatStuckTimer: 0,
       hurtFlash: 0,

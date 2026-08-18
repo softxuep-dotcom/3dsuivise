@@ -137,7 +137,6 @@ export class HudController {
   private readonly clock = required<HTMLElement>("clock");
   private readonly prompt = required<HTMLElement>("prompt");
   private readonly restIndicator = required<HTMLElement>("rest-indicator");
-  private readonly gatherIndicator = required<HTMLElement>("gather-indicator");
   private readonly actionIcon = required<HTMLElement>("action-icon");
   private readonly actionLabel = required<HTMLElement>("action-label");
   private readonly recordsLine = required<HTMLElement>("records-line");
@@ -159,6 +158,17 @@ export class HudController {
   /** 升级区上一次渲染的内容签名，用来跳过无意义的重绘。 */
   private readonly upgradeSignatures = new Map<string, string>();
   private readonly slots: HTMLButtonElement[];
+  /**
+   * 临时顶掉"行动"键上的图标与文字。第一夜教学在"点火"那一拍用它。
+   *
+   * 为什么需要：那一拍要玩家做的事是**点燃篝火**，而按键上写的是通用的"行动" ——
+   * 只有走进火塘 10 米内、且脚边没有别的东西时，getInteractionHint 才会自己
+   * 变成"点燃"。也就是说，教学正在指着一颗还没写上答案的键。
+   *
+   * 顶掉的只是**显示**，按下去做什么完全没变（仍然是 requestInteraction）：
+   * 人还没走到火边时按它照旧不发生任何事，而那一拍的字幕说的正是"走到火塘边"。
+   */
+  private actionOverride: InteractionHint | null = null;
   private toastTimer = 0;
   private lastHudUpdate = 0;
   private inventoryOpen = false;
@@ -266,6 +276,11 @@ export class HudController {
     this.adPlaying = playing;
   }
 
+  /** 教学期间临时改写"行动"键的显示；传 null 还原。见 actionOverride。 */
+  setActionOverride(hint: InteractionHint | null): void {
+    this.actionOverride = hint;
+  }
+
   toggleInventory(): void {
     if (!this.simulation.running) return;
     this.inventoryOpen = !this.inventoryOpen;
@@ -293,6 +308,64 @@ export class HudController {
    * 规则：车在画面内 → 不显示（看得见就不用指）；在画面外 → 贴着视口边缘，
    * 箭头指向车，底下报距离。相机背后要把投影坐标翻转，否则箭头会指反。
    */
+  /**
+   * 把边缘指示器从 HUD 面板上挪开。
+   *
+   * 指示器是沿视口内缘的矩形滑的，而那圈矩形正好从右下四颗键、右上状态条、
+   * 左上目标条和摇杆身上压过去 —— 卡车在右后方时，那枚 44px 的圆牌就直接盖在
+   * "行动"键上。盖住一颗**要按的键**比指错方向更糟。
+   *
+   * 做法是沿位移最小的那条边把它推出面板。位置由此不再严格落在那圈矩形上，
+   * 但方向是箭头在说的，圆牌只要还在同一侧就不会误导。
+   *
+   * **候选方向要先过一遍"推出去还在不在屏幕里"**，这是这段唯一的坑：
+   * 右下角那一格，"往右推"永远是位移最小的选项（只要 50px），但推完就出了右边界，
+   * 夹回来又原地不动 —— 于是死循环般地停在按钮上。实测三个角全中。
+   * 所以先筛掉越界的方向，再在剩下的里取最近的。
+   *
+   * 面板矩形每帧现读 getBoundingClientRect：布局会随语言、横竖屏、安全区变，
+   * 写死坐标撑不过一次改版。
+   */
+  private keepClearOfPanels(x: number, y: number, margin: number): { x: number; y: number } {
+    // 圆牌 44px + 下面那枚距离标签，半个盒子约 33px；再留一点呼吸。
+    const radius = 36;
+    const minX = margin;
+    const maxX = window.innerWidth - margin;
+    const minY = margin;
+    const maxY = window.innerHeight - margin;
+    const blockers: DOMRect[] = [];
+    for (const selector of [".bottom-right", ".status-strip", ".left-stack", "#joystick"]) {
+      const element = document.querySelector(selector);
+      if (!element) continue;
+      const rect = element.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) blockers.push(rect);
+    }
+    let px = clamp(x, minX, maxX);
+    let py = clamp(y, minY, maxY);
+    // 推开一块可能撞上另一块（右下角那两组按钮是挨着的），所以跑几轮。
+    for (let pass = 0; pass < 4; pass += 1) {
+      let moved = false;
+      for (const rect of blockers) {
+        if (px + radius <= rect.left || px - radius >= rect.right) continue;
+        if (py + radius <= rect.top || py - radius >= rect.bottom) continue;
+        const candidates = [
+          { cost: py + radius - rect.top, x: px, y: rect.top - radius },
+          { cost: rect.bottom - (py - radius), x: px, y: rect.bottom + radius },
+          { cost: px + radius - rect.left, x: rect.left - radius, y: py },
+          { cost: rect.right - (px - radius), x: rect.right + radius, y: py },
+        ].filter((option) => option.x >= minX && option.x <= maxX && option.y >= minY && option.y <= maxY)
+          .sort((a, b) => a.cost - b.cost);
+        // 四个方向全越界（面板比可用区还宽）就认了，别把它推到屏幕外面去。
+        if (candidates.length === 0) continue;
+        px = candidates[0].x;
+        py = candidates[0].y;
+        moved = true;
+      }
+      if (!moved) break;
+    }
+    return { x: px, y: py };
+  }
+
   private syncTruckPointer(): void {
     const project = this.projectToScreen;
     if (!project || !this.simulation.running || this.isGameplayBlocked() || this.simulation.isDeparting()) {
@@ -320,10 +393,9 @@ export class HudController {
     if (projected.behind) { dx = -dx; dy = -dy; }
     // 把方向射线压到视口内缘的矩形上。
     const scale = Math.min((centreX - margin) / Math.abs(dx || 1e-6), (centreY - margin) / Math.abs(dy || 1e-6));
-    const edgeX = centreX + dx * scale;
-    const edgeY = centreY + dy * scale;
-    this.truckPointer.style.left = `${Math.round(edgeX)}px`;
-    this.truckPointer.style.top = `${Math.round(edgeY)}px`;
+    const edge = this.keepClearOfPanels(centreX + dx * scale, centreY + dy * scale, margin);
+    this.truckPointer.style.left = `${Math.round(edge.x)}px`;
+    this.truckPointer.style.top = `${Math.round(edge.y)}px`;
     // 转的是**箭头那个盒子**，不是里面的三角（见 .truck-arrow 的注释）：
     // 盒子转，三角就沿着圆牌外缘画圆，而中间的卡车图标始终保持正的。
     // 三角自身朝上（border-bottom 撑出来的），所以角度要额外 +90°。
@@ -417,15 +489,11 @@ export class HudController {
     this.clock.classList.toggle("night", this.simulation.phase === "night");
     const seconds = Math.max(0, Math.ceil(this.simulation.phaseTime));
     this.timeLabel.textContent = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
-    // 取水和休息在模拟层本来就互斥（取水时 getRestBlocker 返回"取水中"），这里再显式
-    // 互斥一次：竖屏上中央栏和右上状态栏之间只剩 10px 余量，两个胶囊同时出现就会顶上去。
-    // 把这条保证放在布局本地，将来改模拟层也不会悄悄把它弄坏。
-    const gathering = player.gatherTimer > 0;
-    this.gatherIndicator.classList.toggle("hidden", !gathering);
-    this.restIndicator.classList.toggle("hidden", gathering || !player.resting);
-    if (gathering) this.gatherIndicator.textContent = t("hud.gathering", { seconds: player.gatherTimer.toFixed(1) });
+    // 取水改成一按即得之后，中央栏只剩休息这一个胶囊 —— 原来那条"两个胶囊
+    // 不能同时出现"的互斥保证（竖屏上它们之间只有 10px 余量）也就没有对象了。
+    this.restIndicator.classList.toggle("hidden", !player.resting);
 
-    const hint = this.simulation.getInteractionHint();
+    const hint = this.actionOverride ?? this.simulation.getInteractionHint();
     const touchLayout = matchMedia("(pointer: coarse)").matches || window.innerWidth <= 760;
     this.actionIcon.dataset.icon = ACTION_ICON[hint.action];
     this.actionLabel.textContent = t(`action.${hint.action}`);

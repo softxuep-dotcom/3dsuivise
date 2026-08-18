@@ -143,12 +143,28 @@ export interface EquipTier {
  * 三阶统一卡在**狼牙**上：只有白天的大狼掉，而大狼占比是
  * `min(0.58, 0.22 + (天数−1)×0.09)`，这把三阶自动锁到第 3 天以后，
  * 不需要写任何天数判定。
+ *
+ * ## 一阶**不再全都要兽皮**
+ *
+ * 原先四件一阶（砍刀Ⅰ / 剑Ⅰ / 铁甲Ⅰ / 皮甲Ⅰ）**每一件都要兽皮**，而兽皮只从
+ * 白天的野狗和长角羚身上来 —— 于是"能不能开始变强"这件事被一条线卡死了：
+ * 没打到猎物之前，挖再多矿、捡再多柴，四件里一件也造不出来。玩家手里攒着材料
+ * 却什么都点不了，那是最难受的一种卡关，而且它卡的正是第一天。
+ *
+ * 现在每个槽位各有一条**不要兽皮**的路：
+ *
+ *   武器  砍刀Ⅰ = 铁矿 ×4          剑Ⅰ   = 兽皮 ×1 + 枯木 ×2
+ *   护甲  铁甲Ⅰ = 铁矿 ×4          皮甲Ⅰ = 兽皮 ×4
+ *
+ * 换掉的兽皮按 1:1 折成铁矿（砍刀 3+1皮 → 4，铁甲 2+2皮 → 4），
+ * 所以铁线的总成本没变松，只是把"要打猎"换成了"要挖矿"——
+ * 而挖矿是随时能做的事。二三阶不动：那时候你早该出过门了。
  */
 const WEAPON_TIERS: EquipTier[] = [
   { id: "survival-knife", line: "none", tier: 0, cost: [], needsFire: false, attack: 30 },
 
   { id: "saber-1", line: "saber", tier: 1, needsFire: true, attack: 34,
-    cost: [["iron-ore", 3], ["hide", 1]] },
+    cost: [["iron-ore", 4]] },
   { id: "saber-2", line: "saber", tier: 2, needsFire: true, attack: 42,
     cost: [["iron-ore", 4], ["hide", 2], ["wood", 2]] },
   { id: "saber-3", line: "saber", tier: 3, needsFire: true, attack: 50,
@@ -174,7 +190,7 @@ const ARMOR_TIERS: EquipTier[] = [
   { id: "none", line: "none", tier: 0, cost: [], needsFire: false, defense: 2 },
 
   { id: "scale-1", line: "scale", tier: 1, needsFire: true, defense: 8,
-    cost: [["iron-ore", 2], ["hide", 2]] },
+    cost: [["iron-ore", 4]] },
   { id: "scale-2", line: "scale", tier: 2, needsFire: true, defense: 13,
     cost: [["iron-ore", 3], ["hide", 3]] },
   { id: "scale-3", line: "scale", tier: 3, needsFire: true, defense: 18,
@@ -487,6 +503,17 @@ const HEALTH_PASSIVE_NEED = 70;
 const STARTING_RATION: ReadonlyArray<readonly [InventoryItemKind, number]> = [
   ["water", 2],
   ["cooked-meat", 1],
+  /*
+   * 一根枯木。**这不是补给，是第一夜教学的道具。**
+   *
+   * 入夜那一段教学的第二拍是"走到火塘边点火"，而它是整段里唯一可能做不到的一拍 ——
+   * 第一个白天只有 40 秒，捡一根柴要 30 劳力、还得先找到，玩家很可能天黑时两手空空。
+   * 那时这一拍只能换成一句"白天要先捡枯木"然后跳过，等于最该教的那件事没教成。
+   *
+   * 送一根之后，"点火 → 火边取暖"这条链在第一夜必定走得通；而它也只够烧 95 秒，
+   * 第一夜有 150 秒 —— 火仍然会在天亮前灭一次，"柴要自己囤"这一课半点没松。
+   */
+  ["wood", 1],
 ];
 
 // --- 水分与饥饿（基准两者都是 -0.2/s，满值 500 秒） ---
@@ -530,22 +557,19 @@ const EXHAUSTED_DAMAGE_SCALE = 0.6;
 //   干枯的井：地图上预置的固定水源，必得但要走一趟 —— 规划路线的锚点
 // 基准版本是「建造干枯的井」+「提水」两级技能，我们省掉建造直接预置几口井。
 // 因此井是**地标**：它不产生"挖不挖"的赌博，而产生"今晚在哪过夜"的空间决策。
-/**
- * 提水耗时 2.6 → 1.4 秒，而且**不再要求站着不动**（见 updateWaterGather）。
- *
- * 旧规则是"一动就作废、劳力不退"。它想表达的是"取水是个承诺"，实际表达出来的是
- * 一条惩罚：井边随时可能有狗，而躲一下就等于白扣 8 点劳力 —— 于是理性的玩法
- * 变成"先把周围清干净再取水"，取水本身没有任何决策，只有一道等待。
- *
- * 现在的约束改成**空间**而不是**静止**：人得待在井口那一圈里（WELL_DRAW_LEASH），
- * 走开就中断。原地转身、微调站位、甚至挥两刀都不再打断它。
- * 稀缺性本来也不靠这 2.6 秒撑着 —— 井有存量、回蓄 210 秒、还得走过去。
- */
-const WELL_DRAW_SECONDS = 1.4;
 /** 井口有效交互半径。 */
 const WELL_REACH = 3.2;
-/** 提水期间可以走动的范围。比交互半径宽一点，免得贴着边界站会反复中断。 */
-const WELL_DRAW_LEASH = WELL_REACH + 1.1;
+
+/**
+ * 点击移动时，直线走法的最远验证距离。
+ *
+ * 上限存在的理由是**开销**而不是正确性：验一条直线要按 0.35 米逐段问地形和碰撞，
+ * 60 米就是一百七十多段，而这件事每帧都要做一次。40 米已经比横屏可见宽度
+ * （约 43 米）还长 —— 屏幕上点得到的地方基本都在里面，再远的点击本来就该
+ * 交给流场去规划路线。
+ */
+const STRAIGHT_WALK_MAX = 40;
+
 /** 每口井的蓄水上限，以及回蓄一次所需秒数。 */
 const WELL_CHARGES_MAX = 3;
 /**
@@ -649,8 +673,6 @@ export class GameSimulation {
   private comboTimer = 0;
   /** 挨打后的休息封锁倒计时，见 REST_COMBAT_LOCK。 */
   private combatTimer = 0;
-  /** 当前正在提水的井 id，-1 表示没有。 */
-  private drawingWellId = -1;
   private structureId = 0;
   /** 正被玩家双手搬运的树桩；保留原对象才能避免搬运受损树桩时把生命值刷满。 */
   private carriedStructure: PlacedStructure | null = null;
@@ -767,7 +789,6 @@ export class GameSimulation {
       attackCooldown: 0,
       attackFlash: 0,
       hurtFlash: 0,
-      gatherTimer: 0,
       kills: 0,
     };
     for (const [kind, count] of STARTING_RATION) this.addInventory(kind, count);
@@ -914,7 +935,6 @@ export class GameSimulation {
     }
 
     this.updateNeeds(delta);
-    this.updateWaterGather(delta);
     this.updateFires(delta);
     this.updateCacti();
     this.updateWells();
@@ -1265,46 +1285,31 @@ export class GameSimulation {
     this.events.push({ type: "pickup", kind: "cactus-juice" });
   }
 
-  /** 从井里提水：必得，但要站定 2.6 秒，且这口井的存量会被扣掉。 */
+  /**
+   * 从井里提水：**一按即得**，和割仙人掌是同一种手感。
+   *
+   * 等待期从 2.6 秒 → 1.4 秒 → 直接删掉。中间那版还留了一条"走出井口就中断"的
+   * 空间约束，实测仍然是纯粹的税：井边随时可能有狗，玩家因此养成"先清场再取水"
+   * 的习惯，而那个习惯里没有任何决策，只有一段站着看进度条的时间。
+   *
+   * 稀缺性从来不靠这几秒撑着 —— 井有存量（3 格）、回蓄要 210 秒、还得走一趟，
+   * 这三条一条没动。删掉的只是"按下去之后什么时候才生效"。
+   */
   private beginWaterDraw(well: WellState): void {
-    if (this.player.gatherTimer > 0) return;
     if (this.getInventoryCount("water") >= INVENTORY_STACK_LIMITS.water * 2) {
       this.events.push({ type: "message", key: "msg.7" });
       return;
     }
-    if (!this.spendStamina(STAMINA_COST_DRAW, "labour.draw")) return;
-    this.player.gatherTimer = WELL_DRAW_SECONDS;
-    this.drawingWellId = well.id;
-    this.events.push({ type: "draw-water" });
-  }
-
-  /**
-   * 提水结算。与旧的挖沙不同，这里**没有失败概率** —— 井就是井，
-   * 代价是它有存量、要走过去、而且回蓄很慢。用空间和时间换掉了随机挫败感。
-   *
-   * 中断条件是**离开井口**，不是"动了一下"。见 WELL_DRAW_SECONDS 上方那段。
-   */
-  private updateWaterGather(delta: number): void {
-    if (this.player.gatherTimer <= 0) return;
-    const well = this.wells.find((entry) => entry.id === this.drawingWellId);
-    const source = this.world.wells.find((entry) => entry.id === this.drawingWellId);
-    if (!well || !source || distance(this.player, source) > WELL_DRAW_LEASH) {
-      this.player.gatherTimer = 0;
-      this.drawingWellId = -1;
-      this.events.push({ type: "message", key: "msg.30" });
-      return;
-    }
-    this.player.gatherTimer -= delta;
-    if (this.player.gatherTimer > 0) return;
-    this.drawingWellId = -1;
     if (well.charges <= 0) {
       this.events.push({ type: "message", key: "msg.8" });
       return;
     }
+    if (!this.spendStamina(STAMINA_COST_DRAW, "labour.draw")) return;
     if (!this.addInventory("water", 1)) {
       this.events.push({ type: "message", key: "msg.9" });
       return;
     }
+    this.events.push({ type: "draw-water" });
     well.charges -= 1;
     if (well.refillAt <= 0) well.refillAt = this.elapsed + WELL_REFILL_SECONDS;
     this.events.push({ type: "pickup", kind: "water" });
@@ -1857,7 +1862,6 @@ export class GameSimulation {
 
   getInteractionHint(): InteractionHint {
     if (this.departTimer > 0) return { action: "none", text: loc("hint.none") };
-    if (this.player.gatherTimer > 0) return { action: "well", text: loc("hint.drawing") };
     // 与 requestInteraction 保持一致：水分告急时，仙人掌优先、其次找井。
     if (this.player.water < WATER_URGENT && !this.player.carrying) {
       if (this.findNearestCactus(2.7)) return { action: "cactus", text: loc("hint.urgentCactus", { cost: STAMINA_COST_CACTUS }) };
@@ -2046,8 +2050,21 @@ export class GameSimulation {
    * 剩下的全部顶在山脊或崖壁上原地推，而 moveTarget 只在走到 0.65 米内才清除，
    * 于是玩家一直卡着直到自己接管。桌面端最常用的就是点地图走。
    *
-   * 改成走流场：目标变了才重建（BFS 不便宜），沿途按格子下坡走。
-   * 已经贴近目标时改用直线 —— 1.5 米的格子在最后两步会把人往格心拽，看着发飘。
+   * 但**只走流场也不行**，而且坏得更难看：流场每次只答"下一格的格心在哪"，
+   * 格子 1.5 米、BFS 又是八邻域等权的，于是空旷地面上首步方向的中位偏差有 31°、
+   * 七成的点击超过 20°（探针实测）。玩家点屏幕偏下的一点，角色先朝上走两步再拐回来 ——
+   * 明明一马平川，路却是折的。
+   *
+   * 所以是两条腿：
+   *
+   *   直线走得通（且在 STRAIGHT_WALK_MAX 内） →  直着走，偏差 0°
+   *   走不通                                  →  交给流场，它认得绕路
+   *
+   * 关键是那句"走得通"必须**验到终点**（canWalkStraight 逐段验坡度、爬升与碰撞），
+   * 不能只验前面十几米。验一段就走的写法试过，是错的：前 14 米一马平川、
+   * 终点却在山那边，人会照直走进山脚的死胡同，再被流场捞回来，来回拉锯 ——
+   * 到达率从 94% 掉到 82%。验到终点则是"验过就一定走得完"，
+   * 实测到达率反而升到 96%，而首步中位偏差降到 0°。
    */
   directionToClickTarget(target: Vec2): Vec2 | null {
     if (distance(this.player, target) < 0.65) return null;
@@ -2056,9 +2073,49 @@ export class GameSimulation {
       this.clickTarget = { x: target.x, z: target.z };
       this.clickRoute.rebuild(target, this.getFlowFieldObstacles());
     }
-    // 最后几米交给直线，避免格子量化导致的抖动。
-    if (distance(this.player, target) < 3.2) return direction(this.player, target);
+    if (distance(this.player, target) < STRAIGHT_WALK_MAX && this.canWalkStraight(this.player, target)) {
+      return direction(this.player, target);
+    }
     return this.clickRoute.directionFrom(this.player);
+  }
+
+  /**
+   * 从 a 直着走到 b，这一路踏得住吗。
+   *
+   * 判据和真正走路的那条链**同源**：逐段 canTraverseTerrain（坡度与爬升）+
+   * stepCrossesCollision（墙、石头、树桩）。
+   *
+   * 采样步长 0.35 米这个数是**试出来的，不能放宽**：canTraverseTerrain 判的是
+   * rise/travel，而 travel 就是采样间距。间距取 1.1 米时，一道 0.5 米高的坎读出来
+   * 只有 0.45 的爬升比（合格），玩家实际每帧只走 0.14 米、同一道坎读出来是 3.5（拒绝）——
+   * 于是这个函数会对一条走不通的直线说"通"，人一头顶上去再也不回流场。
+   * 实测到达率因此从 94% 掉到 85%。间距压到与真实步长同量级才不会说谎。
+   */
+  private canWalkStraight(from: Vec2, to: Vec2): boolean {
+    const span = distance(from, to);
+    if (span < 0.0001) return true;
+    const steps = Math.max(1, Math.ceil(span / 0.35));
+    let previous = from;
+    for (let step = 1; step <= steps; step += 1) {
+      const t = step / steps;
+      const point = { x: from.x + (to.x - from.x) * t, z: from.z + (to.z - from.z) * t };
+      if (!isTerrainWalkable(this.world, point)) return false;
+      /*
+       * **分轴走，就要分轴问。**
+       *
+       * moveEntity 是 stepAxis 先走 x 再走 z 的，所以真实轨迹是一串小折线，
+       * 不是这条弦。照弦去问 canTraverseTerrain 会在墙角和坡肩上答错 ——
+       * 弦本身畅通，而拆成 x、z 两段之后其中一段撞角。那正是 canStepToward
+       * 头注释里点名的坑（它选择"任一轴通就算通"，因为它问的是"迈不迈得动"；
+       * 这里问的是"整条路走不走得完"，所以要反过来，两轴都得通）。
+       */
+      const corner = { x: point.x, z: previous.z };
+      if (!this.canTraverseTerrain(previous, corner) || !this.canTraverseTerrain(corner, point)) return false;
+      if (this.stepCrossesCollision(previous, corner, PLAYER_RADIUS, true)) return false;
+      if (this.stepCrossesCollision(corner, point, PLAYER_RADIUS, true)) return false;
+      previous = point;
+    }
+    return true;
   }
 
   /** 剑线连击的当前层数与上限，供 HUD 在攻击按钮上画进度弧。 */
@@ -2084,7 +2141,6 @@ export class GameSimulation {
         bearing: loc(this.bearingKey(screenBearing(this.player, this.truck))),
       });
     }
-    if (this.player.gatherTimer > 0) return loc("sim.8");
 
     // 致命轴优先：水分和饥饿归零是立即死亡，必须压过其它所有提示。
     if (this.player.water < 18) return loc("sim.9");
@@ -2184,8 +2240,6 @@ export class GameSimulation {
 
   private updatePlayerMovement(delta: number, rawMovement: Vec2, isMoving: boolean): void {
     if (!isMoving) return;
-    // 取水**不再**被"动了一下"打断，只被"走出井口那一圈"打断，
-    // 那条判定在 updateWaterGather 里。见 WELL_DRAW_SECONDS 上方那段。
     this.noteActivity();
     const movement = normalize(rawMovement);
     this.player.facing = movement;
@@ -2363,7 +2417,6 @@ export class GameSimulation {
    */
   getRestBlocker(): LocalizedText | null {
     const player = this.player;
-    if (player.gatherTimer > 0) return loc("sim.36");
     if (player.condition === "heatstroke") return loc("sim.37");
     if (player.condition === "hypothermia") return loc("sim.38");
     if (player.hunger < 20) return loc("sim.39");

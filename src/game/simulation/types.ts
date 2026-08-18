@@ -417,8 +417,6 @@ export interface PlayerState extends Vec2 {
   attackCooldown: number;
   attackFlash: number;
   hurtFlash: number;
-  /** 取水动作的剩余秒数，>0 时玩家正在提水或割仙人掌。 */
-  gatherTimer: number;
   kills: number;
 }
 
@@ -440,6 +438,11 @@ export interface WolfState extends Vec2 {
   speed: number;
   attackCooldown: number;
   lostTimer: number;
+  /**
+   * Absolute simulation time when this raider commits to the assault; 0 once it has.
+   * Raiders wait near the den until then so a night arrives in waves, not one clump.
+   */
+  raidAt: number;
   /** Absolute simulation time when this raider joins the staggered dawn retreat. */
   retreatAt: number;
   /** Time spent failing to advance during retreat; relaxes slope limits to unstick the wolf. */

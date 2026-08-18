@@ -1,5 +1,5 @@
 import type { GameSimulation } from "../game/simulation/GameSimulation";
-import type { CampDefinition, GameEvent, Vec2 } from "../game/simulation/types";
+import type { CampDefinition, GameEvent, LocalizedText, Vec2 } from "../game/simulation/types";
 import { t } from "../i18n";
 import { readTutorialFlag, writeTutorialFlag } from "./Tutorial";
 import type { TutorialStage, Hole } from "./TutorialStage";
@@ -30,9 +30,12 @@ import type { TutorialStage, Hole } from "./TutorialStage";
  *
  * ## 没有柴怎么办
  *
- * 第 2 拍是唯一可能做不到的一拍（背包里没柴就添不了火）。所以它同时有
- * 超时放行和一句专门的副文案 —— 这种情况下这一拍教的是"下次白天要先捡柴"，
- * 它仍然是这段教学里最该说的话。
+ * 第 2 拍是唯一可能做不到的一拍（背包里没柴就添不了火）。开局口粮里因此
+ * **白送一根枯木**（见 STARTING_RATION），第一夜这条链必定走得通。
+ *
+ * 但保底的分支仍然留着 —— 玩家完全可能在白天就把那根烧了，或者干脆跳过开场教学
+ * 一路乱走。那时这一拍换成一句"白天要先捡枯木"、缩短超时、并把第 3 拍整拍跳过：
+ * 对着一堆冷灰说"待在火边"是句假话。
  */
 
 type Projector = (x: number, z: number) => { x: number; y: number; behind: boolean };
@@ -49,6 +52,8 @@ interface Beat {
   focus: () => Vec2 | null;
   /** 这一拍要不要继续冻着世界。 */
   hold: boolean;
+  /** 这一拍期间"行动"键显示成什么；不给就照常显示当前可交互物。 */
+  actionLabel?: "ignite";
   /** 完成判定。第一拍没有操作，靠 minSeconds 自己走完。 */
   done: () => boolean;
   /** 最短停留：不到这个时长就算 done() 成立也不推进，避免一闪而过。 */
@@ -76,6 +81,8 @@ export interface NightIntroDeps {
   focusCamera: (target: Vec2 | null) => void;
   /** 时钟闸。和开场教学共用同一道，见 GameSimulation.setTutorialHold。 */
   setHold: (active: boolean) => void;
+  /** 临时改写"行动"键的显示；传 null 还原。 */
+  setActionLabel: (hint: { action: "ignite"; text: LocalizedText } | null) => void;
   /** 舞台是不是正被开场教学占着。理论上不会撞（教学期间时钟停着，天黑不了）。 */
   isStageBusy: () => boolean;
   /** 广告 / 暂停期间冻结计时。 */
@@ -125,6 +132,9 @@ export class NightIntro {
         lit: () => ["action-button"],
         focus: () => null,
         hold: true,
+        // 这一拍指的那颗键上写的得是"点燃"，不能是通用的"行动" ——
+        // 教学正指着它，而它此刻还没写上答案。见 HudController.actionOverride。
+        actionLabel: "ignite",
         done: () => simulation.getNearestLitCamp() !== null,
         minSeconds: 0.9,
         // 有柴：给足 14 秒走过去按一下。没柴：这一拍**做不到**，说完那句
@@ -233,6 +243,9 @@ export class NightIntro {
     this.deps.stage.setUrgent(false);
     this.deps.focusCamera(beat.focus());
     this.deps.setHold(beat.hold);
+    this.deps.setActionLabel(beat.actionLabel
+      ? { action: beat.actionLabel, text: { key: "night.fire.hint" } }
+      : null);
   }
 
   /** 走完或跳过都从这里出去：收镜头、放时钟、收界面、写盘。 */
@@ -241,6 +254,7 @@ export class NightIntro {
     this.running = false;
     this.deps.focusCamera(null);
     this.deps.setHold(false);
+    this.deps.setActionLabel(null);
     this.deps.stage.hide();
     writeTutorialFlag(STORAGE_KEY);
   }

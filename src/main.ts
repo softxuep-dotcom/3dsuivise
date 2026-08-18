@@ -221,6 +221,7 @@ async function bootstrap(): Promise<void> {
     project: (x, z) => renderer.worldToScreen(x, z),
     focusCamera: (target) => renderer.focusOn(target),
     setHold: (active) => simulation.setTutorialHold(active),
+    setActionLabel: (hint) => hud.setActionOverride(hint),
     isStageBusy: () => tutorial.active,
     isTimerFrozen: () => hud.isGameplayBlocked() && !hud.isInventoryOpen(),
   });
