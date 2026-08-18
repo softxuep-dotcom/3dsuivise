@@ -140,3 +140,45 @@ describe("攻营犬 · 必须真的能打到人", () => {
     ).toBeGreaterThanOrEqual(MIN_REACHED[campId]);
   });
 });
+
+describe("攻营犬 · 追丢之后必须再来", () => {
+  /**
+   * 第六种坏法，也是最难看出来的一种：狗**没有**僵住，甚至还在跑，
+   * 只是再也不朝玩家跑了。
+   *
+   * chase 追丢原先一律退回 patrol，而 patrol 只绕自己的锚点转圈，且状态机里
+   * **没有任何一条边通回 raid**。于是每只攻营犬一夜只有一次机会：被躲开或被打退
+   * 一次，就永久降级成一只在营地外绕圈的观光犬。玩家看到的正是"狼跑过来又跑走"。
+   *
+   * 这条只问一件事：夜里挂着 raider 标记的狗，有没有在 patrol 上耗时间。
+   * 不问它跑得多快、离得多近 —— 那些上面几条已经在管了。
+   */
+  const MAX_PATROL_SECONDS = 4;
+
+  it.each(CAMP_IDS)("营地 %i：夜里没有攻营犬退回巡逻绕圈", (campId) => {
+    const patrolSeconds = new Map<number, number>();
+    runNight({
+      campId,
+      // 站桩量不出来：狗一旦贴上就永远贴着，根本不会追丢。
+      // 每 12 秒挪 2 秒位，才是守夜的真实节奏。
+      onStep: (sim, step) => {
+        for (const w of sim.wolves) {
+          if (w.mode !== "patrol" || !w.raider) continue;
+          patrolSeconds.set(w.id, (patrolSeconds.get(w.id) ?? 0) + STEP);
+        }
+        void step;
+      },
+      move: (t) => (t % 12 < 2 ? { x: Math.cos(t * 0.9), z: Math.sin(t * 0.9) } : { x: 0, z: 0 }),
+    });
+
+    let worstId = -1;
+    let worst = 0;
+    for (const [id, seconds] of patrolSeconds) {
+      if (seconds > worst) { worst = seconds; worstId = id; }
+    }
+    expect(
+      worst,
+      `${campLabel(campId)}：攻营犬 #${worstId} 整夜有 ${worst.toFixed(1)} 秒在巡逻绕圈 —— 它已经不再攻营了`,
+    ).toBeLessThan(MAX_PATROL_SECONDS);
+  });
+});

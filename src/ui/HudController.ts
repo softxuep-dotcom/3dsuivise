@@ -1,4 +1,5 @@
 import type { EquipTier, GameSimulation } from "../game/simulation/GameSimulation";
+import { COOKED_HEALTH } from "../game/simulation/GameSimulation";
 import { t, tx } from "../i18n";
 import { clamp } from "../game/simulation/geometry";
 import { describeRecords, formatDuration, loadRecords, submitRun } from "./Records";
@@ -579,7 +580,7 @@ export class HudController {
     this.renderUpgradeSlot("weapon");
     const raws = this.simulation.getInventoryCount("raw-meat");
     this.craftCookButton.textContent = raws > 0
-      ? t("craft.cook", { raws, health: 14 })
+      ? t("craft.cook", { raws, health: COOKED_HEALTH })
       : t("craft.cook.none");
     this.craftCookButton.disabled = raws < 1;
   }

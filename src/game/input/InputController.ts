@@ -43,15 +43,25 @@ export class InputController {
 
   bindCanvas(canvas: HTMLCanvasElement, screenToWorld: (x: number, y: number) => Vec2 | null): void {
     canvas.addEventListener("pointerdown", (event) => {
+      /*
+       * **画布上的第一次按下就是开局**，不管这一下有没有真的让人动起来。
+       *
+       * 早先这句挂在两个更靠里的位置：触屏只有落在左半屏（摇杆区）才报，
+       * 键鼠只有射线打中地形才报。两个漏口都真实存在 ——
+       * 触屏玩家第一下点在右半屏（那边是按钮簇的地盘，空白处什么也不做），
+       * 或者键鼠玩家第一下点在天空 / 远处的山脊上，射线打空。
+       * 这两种人在平台看来"从没开始玩过"，而他们明明已经在操作了。
+       *
+       * 教学的第一步就是"走两步"，所以这一下多半正是教学的第一次点击 ——
+       * 玩家开始教学的那一刻就该算开局，这也正是 Poki 要的转化点。
+       */
+      this.callbacks.onGameplayIntent();
       if (event.pointerType === "touch") {
         this.startJoystick(canvas, event);
         return;
       }
       const target = screenToWorld(event.clientX, event.clientY);
-      if (target) {
-        this.callbacks.onGameplayIntent();
-        this.moveTarget = target;
-      }
+      if (target) this.moveTarget = target;
     });
     canvas.addEventListener("pointermove", (event) => {
       if (event.pointerId === this.joystickPointer) this.trackJoystick(event);
@@ -182,7 +192,7 @@ export class InputController {
     const base = this.joystickBase;
     if (!base || this.joystickPointer !== null) return;
     if (event.clientX > window.innerWidth * 0.5) return;
-    this.callbacks.onGameplayIntent();
+    // onGameplayIntent 已经在 pointerdown 的入口报过了，这里不重复。
     this.joystickPointer = event.pointerId;
     base.classList.add("floating");
     base.style.left = `${event.clientX - base.offsetWidth / 2}px`;

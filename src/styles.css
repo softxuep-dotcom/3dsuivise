@@ -1633,6 +1633,20 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
 /* 摇杆本身是半透明的显示件，光圈按它的圆形走。 */
 .joystick.tutorial-lit { border-radius: 50%; }
 
+/*
+ * 状态条里的某一条被点名时（第一夜教学要指的是体温条），压暗必须让位。
+ *
+ * 和上面 .bottom-right 那条是同一个教训、同一个原因：**子元素的 opacity
+ * 爬不出父元素**。.status-strip 是整块压到 .2 的，只给里面那一条挂
+ * .tutorial-lit 不会让它变亮 —— 得先把整块放回全亮，再把没被点名的
+ * 兄弟条单独压下去。
+ */
+#hud.tutorial-dim .status-strip:has(.tutorial-lit) { opacity: 1; }
+#hud.tutorial-dim .status-strip:has(.tutorial-lit) .meter:not(.tutorial-lit) { opacity: .22; }
+
+/* 进度条行本身没有底板，光圈得自己带个圆角，否则贴着文字画出一个直角框。 */
+.meter.tutorial-lit { border-radius: 10px; }
+
 /* 矮屏（手机横屏）整体缩一档，别顶到状态条也别压住底部那排键。 */
 @media (pointer: coarse) and (orientation: landscape) {
   .tutorial-caption { bottom: 22%; gap: 7px; }

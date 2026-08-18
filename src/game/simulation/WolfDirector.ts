@@ -276,7 +276,24 @@ export class WolfDirector {
       const leash = wolf.role === "guard" ? GUARD_LEASH : 38;
       const beyondLeash = distance(wolf, wolf.anchor) > leash;
       if ((wolf.lostTimer > 4.5 && distance(wolf, this.ctx.player) > 13) || beyondLeash) {
-        wolf.mode = "patrol";
+        /*
+         * 追丢之后**攻营犬回 raid，不是回 patrol**。
+         *
+         * 旧写法一律退回 patrol，而 patrol 只绕自己的锚点转圈，且**没有任何一条
+         * 边通回 raid** —— 于是每只攻营犬这一夜只有一次机会：扑上来、被躲开或
+         * 被打退一次，就永久变成一只在营地外 12~22 米绕圈的观光犬。
+         *
+         * 实测（会动的玩家、第 1 夜、五座营地各跑满 180 秒）：配额 5 只攻营犬
+         * 全部在中途退回巡逻，营地 0 整夜只累计 26 狗秒进入咬击距离 ——
+         * 屏幕上就是"狼跑过来又跑走，真咬到人的没几只"。
+         *
+         * raid 模式跟的是每 0.65 秒朝玩家重建一次的流场，所以回 raid = 重新找路
+         * 扑过来，而不是原地发呆。天亮的撤退调度先把 retreatAt 打上再切 patrol，
+         * 所以这里要放过已排队撤退的狗，否则黎明那批会掉头回来。
+         */
+        wolf.mode = wolf.raider && wolf.retreatAt <= 0 && this.ctx.phase === "night"
+          ? "raid"
+          : "patrol";
         wolf.lostTimer = 0;
       }
     }

@@ -330,6 +330,19 @@ export class GameRenderer {
   private readonly fireLight = new THREE.PointLight(0xff8b38, 0, 22, 2);
   private readonly sand: THREE.Points;
   private cameraShake = 0;
+  /**
+   * 过场镜头：不为 null 时相机看的是这个点而不是玩家。第一夜教学用它把视线
+   * 从人物拉到营火上。回程要能插值，所以最后一次的目标点单独留着（cameraPanAnchor）。
+   */
+  private cameraPanTarget: Vec2 | null = null;
+  private cameraPanAnchor: Vec2 | null = null;
+  /** 0 = 看玩家，1 = 看过场目标。去程比回程慢一点，推出去的那一下才有分量。 */
+  private cameraPan = 0;
+  /** 脚下的取暖光环，见 buildWarmthAura。 */
+  private readonly warmthAura: THREE.Group;
+  private readonly warmthRing: THREE.Mesh;
+  private readonly warmthMotes: THREE.Points;
+  private warmthAmount = 0;
   private time = 0;
   private readonly onAssetProgress?: (loaded: number, total: number) => void;
   private readonly playerAssetReady: Promise<void>;
@@ -403,6 +416,11 @@ export class GameRenderer {
     this.playerAssetReady = this.loadPlayerAsset();
     this.sand = this.buildSand();
     this.scene.add(this.sand);
+    const aura = this.buildWarmthAura();
+    this.warmthAura = aura.group;
+    this.warmthRing = aura.ring;
+    this.warmthMotes = aura.motes;
+    this.scene.add(this.warmthAura);
 
     this.cameraFocus.set(simulation.player.x, this.worldHeight(simulation.player.x, simulation.player.z), simulation.player.z);
     this.resize();
@@ -435,7 +453,20 @@ export class GameRenderer {
     this.syncDayNight();
     this.updateCamera(delta);
     this.updateSand(delta);
+    this.updateWarmthAura(delta);
     this.renderer.render(this.scene, this.camera);
+  }
+
+  /**
+   * 把镜头推到某个世界坐标上，传 null 收回到玩家身上。
+   *
+   * 唯一的用户是第一夜教学：入夜那一刻时间停住、狼在远处嚎，镜头从人物推到
+   * 营火上再收回来 —— 这一推就是"你今晚要守的是那堆火"这句话的全部内容。
+   * 收回来是插值的，不是瞬切，所以调用方只管一开一关。
+   */
+  focusOn(target: Vec2 | null): void {
+    this.cameraPanTarget = target;
+    if (target) this.cameraPanAnchor = { x: target.x, z: target.z };
   }
 
   screenToWorld(clientX: number, clientY: number): Vec2 | null {
@@ -2222,9 +2253,21 @@ export class GameRenderer {
   private updateCamera(delta: number): void {
     const player = this.simulation.player;
     const smoothing = 1 - Math.exp(-delta * 5.5);
-    this.cameraFocus.x = lerp(this.cameraFocus.x, player.x, smoothing);
-    this.cameraFocus.z = lerp(this.cameraFocus.z, player.z, smoothing);
-    this.cameraFocus.y = lerp(this.cameraFocus.y, this.worldHeight(player.x, player.z), smoothing);
+    /*
+     * 相机想看的那个点。平时就是玩家，过场期间在玩家和过场目标之间插值。
+     *
+     * 两段插值叠在一起：这里按 1.35 / 1.0 秒把**目标点**推过去，
+     * 下面那三行再用原有的指数平滑追这个目标 —— 于是推镜是软起软停的，
+     * 不需要单独写缓动曲线。去程慢于回程：推出去要有分量，收回来要利落。
+     */
+    const wantsPan = this.cameraPanTarget !== null;
+    this.cameraPan = clamp(this.cameraPan + delta / (wantsPan ? 1.35 : -1.0), 0, 1);
+    const anchor = this.cameraPan > 0 ? this.cameraPanAnchor : null;
+    const goalX = anchor ? lerp(player.x, anchor.x, this.cameraPan) : player.x;
+    const goalZ = anchor ? lerp(player.z, anchor.z, this.cameraPan) : player.z;
+    this.cameraFocus.x = lerp(this.cameraFocus.x, goalX, smoothing);
+    this.cameraFocus.z = lerp(this.cameraFocus.z, goalZ, smoothing);
+    this.cameraFocus.y = lerp(this.cameraFocus.y, this.worldHeight(goalX, goalZ), smoothing);
     /*
      * 竖屏（小屏且高大于宽）比横屏拉得远：那个比例下横向只剩一条窄缝，不拉远看不到两侧。
      *
@@ -2253,6 +2296,87 @@ export class GameRenderer {
     this.sun.position.set(this.cameraFocus.x - 35, this.cameraFocus.y + 55, this.cameraFocus.z + 25);
     this.sun.target.position.set(this.cameraFocus.x, this.cameraFocus.y, this.cameraFocus.z);
     this.sun.target.updateMatrixWorld();
+  }
+
+  /**
+   * 脚下的取暖光环：一圈暖光 + 一小群往上飘的火星。
+   *
+   * 为什么值得单独做一个：篝火的有效半径是 10 米，几乎盖住整座营地，
+   * 而这条边界**在画面上完全看不见** —— 玩家只能靠盯着体温条的涨跌反推自己
+   * 在不在圈里，那是最糟糕的一种反馈。有了这圈光，"我正在烤火"变成一眼可见的
+   * 身体状态，而不是一条要读数字才知道的隐藏属性。
+   *
+   * 第一夜教学最后一步"待在火边"也靠它 —— 那一步要教的正是这条看不见的边界。
+   */
+  private buildWarmthAura(): { group: THREE.Group; ring: THREE.Mesh; motes: THREE.Points } {
+    const group = new THREE.Group();
+    group.visible = false;
+
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.72, 1.5, 28),
+      new THREE.MeshBasicMaterial({
+        color: 0xffa74a,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending,
+      }),
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.06;
+    group.add(ring);
+
+    // 火星用 Points 而不是若干个 Mesh：24 颗粒子一次绘制调用，
+    // 而它们只需要"往上飘"这一种运动，不值得为此多 24 个对象。
+    const count = 24;
+    const positions = new Float32Array(count * 3);
+    const random = mulberry32(90210);
+    for (let index = 0; index < count; index += 1) {
+      const angle = random() * Math.PI * 2;
+      const radius = 0.35 + random() * 1.15;
+      positions[index * 3] = Math.cos(angle) * radius;
+      positions[index * 3 + 1] = random() * 2.1;
+      positions[index * 3 + 2] = Math.sin(angle) * radius;
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    const motes = new THREE.Points(geometry, new THREE.PointsMaterial({
+      color: 0xffc06a,
+      size: 0.13,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      sizeAttenuation: true,
+    }));
+    group.add(motes);
+    return { group, ring, motes };
+  }
+
+  private updateWarmthAura(delta: number): void {
+    const player = this.simulation.player;
+    // 白天也在火边，但白天烤火只会把人推向中暑 —— 那不是"取暖"，不该给正反馈。
+    const warming = this.simulation.phase === "night" && this.simulation.isWarmedByFire();
+    // 0.55 秒淡入、0.85 秒淡出：走出火圈时留一点余韵，免得在边界上反复闪。
+    this.warmthAmount = clamp(this.warmthAmount + delta / (warming ? 0.55 : -0.85), 0, 1);
+    this.warmthAura.visible = this.warmthAmount > 0.01;
+    if (!this.warmthAura.visible) return;
+
+    this.warmthAura.position.set(player.x, this.worldHeight(player.x, player.z), player.z);
+    // 呼吸感全部来自这一条：环在 0.86~1.06 之间缓慢起伏，人站着不动时画面也没死。
+    const breathe = 0.96 + Math.sin(this.time * 2.1) * 0.1;
+    this.warmthRing.scale.setScalar(breathe);
+    (this.warmthRing.material as THREE.MeshBasicMaterial).opacity = this.warmthAmount * 0.34;
+
+    const attribute = this.warmthMotes.geometry.getAttribute("position") as THREE.BufferAttribute;
+    const array = attribute.array as Float32Array;
+    for (let index = 1; index < array.length; index += 3) {
+      array[index] += delta * (0.75 + (index % 7) * 0.09);
+      if (array[index] > 2.3) array[index] = 0;
+    }
+    attribute.needsUpdate = true;
+    (this.warmthMotes.material as THREE.PointsMaterial).opacity = this.warmthAmount * 0.85;
   }
 
   private updateSand(delta: number): void {

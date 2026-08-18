@@ -6,7 +6,9 @@ import { InputController } from "./game/input/InputController";
 import { GameSimulation } from "./game/simulation/GameSimulation";
 import { GameRenderer } from "./render/GameRenderer";
 import { HudController } from "./ui/HudController";
+import { NightIntro } from "./ui/NightIntro";
 import { Tutorial } from "./ui/Tutorial";
+import { TutorialStage } from "./ui/TutorialStage";
 import { loadDifficulty, saveDifficulty } from "./ui/Settings";
 import { normalizeDifficulty } from "./game/simulation/difficulty";
 import { createPlatform } from "./platform";
@@ -102,6 +104,7 @@ async function bootstrap(): Promise<void> {
 
   if (import.meta.env.DEV) {
     // 开发期调试句柄：用来在浏览器控制台里快进模拟、检查五轴状态。
+    // 教学与渲染层稍后建好再补进来，见下方 attachDebugHandles。
     (window as unknown as { game: unknown }).game = { simulation, world, hud };
   }
 
@@ -192,8 +195,11 @@ async function bootstrap(): Promise<void> {
    *
    * 放开的那一刻不主动开表，仍然等玩家的下一次移动（见 setTutorialHold 的注释）。
    */
+  // 两段教学共用一块 DOM（压暗、亮洞、字幕、跳过），所以舞台只建一次。
+  const stage = new TutorialStage();
   const tutorial = new Tutorial({
     simulation,
+    stage,
     project: (x, z) => renderer.worldToScreen(x, z),
     isInventoryOpen: () => hud.isInventoryOpen(),
     // 广告和暂停要冻结教学计时；背包开着不算 —— 那正是最后一步要的状态。
@@ -201,6 +207,36 @@ async function bootstrap(): Promise<void> {
     onFinish: () => simulation.setTutorialHold(false),
   });
   if (Tutorial.shouldRun()) simulation.setTutorialHold(true);
+
+  /*
+   * 第一夜教学。入夜那一刻自己接管，不需要在这里安排时机 —— 它监听 phase 事件。
+   *
+   * 同一道时钟闸：前两拍冻住世界（狼在第 0.45 秒就出巢，一边讲课一边挨咬
+   * 只会变成一次不明不白的死亡），第三拍放开，因为那一拍要看的正是体温条往回涨。
+   * 详见 ui/NightIntro.ts 的头注释。
+   */
+  const nightIntro = new NightIntro({
+    simulation,
+    stage,
+    project: (x, z) => renderer.worldToScreen(x, z),
+    focusCamera: (target) => renderer.focusOn(target),
+    setHold: (active) => simulation.setTutorialHold(active),
+    isStageBusy: () => tutorial.active,
+    isTimerFrozen: () => hud.isGameplayBlocked() && !hud.isInventoryOpen(),
+  });
+
+  if (import.meta.env.DEV) {
+    /*
+     * 把教学和渲染层也挂上调试句柄。
+     *
+     * 有它才能在控制台里手动步进整条链（update → drainEvents → 各 handle → 各 update），
+     * 而这正是验证第一夜教学的唯一办法：那段教学要等第一个白天走完才触发，
+     * 而 rAF 在页面不可见时**一帧都不跑**，光靠改 phaseTime 是推不动的。
+     */
+    Object.assign((window as unknown as { game: Record<string, unknown> }).game, {
+      renderer, tutorial, nightIntro,
+    });
+  }
   // 点击移动走模拟层的流场，不走直线 —— 直线在这张有山脊的图上只有四成能走到。
   input.setRouter((target) => simulation.directionToClickTarget(target));
 
@@ -310,6 +346,7 @@ async function bootstrap(): Promise<void> {
         audio.handle(event);
         hud.handle(event);
         tutorial.handle(event);
+        nightIntro.handle(event);
         if (event.type === "player-hit") renderer.impact(0.22);
         if (event.type === "wolf-hit") renderer.impact(0.09);
         if (event.type === "barrier-hit") {
@@ -331,6 +368,7 @@ async function bootstrap(): Promise<void> {
       hud.update(delta);
       // 教学走在 HUD 之后：它要读背包的开合状态，也要按最新的一帧投影去挖亮洞。
       tutorial.update(delta);
+      nightIntro.update(delta);
       renderer.render(delta);
     }
     requestAnimationFrame(frame);

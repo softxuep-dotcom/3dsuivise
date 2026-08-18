@@ -32,6 +32,14 @@ interface NightOptions {
   seconds?: number;
   /** 每步之后的回调，用来采样。 */
   onStep?: (sim: GameSimulation, step: number) => void;
+  /**
+   * 玩家这一帧往哪走，参数是已经过去的模拟秒数。默认站着不动。
+   *
+   * 站桩是大多数用例要的（观察对象是狗，玩家不该成为变量），但有些坏法**只有
+   * 玩家会动才暴露**：狗一旦贴上不动的人就永远贴着，根本不会追丢，
+   * 于是"追丢之后还回不回来"这条路径一次都跑不到。
+   */
+  move?: (elapsed: number) => Vec2;
 }
 
 /**
@@ -41,7 +49,7 @@ interface NightOptions {
  * 全都不点的话攻营犬没有目标，会散在别处巡逻，测出来的全是噪音。
  * 玩家血量每步回填：我们要观察的是整夜的狗群行为，不是玩家能撑多久。
  */
-export function runNight({ campId, seconds = NIGHT_SECONDS, onStep }: NightOptions): GameSimulation {
+export function runNight({ campId, seconds = NIGHT_SECONDS, onStep, move }: NightOptions): GameSimulation {
   /*
    * 每次都现造一个世界，**不要**复用 sharedWorld。
    *
@@ -68,7 +76,7 @@ export function runNight({ campId, seconds = NIGHT_SECONDS, onStep }: NightOptio
   for (let step = 0; step < steps; step += 1) {
     for (const c of sim.camps) c.fuel = c.id === campId ? 999 : 0;
     keepPlayerAlive(sim);
-    sim.update(STEP, { x: 0, z: 0 });
+    sim.update(STEP, move?.(step * STEP) ?? { x: 0, z: 0 });
     onStep?.(sim, step);
   }
   return sim;

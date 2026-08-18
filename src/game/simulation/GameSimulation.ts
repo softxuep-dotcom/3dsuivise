@@ -290,7 +290,22 @@ const RAW_HUNGER: readonly [number, number] = [12, 18];
 const RAW_WATER: readonly [number, number] = [2, 6];
 const COOKED_HUNGER: readonly [number, number] = [26, 38];
 const COOKED_WATER: readonly [number, number] = [5, 10];
-const COOKED_HEALTH = 14;
+/**
+ * 熟肉回的体力，14 → 26。
+ *
+ * 这一刀是在给"休息"让路。体力原先只有一条真正管用的回复途径 —— 站定 3 秒进入
+ * 休息，净 +2.6/s。但**站着不动本身不是玩法**：这是个动作游戏，静止的那 38 秒里
+ * 玩家什么也没在做，还得盯着别被狗打断（挨一口就锁 6 秒）。实际结果是大部分人
+ * 根本不用这条路，于是他们的体力只出不进，被 HEALTH_DECAY 慢慢磨死。
+ *
+ * 26 点 ≈ 108 秒的恒定流失，一块熟肉从"够撑一分钟"变成"够撑两分钟"。
+ * 打猎 → 烤肉 → 回体力这条主动循环因此变成体力的**主路**，休息退成一个
+ * 安全时才用得上的加速手段。上限仍然是 100，所以囤肉不会变成囤血。
+ */
+ // 导出：烤肉按钮上要写"回体力多少"，而那个数**只能有一个来源**。
+ // 曾经在 HudController 里另抄了一份字面量 14，这次把 14 改成 26 时它没跟着动，
+ // 背包里于是出现一句和实际收益对不上的说明 —— 那种错正是玩家最信不过的一类。
+export const COOKED_HEALTH = 26;
 /**
  * 生肉回的体力，取熟肉的一半。
  *
@@ -425,16 +440,20 @@ const FIRE_WARMTH_RADIUS = 10.0;
 const HEALTH_DECAY = 0.24; // 100 / 0.24 ≈ 417 秒 ≈ 1.16 个昼夜（基准 857/750 = 1.14）
 
 /**
- * 吃饱喝足时的**止损**（不是回血）。
+ * 吃饱喝足时的自然回复。0.30 → 0.60。
  *
- * 净效果 0.30 − HEALTH_DECAY = +0.06/s：光靠它回满要 1000 秒，也就是根本回不动。
- * 它要解决的是另一件事 —— 状态一切良好却仍被 HEALTH_DECAY 慢性磨死的挫败感。
+ * 原来是**止损**而不是回血：净 0.30 − 0.24 = +0.06/s，回满要 1000 秒，
+ * 也就是玩家永远看不见它动。现在净 +0.36/s，回满 278 秒 ≈ 一个半白天 ——
+ * 慢得不可能拿来当战斗续航，但"我一直吃饱喝足"这件事终于有了看得见的回报。
  *
- * 门槛卡在饱食**和**水分都高于 70：任一掉下去立刻恢复净流失，
- * "吃饭是硬需求"这条心跳一点没松。刻意不做成随时间递增或按比例回复的形式 ——
- * 那会变成真正的自动回血，把打猎→烤肉→回体力整条循环的压力抽掉。
+ * 门槛仍然卡在饱食**和**水分都高于 70，而两条轴都按 0.42/s 掉：从满值掉到 70
+ * 只要 71 秒。所以这不是"什么都不做就回血"，而是"持续维持双满才回血"，
+ * 它奖励的正是那个一直在找水找肉的玩家。任一掉下去立刻回到净流失。
+ *
+ * 刻意不做成随时间递增或按比例回复：那会变成真正的自动回血，
+ * 把打猎→烤肉→回体力整条循环的压力抽掉。
  */
-const HEALTH_PASSIVE_REGEN = 0.30;
+const HEALTH_PASSIVE_REGEN = 0.60;
 const HEALTH_PASSIVE_NEED = 70;
 
 /**
@@ -511,9 +530,22 @@ const EXHAUSTED_DAMAGE_SCALE = 0.6;
 //   干枯的井：地图上预置的固定水源，必得但要走一趟 —— 规划路线的锚点
 // 基准版本是「建造干枯的井」+「提水」两级技能，我们省掉建造直接预置几口井。
 // 因此井是**地标**：它不产生"挖不挖"的赌博，而产生"今晚在哪过夜"的空间决策。
-const WELL_DRAW_SECONDS = 2.6;
+/**
+ * 提水耗时 2.6 → 1.4 秒，而且**不再要求站着不动**（见 updateWaterGather）。
+ *
+ * 旧规则是"一动就作废、劳力不退"。它想表达的是"取水是个承诺"，实际表达出来的是
+ * 一条惩罚：井边随时可能有狗，而躲一下就等于白扣 8 点劳力 —— 于是理性的玩法
+ * 变成"先把周围清干净再取水"，取水本身没有任何决策，只有一道等待。
+ *
+ * 现在的约束改成**空间**而不是**静止**：人得待在井口那一圈里（WELL_DRAW_LEASH），
+ * 走开就中断。原地转身、微调站位、甚至挥两刀都不再打断它。
+ * 稀缺性本来也不靠这 2.6 秒撑着 —— 井有存量、回蓄 210 秒、还得走过去。
+ */
+const WELL_DRAW_SECONDS = 1.4;
 /** 井口有效交互半径。 */
 const WELL_REACH = 3.2;
+/** 提水期间可以走动的范围。比交互半径宽一点，免得贴着边界站会反复中断。 */
+const WELL_DRAW_LEASH = WELL_REACH + 1.1;
 /** 每口井的蓄水上限，以及回蓄一次所需秒数。 */
 const WELL_CHARGES_MAX = 3;
 /**
@@ -814,11 +846,19 @@ export class GameSimulation {
   }
 
   /**
-   * 教学开始时挂起时钟，结束时放开。
+   * 教学期间挂起世界时钟，结束时放开。**两段教学共用这一道闸**。
    *
-   * 放开的那一刻**不**主动点亮 clockStarted —— 仍然等玩家的下一次移动。
+   * 开场教学（第一天，时钟还没起表）：闸的作用是不让 `noteActivity()` 点亮
+   * clockStarted。放开的那一刻**不**主动起表 —— 仍然等玩家的下一次移动。
    * 教学最后一步是"打开背包"，站着不动就能做完；放开就开始倒数的话，
    * 玩家还在看背包，第一天已经在流逝了。
+   *
+   * 第一夜教学（时钟早就在跑）：那时光挡 noteActivity 不够，闸必须直接把
+   * update() 的时钟段整段跳掉 —— 五轴不掉、相位不走、火不烧、狗不动。
+   * 这正是"入夜先停一下，把狼嚎和篝火讲清楚"所需要的暂停。
+   *
+   * 两种情形下**移动、攻击、拾取都仍然是活的**：它们排在时钟闸之前，
+   * 教学要玩家真的动手，冻结的只是世界，不是玩家。
    */
   setTutorialHold(active: boolean): void {
     this.tutorialHold = active;
@@ -856,7 +896,9 @@ export class GameSimulation {
      * 所以冻结期间掉落物也不会计时消失。
      */
     this.updateDrops();
-    if (!this.clockStarted) return;
+    // 时钟闸。`tutorialHold` 在这里也要挡住 —— 第一夜教学起表之后才开始，
+    // 光靠 clockStarted 拦不下它。见 setTutorialHold。
+    if (!this.clockStarted || this.tutorialHold) return;
 
     this.elapsed += delta;
     this.phaseTime -= delta;
@@ -1239,15 +1281,23 @@ export class GameSimulation {
   /**
    * 提水结算。与旧的挖沙不同，这里**没有失败概率** —— 井就是井，
    * 代价是它有存量、要走过去、而且回蓄很慢。用空间和时间换掉了随机挫败感。
+   *
+   * 中断条件是**离开井口**，不是"动了一下"。见 WELL_DRAW_SECONDS 上方那段。
    */
   private updateWaterGather(delta: number): void {
     if (this.player.gatherTimer <= 0) return;
+    const well = this.wells.find((entry) => entry.id === this.drawingWellId);
+    const source = this.world.wells.find((entry) => entry.id === this.drawingWellId);
+    if (!well || !source || distance(this.player, source) > WELL_DRAW_LEASH) {
+      this.player.gatherTimer = 0;
+      this.drawingWellId = -1;
+      this.events.push({ type: "message", key: "msg.30" });
+      return;
+    }
     this.player.gatherTimer -= delta;
     if (this.player.gatherTimer > 0) return;
-    this.player.gatherTimer = 0;
-    const well = this.wells.find((entry) => entry.id === this.drawingWellId);
     this.drawingWellId = -1;
-    if (!well || well.charges <= 0) {
+    if (well.charges <= 0) {
       this.events.push({ type: "message", key: "msg.8" });
       return;
     }
@@ -1897,6 +1947,17 @@ export class GameSimulation {
   }
 
   /**
+   * 玩家此刻是否正被篝火烤着。
+   *
+   * 火焰半径（10 米）几乎盖住整座营地，肉眼**看不出**自己在不在圈里 ——
+   * 而"在不在圈里"决定夜里体温是 +2.11/s 还是 −1.05/s，是夜间最重要的一条状态。
+   * 渲染层拿它画脚下的暖环，第一夜教学拿它判定"学会烤火了"，两处同一个判据。
+   */
+  isWarmedByFire(): boolean {
+    return this.findNearestLitFire(FIRE_WARMTH_RADIUS) !== null;
+  }
+
+  /**
    * 最近的**火塘**，不论燃着没燃 —— 添柴要能重新点燃已经烧空的营火，
    * 所以这里不能复用只找"燃着的火"的 findNearestLitFire。
    */
@@ -2123,11 +2184,8 @@ export class GameSimulation {
 
   private updatePlayerMovement(delta: number, rawMovement: Vec2, isMoving: boolean): void {
     if (!isMoving) return;
-    // 移动会打断取水，劳力不退还 —— 让取水成为一个需要站定的承诺。
-    if (this.player.gatherTimer > 0) {
-      this.player.gatherTimer = 0;
-      this.events.push({ type: "message", key: "msg.30" });
-    }
+    // 取水**不再**被"动了一下"打断，只被"走出井口那一圈"打断，
+    // 那条判定在 updateWaterGather 里。见 WELL_DRAW_SECONDS 上方那段。
     this.noteActivity();
     const movement = normalize(rawMovement);
     this.player.facing = movement;

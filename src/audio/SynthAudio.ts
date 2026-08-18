@@ -317,8 +317,13 @@ export class SynthAudio {
         break;
       case "phase":
         this.phaseCue(event.phase === "night");
-        if (event.phase === "night") window.setTimeout(() => this.playSample("wolf-howl", 0.42, 0.94), 260);
-        else this.playSample("confirm", 0.24, 1.14);
+        // 第一夜的那一声要压过其余所有反馈：那是整局唯一一次"狼群第一次出现"，
+        // 而第一夜教学正好在这一刻停住时间、把镜头推向营火。之后的夜晚是常态，
+        // 音量退回氛围级别，免得每天听一次同样的惊吓。
+        if (event.phase === "night") {
+          const first = event.day === 1;
+          window.setTimeout(() => this.playSample("wolf-howl", first ? 0.72 : 0.42, first ? 0.88 : 0.94), 260);
+        } else this.playSample("confirm", 0.24, 1.14);
         break;
       case "revive":
         this.playSample("confirm", 0.55, 1.1);
