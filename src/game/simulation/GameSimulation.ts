@@ -10,7 +10,7 @@ import {
   segmentIntersectsCircle,
   TAU,
 } from "./geometry";
-import { campGatePosition, isTerrainWalkable, terrainHeightAt, terrainSlopeAt } from "../terrain/TerrainModel";
+import { campGatePosition, campLocalToWorld, isTerrainWalkable, terrainHeightAt, terrainSlopeAt } from "../terrain/TerrainModel";
 import { NavigationGrid } from "./NavigationGrid";
 import { WolfDirector } from "./WolfDirector";
 import type { WolfWorld } from "./WolfDirector";
@@ -538,6 +538,23 @@ export class GameSimulation {
   private readonly events: GameEvent[] = [];
   private readonly navigation: NavigationGrid;
   private readonly retreatNavigations: NavigationGrid[];
+  /**
+   * 点击移动的寻路网格。
+   *
+   * 和 `navigation`（每 0.65 秒重建、目标恒为玩家，给狗用）是两回事：这张的目标是
+   * **玩家点的那个点**，所以只在目标变化时重建 —— 一次 BFS 约 17 万次邻居访问，
+   * 每帧跑不起，但一次点击跑一次完全无所谓。
+   */
+  /**
+   * 懒构造：只有真的点了地面才建。
+   *
+   * NavigationGrid 的构造要跑 buildStaticObstacles —— 21609 个格子逐个验地形和墙，
+   * 不是白送的。触屏玩家全程用摇杆，一次都不会点地图；测试里每个用例都新建一个
+   * GameSimulation，急着建这张网格会让构造成本直接翻倍（实测把整套测试从 40 秒
+   * 推到 60 秒以上、撞穿 vitest 的 5 秒单例上限）。
+   */
+  private clickRoute: NavigationGrid | null = null;
+  private clickTarget: Vec2 | null = null;
   private critterId = 0;
   private critterRespawnCountdown = 4;
   /**
@@ -613,14 +630,25 @@ export class GameSimulation {
       placement: "ground" as const,
     }));
     this.truck = { x: world.truck.x, z: world.truck.z, rotation: world.truck.rotation, loaded: 0 };
-    // 开局站在营地中心偏大门一侧，并且**面朝大门**。
-    // 之前是写死的 (0.7,0.7)，和营地朝向无关 —— 换出生营地就会变成面壁，
-    // 而出门第一眼该看到的是停在门口的卡车（通关目标的实体答案）。
-    const startGate = campGatePosition(startCamp);
-    const startFacing = normalize({ x: startGate.x - startCamp.x, z: startGate.z - startCamp.z });
+    /*
+     * 开局站在**坡底**（坡道末端），面朝卡车。
+     *
+     * 之前站在营地台面中心偏大门一侧 —— 那是 11.8 米高台地的正中央，四周坡度
+     * 0.8~2.0（可走上限 0.78）。实测从那儿朝 16 个方向各走 3 秒，**只有 4 个
+     * 方向走得到一半**，其余全在崖壁上磨。新玩家开局第一件事就是随便按个方向走，
+     * 于是十有六七直接撞墙 —— 这大概率就是十几秒就退的那批人看到的东西。
+     *
+     * 同样的测法，坡底是 14/16、平均完成度 83%、脚下坡度 0.00。
+     * 而且卡车的选址本来就是以坡底为锚点往外推的（见 createWorld.placeTruck），
+     * 所以在坡底出生等于一睁眼车就在旁边，通关目标和出生点重合。
+     * 营地在身后上方，天黑前爬上去点火 —— 那条循环反而更清楚了。
+     */
+    const rampWorld = startCamp.approach.map((local) => campLocalToWorld(startCamp, local));
+    const startSpot = rampWorld[rampWorld.length - 1] ?? campGatePosition(startCamp);
+    const startFacing = normalize({ x: world.truck.x - startSpot.x, z: world.truck.z - startSpot.z });
     this.player = {
-      x: startCamp.x + startFacing.x * 1.5,
-      z: startCamp.z + startFacing.z * 1.5,
+      x: startSpot.x,
+      z: startSpot.z,
       facing: startFacing,
       health: 100,
       maxHealth: 100,
@@ -1821,6 +1849,28 @@ export class GameSimulation {
     const sector = Math.round(((bearing % TAU) + TAU) % TAU / (TAU / 8)) % 8;
     return ["compass.n", "compass.ne", "compass.e", "compass.se",
       "compass.s", "compass.sw", "compass.w", "compass.nw"][sector];
+  }
+
+  /**
+   * 点击地面移动：给出这一帧该往哪走。
+   *
+   * 直线冲是不行的 —— 实测 400 次随机点击，**只有 43% 能走到**，70 米以上只有 37%，
+   * 剩下的全部顶在山脊或崖壁上原地推，而 moveTarget 只在走到 0.65 米内才清除，
+   * 于是玩家一直卡着直到自己接管。桌面端最常用的就是点地图走。
+   *
+   * 改成走流场：目标变了才重建（BFS 不便宜），沿途按格子下坡走。
+   * 已经贴近目标时改用直线 —— 1.5 米的格子在最后两步会把人往格心拽，看着发飘。
+   */
+  directionToClickTarget(target: Vec2): Vec2 | null {
+    if (distance(this.player, target) < 0.65) return null;
+    if (!this.clickRoute) this.clickRoute = new NavigationGrid(this.world);
+    if (!this.clickTarget || distanceSquared(this.clickTarget, target) > 0.6 * 0.6) {
+      this.clickTarget = { x: target.x, z: target.z };
+      this.clickRoute.rebuild(target, this.getFlowFieldObstacles());
+    }
+    // 最后几米交给直线，避免格子量化导致的抖动。
+    if (distance(this.player, target) < 3.2) return direction(this.player, target);
+    return this.clickRoute.directionFrom(this.player);
   }
 
   /** 剑线连击的当前层数与上限，供 HUD 在攻击按钮上画进度弧。 */

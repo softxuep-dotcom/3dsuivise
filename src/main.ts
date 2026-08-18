@@ -179,6 +179,10 @@ async function bootstrap(): Promise<void> {
     onPause: () => hud.togglePause(),
   });
   input.bindCanvas(renderer.canvas, (x, y) => renderer.screenToWorld(x, y));
+  // 卡车的屏幕边缘指示器要把世界坐标投到画布上，投影只有渲染层知道怎么做。
+  hud.setProjector((x, z) => renderer.worldToScreen(x, z));
+  // 点击移动走模拟层的流场，不走直线 —— 直线在这张有山脊的图上只有四成能走到。
+  input.setRouter((target) => simulation.directionToClickTarget(target));
 
   /*
    * "可玩 / 不可玩"的唯一报点。
