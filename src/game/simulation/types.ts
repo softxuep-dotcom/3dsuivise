@@ -498,6 +498,14 @@ export type GameEvent =
   | { type: "dodge" }
   /** 铁甲线把伤害弹回给狼。 */
   | { type: "thorns"; wolfId: number; amount: number }
+  /**
+   * 一次进食 / 饮用改动了哪几条轴，各改了多少（已取整，可正可负）。
+   *
+   * 为什么要报**具体数值**而不是只报"吃了东西"：五条轴对新玩家是五条无名的彩条，
+   * 而喝一口水的那一刻正是唯一能说清"这条是水、这条是体温"的时机 ——
+   * 数字必须落在那两条上，落在别处就白费了。HUD 拿它在对应的条上飘一个 +N / −N。
+   */
+  | { type: "nourish"; health: number; water: number; hunger: number; warmth: number }
   | { type: "critter-hit"; critterId: number }
   | { type: "critter-killed"; critterId: number; kind: CritterKind }
   /** 一桶油进了车斗。 */
@@ -525,38 +533,50 @@ export interface InteractionHint {
  *
  * 设计意图是拉开一条「好抓但不值钱 ←→ 难抓但一顿管饱」的谱：
  *   铠甲虫  几乎不跑，一刀一块肉
+ *   拾骨鸦  同样站得住，但个头大得多、掉两块肉 —— 教学的第一个攻击目标就是它
  *   跳鼠    比玩家快，但冲 2 秒就没劲，绕两下能追到
  *   长角羚  比玩家快得多、冲 4.5 秒、90 血，但一头能提供两块肉、两张皮和两份水
+ *
+ * scale 是渲染尺寸（渲染层直接拿去 setScalar）。除长角羚外整体放大过一轮
+ * ——「好多动物都很小」，在拉近后的相机下小猎物仍然只是几个色块。
+ * 长角羚不在其中：它有 Deer.glb，实际高度走 ORYX_HEIGHT，这里的 scale 只是缺素材时的替身。
  */
 export const CRITTER_SPECS: Record<CritterKind, CritterSpec> = {
   beetle: {
     maxHealth: 8, fleeSpeed: 2.6, grazeSpeed: 0.7, alertRadius: 3.5,
-    sprintSeconds: 99, sprintRecovery: 1, turnRate: 11, meat: 1, hide: 0, water: 0, population: 9, scale: 0.5,
+    sprintSeconds: 99, sprintRecovery: 1, turnRate: 11, meat: 1, hide: 0, water: 0, population: 9, scale: 0.68,
   },
   sandeel: {
     // 钻沙脱离用「极短的冲刺 + 极快的速度」近似：一眨眼就没影，但只跑得动 1.4 秒。
     maxHealth: 6, fleeSpeed: 7.4, grazeSpeed: 0.5, alertRadius: 5,
-    sprintSeconds: 1.4, sprintRecovery: 3, turnRate: 10, meat: 1, hide: 0, water: 0, population: 8, scale: 0.55,
+    sprintSeconds: 1.4, sprintRecovery: 3, turnRate: 10, meat: 1, hide: 0, water: 0, population: 8, scale: 0.74,
   },
   gerbil: {
     maxHealth: 12, fleeSpeed: 7.6, grazeSpeed: 1.1, alertRadius: 7,
-    sprintSeconds: 2.4, sprintRecovery: 3.5, turnRate: 9, meat: 1, hide: 0, water: 0, population: 7, scale: 0.6,
+    sprintSeconds: 2.4, sprintRecovery: 3.5, turnRate: 9, meat: 1, hide: 0, water: 0, population: 7, scale: 0.81,
   },
   rat: {
     maxHealth: 14, fleeSpeed: 7, grazeSpeed: 1.1, alertRadius: 6.5,
-    sprintSeconds: 2.6, sprintRecovery: 3.5, turnRate: 9, meat: 1, hide: 0, water: 0, population: 6, scale: 0.65,
+    sprintSeconds: 2.6, sprintRecovery: 3.5, turnRate: 9, meat: 1, hide: 0, water: 0, population: 6, scale: 0.88,
   },
   lizard: {
     maxHealth: 16, fleeSpeed: 6.2, grazeSpeed: 0.9, alertRadius: 6,
-    sprintSeconds: 3, sprintRecovery: 3, turnRate: 8, meat: 1, hide: 0, water: 0, population: 7, scale: 0.7,
+    sprintSeconds: 3, sprintRecovery: 3, turnRate: 8, meat: 1, hide: 0, water: 0, population: 7, scale: 0.95,
   },
   jerboa: {
     maxHealth: 10, fleeSpeed: 9.6, grazeSpeed: 1.3, alertRadius: 9,
-    sprintSeconds: 2, sprintRecovery: 4, turnRate: 7.5, meat: 2, hide: 0, water: 0, population: 6, scale: 0.7,
+    sprintSeconds: 2, sprintRecovery: 4, turnRate: 7.5, meat: 2, hide: 0, water: 0, population: 6, scale: 0.95,
   },
   corvid: {
-    maxHealth: 10, fleeSpeed: 5.2, grazeSpeed: 0.8, alertRadius: 8,
-    sprintSeconds: 2.6, sprintRecovery: 3, turnRate: 7, meat: 2, hide: 0, water: 0, population: 5, scale: 0.85,
+    // 拾骨鸦是**教学的第一个攻击目标**（见 GameSimulation 的 TUTORIAL_PREY_*），
+    // 所以它这一组数是按"站得住、看得清、一刀就死"重配的，不再是原来那只警惕的鸟：
+    //   逃速 5.2 → 3.6   玩家 8.2 追它像走路，不会变成一场追逐
+    //   游荡 0.8 → 0.45  开局它基本待在原地，玩家转身回来还找得到
+    //   警觉 8 → 5.5     5.5 米外是静止的，正好是教学猎物的落点半径
+    // 10 血对初始匕首的 30 伤害仍是一刀 —— 和入夜后那只教学犬（28 血 / 防御 0）
+    // 完全相同的结算，这才是这一步真正要教的东西。
+    maxHealth: 10, fleeSpeed: 3.6, grazeSpeed: 0.45, alertRadius: 5.5,
+    sprintSeconds: 2.6, sprintRecovery: 3, turnRate: 7, meat: 2, hide: 0, water: 0, population: 5, scale: 1.15,
   },
   oryx: {
     maxHealth: 90, fleeSpeed: 10.5, grazeSpeed: 1.4, alertRadius: 11,

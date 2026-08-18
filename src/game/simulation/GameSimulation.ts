@@ -34,6 +34,7 @@ import type {
   PlacedStructure,
   StructureKind,
   InventoryItemKind,
+  InventoryStack,
   Phase,
   PlayerState,
   SurvivalCondition,
@@ -290,6 +291,17 @@ const RAW_WATER: readonly [number, number] = [2, 6];
 const COOKED_HUNGER: readonly [number, number] = [26, 38];
 const COOKED_WATER: readonly [number, number] = [5, 10];
 const COOKED_HEALTH = 14;
+/**
+ * 生肉回的体力，取熟肉的一半。
+ *
+ * 原先是 0 —— "生肉完全不回体力"。那条设计的意图是让烤肉有存在理由，但它把
+ * 生肉变成了一个几乎没有反馈的物品：吃下去只有饥饿条动，而饥饿是五条轴里
+ * 最不容易要命的一条（中位玩家 75 秒阵亡时饱食还有 52）。
+ *
+ * 改成一半之后取舍还在 —— 走一趟火边仍然能把收益翻倍 —— 但生吞至少是一个
+ * 看得见效果的动作，而"看得见效果"正是新玩家判断一个物品有没有用的唯一依据。
+ */
+const RAW_HEALTH = Math.round(COOKED_HEALTH / 2);
 
 
 // --- 体温调节动作 ---
@@ -321,15 +333,25 @@ const JUICE_WARMTH: readonly [number, number] = [8, 14];
 const DROP_LIFETIME = 180;
 
 /**
- * 出生点脚边的教学甲虫数量与落点。
+ * 教学猎物：拾骨鸦，三只，出生点前方 5.5~7.0 米。
  *
- * 三只：一只在正前方（玩家开局面朝卡车，它必定在画面里），左右各一只岔开约 30°，
- * 于是无论玩家先转向哪边都会撞见一只。半径 4.4~5.8 米 —— 跑过去半秒多，
- * 又超出铠甲虫 3.5 米的警觉半径，所以它们开局是静止的，看得清。
+ * 为什么是拾骨鸦而不是铠甲虫：它是除长角羚外体型最大的一种（scale 1.15 对
+ * 铠甲虫 0.68），而长角羚太快、不能当教学目标。个头是这一步的全部意义 ——
+ * 玩家要在第一眼就看见"那儿有个东西可以砍"，一个半米高的色块做不到这件事。
+ *
+ * 它的逃速 / 游荡 / 警觉都为此重配过（见 CRITTER_SPECS.corvid），所以站得住。
+ * 顺带一提，教学期间世界是冻结的（updateCritters 在时钟闸之后），它连动都不会动；
+ * 调慢是为了教学**结束之后**玩家回头还找得到它。
+ *
+ * 落点半径 6.3~7.8：**必须真的留出余量**，不能贴着警觉半径 5.5 摆。
+ * 第一版取 5.5，实测最近那只落在 5.4999…，正好压线 —— 开局它就处在将逃未逃的状态，
+ * 玩家一挪脚它就开始跑。现在最近的一只留 0.8 米余量，最远的留 2.3 米。
+ * 上限受相机约束：拉近后横屏焦点平面横向可见 43 米，7.8 米还在画面正中。
  */
-const TUTORIAL_BEETLES = 3;
-const TUTORIAL_BEETLE_SPREAD: readonly number[] = [0.08, -0.55, 0.62];
-const TUTORIAL_BEETLE_RADIUS: readonly number[] = [4.4, 5.8, 5.0];
+export const TUTORIAL_PREY: CritterKind = "corvid";
+const TUTORIAL_PREY_COUNT = 3;
+const TUTORIAL_PREY_SPREAD: readonly number[] = [0.08, -0.58, 0.66];
+const TUTORIAL_PREY_RADIUS: readonly number[] = [6.3, 7.8, 7.0];
 
 /**
  * 教学枯木：教「行动键」用的那一根，撒在出生点侧后方 6.5 米。
@@ -1411,6 +1433,31 @@ export class GameSimulation {
     if (!stack) return;
     this.noteInPlaceAction();
 
+    // 各分支自己去改五条轴，这里只在外面量一次前后差并报出去 ——
+    // 好处是加一种新消耗品不用记得补一条事件，漏报是不可能的。
+    const before = {
+      health: this.player.health,
+      water: this.player.water,
+      hunger: this.player.hunger,
+      warmth: this.player.warmth,
+    };
+    try {
+      this.consumeSlot(index, stack);
+    } finally {
+      const delta = {
+        health: Math.round(this.player.health - before.health),
+        water: Math.round(this.player.water - before.water),
+        hunger: Math.round(this.player.hunger - before.hunger),
+        warmth: Math.round(this.player.warmth - before.warmth),
+      };
+      if (delta.health || delta.water || delta.hunger || delta.warmth) {
+        this.events.push({ type: "nourish", ...delta });
+      }
+    }
+  }
+
+  private consumeSlot(index: number, stack: InventoryStack): void {
+
     // 每种消耗品同时喂多条轴，权重不同：
     // 肉主要补体力和饥饿，仙人掌汁偏水分，水是纯水分且都要付体温代价。
     // 仙人掌汁：补水为主、少量顶饿，并且和水一样降体温。
@@ -1428,7 +1475,7 @@ export class GameSimulation {
       return;
     }
     if (stack.kind === "cooked-meat") {
-      // 烤肉：唯一大量回体力的食物，所以它值得为之走一趟火边。
+      // 烤肉：回体力最多的食物（生肉的两倍），所以它值得为之走一趟火边。
       if (this.isNourishmentFull(COOKED_HUNGER[1], COOKED_WATER[1], COOKED_HEALTH)) return;
       this.removeFromSlot(index, 1);
       this.player.hunger = clamp(this.player.hunger + this.randomInt(...COOKED_HUNGER), 0, 100);
@@ -1453,18 +1500,21 @@ export class GameSimulation {
       return;
     }
     if (stack.kind === "raw-meat") {
-      // 生肉直接就能吃，烤肉是另一个更好的独立物品，
-      // 从来不是吃肉的前置。生肉顶饿但**完全不回体力**，这正是烤肉存在的理由：
-      // 体力每秒恒定流失，而烤肉是唯一能大量回体力的食物。
-      // "现在生吞垫一口，还是留到火边烤了再吃"因此成为一个真实取舍。
-      if (this.isNourishmentFull(RAW_HUNGER[1], RAW_WATER[1], 0)) return;
+      // 生肉直接就能吃，烤肉是另一个更好的独立物品，从来不是吃肉的前置。
+      // 生肉回**一半**体力（见 RAW_HEALTH），烤肉回满 —— 走一趟火边把收益翻倍，
+      // "现在生吞垫一口，还是留到火边烤了再吃"因此仍然是个真实取舍。
+      if (this.isNourishmentFull(RAW_HUNGER[1], RAW_WATER[1], RAW_HEALTH)) return;
       this.removeFromSlot(index, 1);
       this.player.hunger = clamp(this.player.hunger + this.randomInt(...RAW_HUNGER), 0, 100);
       this.player.water = clamp(this.player.water + this.randomInt(...RAW_WATER), 0, 100);
+      this.player.health = clamp(this.player.health + RAW_HEALTH, 0, this.player.maxHealth);
       this.events.push({ type: "eat", kind: "cooked-meat" });
       // 火就在旁边却生吞 —— 这是提示烤肉最有说服力的一刻：机会正在被浪费。
+      // 报的是**差额**（烤了能多回多少），不是熟肉的总量。
       if (this.findNearestLitFire(FIRE_WARMTH_RADIUS)) {
-        this.events.push({ type: "message", key: "msg.13", params: { v0: COOKED_HEALTH } });
+        this.events.push({
+          type: "message", key: "msg.13", params: { v0: COOKED_HEALTH - RAW_HEALTH },
+        });
       } else if (!this.rawMeatHintSent) {
         this.rawMeatHintSent = true;
         this.events.push({ type: "message", key: "msg.14" });
@@ -2415,11 +2465,11 @@ export class GameSimulation {
     for (const kind of Object.keys(CRITTER_SPECS) as CritterKind[]) {
       const spec = CRITTER_SPECS[kind];
       for (let index = 0; index < spec.population; index += 1) {
-        // 头几只铠甲虫撒在出生点脚边（见 tutorialBeetleSpot），其余照旧满图散。
-        // 它们**算在 population 9 里面**，所以 replenishCritters 的账不变：
-        // 教学虫被打死之后由常规补充在远处补回，脚边不会源源不断地刷。
-        const point = kind === "beetle" && index < TUTORIAL_BEETLES
-          ? this.tutorialBeetleSpot(index)
+        // 头几只教学猎物撒在出生点脚边（见 tutorialPreySpot），其余照旧满图散。
+        // 它们**算在自己那一种的 population 里面**，所以 replenishCritters 的账不变：
+        // 教学猎物被打死之后由常规补充在远处补回，脚边不会源源不断地刷。
+        const point = kind === TUTORIAL_PREY && index < TUTORIAL_PREY_COUNT
+          ? this.tutorialPreySpot(index)
           // 开局允许离玩家近一些，否则第一天要跑很远才见得到活物。
           : this.findCritterSpawnPoint(14);
         if (point) this.spawnCritter(kind, point);
@@ -2428,23 +2478,24 @@ export class GameSimulation {
   }
 
   /**
-   * 教学甲虫的落点：出生点前方 4.4~5.8 米，散在初始朝向的左中右。
+   * 教学猎物的落点：出生点前方 5.5~7.0 米，散在初始朝向的左中右。
    *
-   * 为什么是铠甲虫、为什么这么近：全图八种猎物里只有它站得住（逃速 2.6 对玩家 8.2、
-   * 警觉半径 3.5 对匕首刀长 3.1），而且 8 血对初始匕首的 30 伤害是**一刀**——
-   * 和入夜后扑上来那只教学犬（28 血 / 防御 0）完全相同的结算。玩家在虫子身上
-   * 学到的不是"这游戏能打猎"，是"按这个键，眼前的东西就没了"，而那正是
-   * 30 秒后救他命的那一句。
+   * 一只在正前方（玩家开局面朝卡车，它必定在画面里），左右各一只岔开约 35°，
+   * 于是无论玩家先转向哪边都会撞见一只。
    *
-   * 之前最近的铠甲虫在 92 米外，一直挥刀的玩家第一次命中要到第 43 秒 ——
-   * 入夜之后 3 秒，考试比课先到。
+   * 这一步要教的不是"这游戏能打猎"，是"按这个键，眼前的东西就没了" ——
+   * 拾骨鸦 10 血、初始匕首 30 伤害，和入夜后扑上来那只教学犬（28 血 / 防御 0）
+   * 完全相同的结算。玩家在鸟身上学会的那一下，正是 30 秒后救他命的那一下。
+   *
+   * 改之前最近的可攻击目标在 27 米外，一直挥刀的玩家第一次命中要到第 43 秒 ——
+   * 而第一天白天只有 40 秒，考试比课先到。
    *
    * 角度和半径都是写死的常量，不走 this.random()：一是这三只本来就该稳定出现在
    * 同一个地方，二是不额外消费随机流，免得整张地图的布局跟着抖。
    */
-  private tutorialBeetleSpot(index: number): Vec2 {
-    const spread = TUTORIAL_BEETLE_SPREAD[index] ?? 0;
-    const radius = TUTORIAL_BEETLE_RADIUS[index] ?? 5;
+  private tutorialPreySpot(index: number): Vec2 {
+    const spread = TUTORIAL_PREY_SPREAD[index] ?? 0;
+    const radius = TUTORIAL_PREY_RADIUS[index] ?? 6;
     const angle = this.spawnFacing + spread;
     return {
       x: this.spawnAnchor.x + Math.cos(angle) * radius,

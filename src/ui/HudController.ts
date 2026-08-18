@@ -65,6 +65,7 @@ export class HudController {
   private readonly victory = required<HTMLElement>("victory");
   private readonly inventoryOverlay = required<HTMLElement>("inventory-overlay");
   private readonly truckPointer = required<HTMLElement>("truck-pointer");
+  private readonly truckArrow = required<HTMLElement>("truck-arrow");
   /** 由 main.ts 注入：世界坐标 → 画布 CSS 像素。没有渲染层时保持 null，指示器整个不显示。 */
   private projectToScreen: ((x: number, z: number) => { x: number; y: number; behind: boolean }) | null = null;
   private readonly healthBar = required<HTMLElement>("health-bar");
@@ -81,6 +82,13 @@ export class HudController {
   private readonly hungerValue = required<HTMLElement>("hunger-value");
   private readonly waterValue = required<HTMLElement>("water-value");
   private readonly staminaValue = required<HTMLElement>("stamina-value");
+  /** 五条轴里会被吃喝改动的那四条，用来把 +N / −N 飘在正确的那一条上。 */
+  private readonly nourishMeters: Array<["health" | "water" | "hunger" | "warmth", HTMLElement]> = [
+    ["health", required<HTMLElement>("meter-health")],
+    ["water", required<HTMLElement>("meter-water")],
+    ["hunger", required<HTMLElement>("meter-hunger")],
+    ["warmth", required<HTMLElement>("warmth-meter")],
+  ];
   private readonly conditionBadge = required<HTMLElement>("condition-badge");
   private readonly drainNote = required<HTMLElement>("drain-note");
   private readonly huntProgress = required<HTMLElement>("hunt-progress");
@@ -315,12 +323,36 @@ export class HudController {
     const edgeY = centreY + dy * scale;
     this.truckPointer.style.left = `${Math.round(edgeX)}px`;
     this.truckPointer.style.top = `${Math.round(edgeY)}px`;
-    // 三角形默认朝上（border-bottom 撑出来的），所以要额外 +90°。
-    const arrow = this.truckPointer.querySelector("i") as HTMLElement | null;
-    if (arrow) arrow.style.transform = `rotate(${Math.atan2(dy, dx) * 180 / Math.PI + 90}deg)`;
+    // 转的是**箭头那个盒子**，不是里面的三角（见 .truck-arrow 的注释）：
+    // 盒子转，三角就沿着圆牌外缘画圆，而中间的卡车图标始终保持正的。
+    // 三角自身朝上（border-bottom 撑出来的），所以角度要额外 +90°。
+    this.truckArrow.style.transform = `rotate(${Math.atan2(dy, dx) * 180 / Math.PI + 90}deg)`;
     const label = this.truckPointer.querySelector("b");
     if (label) label.textContent = `${Math.round(Math.hypot(truck.x - player.x, truck.z - player.z))}m`;
     this.truckPointer.classList.remove("hidden");
+  }
+
+  /**
+   * 吃喝之后，在**被改动的那几条轴上**各飘一个 +N / −N。
+   *
+   * 为什么飘在条上而不是发一条吐司（"水 +22 · 体温 −9"）：五条状态轴对新玩家
+   * 是五条无名的彩条，而"喝了一口水"正是唯一能说清哪条是水、哪条是体温的时机。
+   * 数字必须落在那两条上；落进屏幕中央的吐司里，它就只是一句读完就忘的话。
+   *
+   * 喝水同时 +水 −体温，两个数会同时飘起来 —— 那一眼就是这个游戏的核心取舍：
+   * 补水要付体温的账。这件事讲一百遍不如让他自己看见一次。
+   */
+  private flashNourish(delta: { health: number; water: number; hunger: number; warmth: number }): void {
+    for (const [key, meter] of this.nourishMeters) {
+      const amount = delta[key];
+      if (!amount) continue;
+      const chip = document.createElement("u");
+      chip.className = amount > 0 ? "meter-delta gain" : "meter-delta loss";
+      chip.textContent = `${amount > 0 ? "+" : "−"}${Math.abs(amount)}`;
+      // 动画一结束就自己摘掉。连点几下会叠出好几个，各自计时、互不干扰。
+      chip.addEventListener("animationend", () => chip.remove(), { once: true });
+      meter.appendChild(chip);
+    }
   }
 
   update(deltaSeconds: number): void {
@@ -477,6 +509,7 @@ export class HudController {
   }
 
   handle(event: GameEvent): void {
+    if (event.type === "nourish") this.flashNourish(event);
     if (event.type === "message") this.showToast(t(event.key, event.params), 3.1);
     if (event.type === "phase") {
       this.showToast(t(event.phase === "night" ? "toast.nightfall" : "toast.daybreak", { day: event.day }), 3.4);

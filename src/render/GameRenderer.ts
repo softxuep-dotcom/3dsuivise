@@ -45,8 +45,8 @@ interface WolfView {
  * 这里保留接近原来的那组倍率，只留下"越大的狗血条越宽"这一点。
  */
 /** 相机距离系数。竖屏拉远补视野，横屏拉近补可读性 —— 见 updateCamera。 */
-const PORTRAIT_CAMERA_SCALE = 1.18;
-const LANDSCAPE_CAMERA_SCALE = 0.70;
+const PORTRAIT_CAMERA_SCALE = 1.08;
+const LANDSCAPE_CAMERA_SCALE = 0.64;
 
 /** 可搬运物的本色，以及被啃到快碎时染向的暗红。 */
 const STONE_COLOR = 0x748084;
@@ -2226,15 +2226,18 @@ export class GameRenderer {
     this.cameraFocus.z = lerp(this.cameraFocus.z, player.z, smoothing);
     this.cameraFocus.y = lerp(this.cameraFocus.y, this.worldHeight(player.x, player.z), smoothing);
     /*
-     * 竖屏（小屏且高大于宽）拉远到 1.18：那个比例下横向只剩一条窄缝，不拉远看不到两侧。
-     * 其余一律是横屏 —— 拉近到 0.70，手机上物体更容易辨认。
+     * 竖屏（小屏且高大于宽）比横屏拉得远：那个比例下横向只剩一条窄缝，不拉远看不到两侧。
      *
-     * 这两档是**分开调的**：竖屏的 1.18 是为了补视野，横屏的 0.70 是为了补可读性，
+     * 这两档是**分开调的**：竖屏那个数是为了补视野，横屏那个数是为了补可读性，
      * 合成一个系数的话动一个必然弄坏另一个。
      *
-     * 横屏这一档从 0.80 调到 0.70（相机距离 28.8 → 25.2）。按 47° FOV、844×390 算，
-     * 焦点平面上的横向可见范围 54.2m → 47.5m，角色占屏高 10.4% → 11.9%。
-     * 还剩多少视野是这条的下限：开场斥候在 27 米、教学甲虫在 4.4 米，两个都还在画面里。
+     * 两档都往近走过一轮（横屏 0.80 → 0.70 → 0.64，竖屏 1.18 → 1.08）。
+     * 按 47° FOV 算：
+     *
+     *   横屏 844×390   距离 28.8 → 23.1   横向可见 54.2m → 43.4m   角色占屏高 10.4% → 13.0%
+     *   竖屏 390×844   距离 42.5 → 38.9   横向可见 17.1m → 15.6m   角色占屏高  7.0% →  7.7%
+     *
+     * 还剩多少视野是这条的下限：开场斥候在 27 米、教学猎物在 5.5~7 米，都还在画面里。
      */
     const portrait = window.innerWidth < 760 && window.innerWidth < window.innerHeight;
     const distanceScale = portrait ? PORTRAIT_CAMERA_SCALE : LANDSCAPE_CAMERA_SCALE;

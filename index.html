@@ -20,13 +20,23 @@
             <!-- 通关进度贴着目标走：它就是"我为什么在打狼"的答案。 -->
             <span class="objective-progress" id="hunt-progress"></span>
           </section>
+          <!--
+            设置入口放在目标条**下面**，不是上面。
+
+            压在上面时它把那行常驻文案整体顶下去一格，而目标行是玩家全程唯一
+            "我现在该干什么"的出口 —— 顺序应该是先看要做什么，再看到这颗几乎不点的键。
+
+            它同时**就是暂停键** —— 打开设置会把游戏停住，面板里那颗"继续"就是恢复。
+            这样底排只留四个操作键，而过审要找的暂停控件仍然在。
+          -->
+          <button id="settings-button" class="icon-button" type="button" data-i18n-attr="aria-label:settings.open">⚙</button>
         </div>
 
         <section class="status-strip" data-i18n-attr="aria-label:hud.status.aria">
           <div id="condition-badge" class="condition-badge hidden"></div>
-          <div class="meter health"><span data-i18n="meter.health">Health</span><i><b id="health-bar"></b></i><em id="health-value">100</em></div>
-          <div class="meter water"><span data-i18n="meter.water">Water</span><i><b id="water-bar"></b></i><em id="water-value">90</em></div>
-          <div class="meter hunger"><span data-i18n="meter.food">Food</span><i><b id="hunger-bar"></b></i><em id="hunger-value">82</em></div>
+          <div class="meter health" id="meter-health"><span data-i18n="meter.health">Health</span><i><b id="health-bar"></b></i><em id="health-value">100</em></div>
+          <div class="meter water" id="meter-water"><span data-i18n="meter.water">Water</span><i><b id="water-bar"></b></i><em id="water-value">90</em></div>
+          <div class="meter hunger" id="meter-hunger"><span data-i18n="meter.food">Food</span><i><b id="hunger-bar"></b></i><em id="hunger-value">82</em></div>
           <div class="meter warmth" id="warmth-meter"><span data-i18n="meter.warmth">Warmth</span><i><b id="warmth-bar"></b></i><em id="warmth-value">22</em></div>
           <div class="meter stamina"><span data-i18n="meter.stamina">Stamina</span><i><b id="stamina-bar"></b></i><em id="stamina-value">100</em></div>
           <div class="drain-note hidden" id="drain-note"></div>
@@ -46,20 +56,7 @@
           原先每个元素各写一套 top 偏移，每加一档响应式断点就要重算一遍，迟早叠在一起。
         -->
         <div class="top-stack">
-          <!--
-            时钟和设置键同一行。
-
-            齿轮原先压在左上角目标条的**上方**，于是那条常驻文案被整体顶下去一格 ——
-            目标行是玩家全程唯一"我现在该干什么"的出口，不该给一个几乎不点的按钮让位。
-            挪到时钟右边之后，左列从顶端就开始放目标条，宽度预算也全留给它。
-
-            设置键同时**就是暂停键** —— 打开设置会把游戏停住，面板里那颗"继续"就是恢复。
-            所以底排只留四个操作键，而过审要找的暂停控件仍然在。
-          -->
-          <div class="clock-row">
-            <div class="clock" id="clock"><span id="phase-label"></span><b id="time-label">00:50</b></div>
-            <button id="settings-button" class="icon-button" type="button" data-i18n-attr="aria-label:settings.open">⚙</button>
-          </div>
+          <div class="clock" id="clock"><span id="phase-label"></span><b id="time-label">00:50</b></div>
           <div id="toast" class="toast hidden"></div>
           <div id="gather-indicator" class="status-pill gather-indicator hidden"></div>
           <div id="rest-indicator" class="status-pill rest-indicator hidden"></div>
@@ -68,9 +65,17 @@
         <!--
           卡车的屏幕边缘指示器。车在画面外时贴着边缘显示方向和距离，进画面就隐藏。
           放在世界之外而不是世界之内 —— 3D 场景里插一根光柱既丑又挡视野。
+
+          原先只有一个纯色三角形，实测**没人知道它指的是什么** —— 一个没有身份的
+          箭头在屏幕边上，读起来像装饰。现在中间是卡车图标（复用动作图集里的 drive），
+          箭头绕着它转指向车，底下报距离：先认出"是车"，再看"在哪个方向、多远"。
         -->
         <div id="truck-pointer" class="truck-pointer hidden" aria-hidden="true">
-          <i></i><b></b>
+          <div class="truck-chip">
+            <i id="truck-arrow" class="truck-arrow"></i>
+            <i class="hud-sprite" data-icon="drive"></i>
+          </div>
+          <b></b>
         </div>
 
         <div id="prompt" class="prompt hidden"></div>
@@ -86,7 +91,7 @@
         -->
         <div class="bottom-right">
           <div class="utility-buttons">
-            <button id="thermal-button" class="utility-button" type="button" data-i18n-attr="aria-label:hud.thermal.aria"><i id="thermal-icon" class="hud-sprite" data-icon="warm" aria-hidden="true"></i><b id="thermal-state">—</b></button>
+            <button id="thermal-button" class="utility-button" type="button" data-i18n-attr="aria-label:hud.thermal.aria"><i id="thermal-icon" class="hud-sprite" data-icon="warm" aria-hidden="true"></i><span class="button-label"><b id="thermal-state">—</b></span></button>
             <button id="backpack-button" class="utility-button" type="button" data-i18n-attr="aria-label:hud.pack.aria"><i class="hud-sprite" data-icon="backpack" aria-hidden="true"></i><span class="button-label"><span data-i18n="hud.pack.label">Pack</span><b id="bag-usage">0/8</b></span></button>
           </div>
           <div class="action-buttons">
@@ -105,12 +110,35 @@
         教学要玩家真的去按，不能把他要按的东西挡住。
       -->
       <div id="tutorial" class="tutorial hidden" aria-live="polite">
-        <div id="tutorial-veil" class="tutorial-veil"></div>
+        <!--
+          幕布用 SVG 遮罩，不是 CSS 的 radial-gradient mask。
+
+          原因只有一个：一步要照亮**两个**东西 —— 场景里的目标和它对应的那颗按键。
+          一条 CSS 渐变只挖得动一个洞，多层还得靠 mask-composite（各家实现参差）；
+          SVG 遮罩里想放几个圆就放几个，而且到处都跑得起来。
+
+          遮罩是亮度语义：白色处幕布照常挡，圆里是黑的所以挖穿，圆边用渐变过渡成软边。
+        -->
+        <svg id="tutorial-veil" class="tutorial-veil" aria-hidden="true">
+          <defs>
+            <radialGradient id="tutorial-hole-fade">
+              <stop offset="58%" stop-color="#000" />
+              <stop offset="100%" stop-color="#fff" />
+            </radialGradient>
+            <mask id="tutorial-mask">
+              <rect x="0" y="0" width="100%" height="100%" fill="#fff" />
+              <!-- 亮洞由 Tutorial.ts 每帧增删 -->
+              <g id="tutorial-holes"></g>
+            </mask>
+          </defs>
+          <rect x="0" y="0" width="100%" height="100%" fill="#060a0e" opacity="0.78" mask="url(#tutorial-mask)" />
+        </svg>
         <div id="tutorial-caption" class="tutorial-caption">
           <strong id="tutorial-line"></strong>
           <span id="tutorial-sub"></span>
-          <button id="tutorial-skip" class="tutorial-skip" type="button"></button>
+          <div id="tutorial-dots" class="tutorial-dots" aria-hidden="true"></div>
         </div>
+        <button id="tutorial-skip" class="tutorial-skip" type="button"></button>
       </div>
 
       <!--

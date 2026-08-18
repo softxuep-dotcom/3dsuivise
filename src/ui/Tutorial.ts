@@ -1,4 +1,5 @@
 import type { GameSimulation } from "../game/simulation/GameSimulation";
+import { TUTORIAL_PREY } from "../game/simulation/GameSimulation";
 import type { GameEvent } from "../game/simulation/types";
 import { t } from "../i18n";
 
@@ -12,10 +13,28 @@ import { t } from "../i18n";
  * 过冷时才有意义，而那颗按键本身常驻显示自己的状态（体温适宜 / 取暖 / 降温 / 读秒），
  * 不需要谁来教。
  *
+ * ## 每一步都同时照亮「场景里的目标」和「要按的那颗键」
+ *
+ * 这是这套教学最重要的一条实现约束。只照亮场景目标，玩家知道要对谁动手却不知道
+ * 用哪个键；只照亮按键，反过来。两个一起亮，那一步才是完整的一句话：
+ * **对那个东西，按这颗键。**
+ *
+ * 两类目标走**两套机制**，因为它们的处境不一样：
+ *
+ *   场景里的（角色、猎物、枯木）  画在 canvas 里，抬不出来 → 幕布上挖洞
+ *   UI（四颗键、摇杆）            是 DOM，可以抬 → 抬到幕布之上 + 发光，不挖洞
+ *
+ * UI 那一路一开始也是挖洞的，实测是错的：洞得比按钮大，而右下四颗键排在半径 140px
+ * 的弧上、彼此只隔 77~89px —— 照亮背包的洞半径 97px，会把攻击、行动、体温一起照进去。
+ * 最需要精确指认的那一步反而指不准。详见 styles.css 里 .tutorial-raise 那段。
+ *
+ * 场景那一路仍然走 SVG 遮罩而不是 CSS 渐变 —— 一条渐变只挖得动一个洞，
+ * 而"角色"和"猎物"这类目标以后可能不止一个。见 index.html。
+ *
  * ## 为什么每一步都能在一屏之内做完
  *
- * 三只铠甲虫在出生点 4.4~5.8 米、一根教学枯木在 6.5 米，都是构造时写死撒的
- * （见 GameSimulation 的 TUTORIAL_BEETLE_* / TUTORIAL_WOOD_*）。在此之前最近的
+ * 三只教学猎物在出生点 6.3~7.8 米、一根教学枯木在 6.5 米，都是构造时写死撒的
+ * （见 GameSimulation 的 TUTORIAL_PREY_* / TUTORIAL_WOOD_*）。在此之前最近的
  * 可攻击目标在 27 米外、最近的枯木在 18 米外，一直挥刀的玩家第一次命中要到第 43 秒
  * —— 而第一天白天只有 40 秒，等于这一课在考试之后才到。
  *
@@ -26,7 +45,7 @@ import { t } from "../i18n";
  * 就点亮时钟 —— 不挡的话，教学做得越完整，玩家被咬死得越快。
  *
  * 注意攻击和拾取仍然是活的：`requestAttack()` / `requestInteraction()` 是独立入口，
- * 只看 `running`；掉落物的结算也特意挪到了时钟闸之前。所以"砍死一只虫 → 掉肉 →
+ * 只看 `running`；掉落物的结算也特意挪到了时钟闸之前。所以"砍死一只 → 掉肉 →
  * 进包"这条反馈链在冻结状态下完整成立，那正是第二步最该给足的东西。
  */
 
@@ -47,8 +66,10 @@ interface StepDefinition {
   line: string;
   /** 副文案键；触屏和键鼠不同的那一步给函数。 */
   sub: string | ((touch: boolean) => string);
-  /** 这一步要照亮什么。返回 null 表示这一帧找不到目标，维持全暗。 */
-  target: () => Hole | null;
+  /** 这一步要在**场景里**照亮的东西（幕布挖洞）。空数组表示这一帧维持全暗。 */
+  targets: () => Hole[];
+  /** 这一步要点亮的 **UI 元素** id（抬层 + 发光，不挖洞）。 */
+  lit: () => string[];
   /** 完成判定。事件驱动的那两步靠标记位，其余靠即时状态。 */
   done: () => boolean;
 }
@@ -62,7 +83,20 @@ const TOTAL_TIMEOUT_SECONDS = 60;
 const MOVE_DISTANCE = 3;
 /** 最后一步（打开背包）之后，那句"东西都在这里"停留多久。 */
 const PACK_CAPTION_SECONDS = 2.6;
+/*
+ * 亮洞只用在场景目标上（角色、猎物、枯木），半径由各步自己按体型给 ——
+ * index.html 的遮罩渐变里 0~58% 是纯黑（真正挖穿的那一圈），外面才是软边，
+ * 所以下面那几个半径都要按"再打个七折才是实亮区"来读。
+ * UI 不走这条路，见头注释里那段"两套机制"。
+ */
 
+/**
+ * HUD 里自带层叠上下文的那几个容器。点亮子元素时要连它们一起抬，
+ * 否则子元素的 z-index 出不去（见 syncLit）。
+ */
+const HIGHLIGHT_HOSTS = ".bottom-right, #touch-controls, .left-stack, .top-stack, .status-strip";
+
+const SVG_NS = "http://www.w3.org/2000/svg";
 const STORAGE_KEY = "desert-survivor.tutorial.v1";
 
 const isTouchLayout = (): boolean =>
@@ -85,10 +119,10 @@ const writeDone = (): void => {
   }
 };
 
-const required = <T extends HTMLElement>(id: string): T => {
+const required = <T extends Element>(id: string): T => {
   const element = document.getElementById(id);
   if (!element) throw new Error(`Missing element #${id}`);
-  return element as T;
+  return element as unknown as T;
 };
 
 export interface TutorialDeps {
@@ -111,20 +145,26 @@ export interface TutorialDeps {
 
 export class Tutorial {
   private readonly root = required<HTMLElement>("tutorial");
-  private readonly veil = required<HTMLElement>("tutorial-veil");
+  private readonly veil = required<SVGElement>("tutorial-veil");
+  private readonly holeGroup = required<SVGGElement>("tutorial-holes");
   private readonly caption = required<HTMLElement>("tutorial-caption");
   private readonly line = required<HTMLElement>("tutorial-line");
   private readonly sub = required<HTMLElement>("tutorial-sub");
+  private readonly dots = required<HTMLElement>("tutorial-dots");
   private readonly skipButton = required<HTMLButtonElement>("tutorial-skip");
 
   private readonly steps: StepDefinition[];
+  /** 复用的 <circle>，不每帧重建 —— 增删节点会让软边缘闪。 */
+  private readonly circles: SVGCircleElement[] = [];
+  /** 当前亮着的 UI 元素 id。换步和收尾时按它回收 class。 */
+  private readonly litIds = new Set<string>();
   private index = 0;
   private stepTime = 0;
   private totalTime = 0;
   private running = false;
   private packCaptionTime = 0;
-  /** 事件驱动的完成标记：砍死猎物、捡到枯木。 */
-  private killedCritter = false;
+  /** 事件驱动的完成标记：砍死教学猎物、捡到枯木。 */
+  private killedPrey = false;
   private pickedWood = false;
   private origin = { x: 0, z: 0 };
   private touch = isTouchLayout();
@@ -140,9 +180,9 @@ export class Tutorial {
       return { x: screen.x, y: screen.y, radius };
     };
 
-    const nearestBeetle = (): { x: number; z: number } | null => {
+    const nearestPrey = (): { x: number; z: number } | null => {
       const alive = simulation.critters
-        .filter((critter) => critter.kind === "beetle" && critter.mode !== "dead")
+        .filter((critter) => critter.kind === TUTORIAL_PREY && critter.mode !== "dead")
         .sort((a, b) => this.distanceToPlayer(a) - this.distanceToPlayer(b));
       return alive[0] ?? null;
     };
@@ -154,41 +194,52 @@ export class Tutorial {
       return logs[0] ?? null;
     };
 
+    /** 收拢一组可能为 null 的洞。 */
+    const holes = (...candidates: Array<Hole | null>): Hole[] =>
+      candidates.filter((hole): hole is Hole => hole !== null);
+
     this.steps = [
       {
         id: "move",
         line: "tutorial.move",
         // 触屏是按下即生成的浮动摇杆，键鼠是 WASD 或点地。这一条必须分开说。
         sub: (touch) => (touch ? "tutorial.move.touch" : "tutorial.move.pc"),
-        // 照亮角色本人，不照摇杆 —— 浮动摇杆在玩家按下之前根本不存在。
-        target: () => worldHole(simulation.player, this.touch ? 96 : 84),
+        targets: () => holes(worldHole(simulation.player, this.touch ? 104 : 92)),
+        // 摇杆只是"待机位"的显示件（真正的操作区是整个左半屏），但它是触屏玩家
+        // 唯一看得见的"手放这里"，不点亮等于只教了走、没教怎么走。键鼠档没有对应控件。
+        lit: () => (this.touch ? ["joystick"] : []),
         done: () => this.distanceFromOrigin() >= MOVE_DISTANCE,
       },
       {
         id: "attack",
         line: "tutorial.attack",
         sub: "tutorial.attack.sub",
-        target: () => worldHole(nearestBeetle(), 88),
-        // 判定是"打死"而不是"打中"：铠甲虫 8 血、匕首 30 伤害，一刀就死，
+        targets: () => holes(worldHole(nearestPrey(), 96)),
+        lit: () => ["attack-button"],
+        // 判定是"打死"而不是"打中"：拾骨鸦 10 血、匕首 30 伤害，一刀就死，
         // 等它死才凑得齐"挥刀 → 命中 → 掉东西 → 进包"这条完整反馈。
-        done: () => this.killedCritter,
+        done: () => this.killedPrey,
       },
       {
         id: "act",
         line: "tutorial.act",
         sub: "tutorial.act.sub",
-        target: () => worldHole(nearestWood(), 84),
+        targets: () => holes(worldHole(nearestWood(), 92)),
+        lit: () => ["action-button"],
         done: () => this.pickedWood,
       },
       {
         id: "pack",
         line: "tutorial.pack",
         sub: "tutorial.pack.sub",
-        target: () => this.elementHole("backpack-button"),
+        // 这一步的目标本来就是一颗按键，场景里没有东西要照。
+        targets: () => [],
+        lit: () => ["backpack-button"],
         done: () => deps.isInventoryOpen(),
       },
     ];
 
+    this.buildDots();
     this.skipButton.addEventListener("click", () => this.finish());
   }
 
@@ -210,13 +261,14 @@ export class Tutorial {
     this.touch = isTouchLayout();
     this.origin = { x: this.deps.simulation.player.x, z: this.deps.simulation.player.z };
     this.skipButton.textContent = t("tutorial.skip");
+    this.skipButton.classList.remove("hidden");
     this.root.classList.remove("hidden");
     this.renderCaption();
   }
 
   handle(event: GameEvent): void {
     if (!this.running) return;
-    if (event.type === "critter-killed") this.killedCritter = true;
+    if (event.type === "critter-killed" && event.kind === TUTORIAL_PREY) this.killedPrey = true;
     if (event.type === "pickup" && event.kind === "wood") this.pickedWood = true;
   }
 
@@ -254,6 +306,9 @@ export class Tutorial {
   private finish(): void {
     if (!this.running) return;
     this.running = false;
+    // 高亮是加在 HUD 自己的元素上的，不随幕布一起消失 —— 必须逐个收回来，
+    // 否则教学结束后那颗键会一直发着光、而且一直压在别的 UI 之上。
+    this.syncLit([]);
     this.root.classList.add("hidden");
     writeDone();
     this.deps.onFinish();
@@ -271,7 +326,9 @@ export class Tutorial {
         this.line.textContent = t("tutorial.pack.done");
         this.sub.textContent = t("tutorial.pack.sub");
         this.caption.classList.add("over-pack");
+        this.skipButton.classList.add("hidden");
         this.veil.style.opacity = "0";
+        this.syncDots();
         return;
       }
       this.finish();
@@ -281,14 +338,8 @@ export class Tutorial {
   }
 
   private paint(step: StepDefinition): void {
-    const hole = step.target();
-    if (hole) {
-      this.veil.style.setProperty("--hole-x", `${hole.x}px`);
-      this.veil.style.setProperty("--hole-y", `${hole.y}px`);
-      this.veil.style.setProperty("--hole-r", `${hole.radius}px`);
-    } else {
-      this.veil.style.setProperty("--hole-r", "0px");
-    }
+    this.syncHoles(step.targets());
+    this.syncLit(step.lit());
     // 卡了十秒还没做出来就把提示加重。**不换文案** —— 换一句等于承认第一句没写清楚，
     // 而玩家这时缺的是更显眼，不是更多字。
     this.caption.classList.toggle("urgent", this.stepTime >= STEP_NUDGE_SECONDS);
@@ -303,6 +354,64 @@ export class Tutorial {
     }
   }
 
+  /**
+   * 把这一帧的亮洞写进 SVG 遮罩。
+   *
+   * `<circle>` 复用而不是每帧重建：重建会让浏览器重新解析渐变引用，软边缘因此闪一下。
+   * 多出来的圆半径归零藏起来，不从 DOM 里摘掉。
+   */
+  private syncHoles(targets: Hole[]): void {
+    while (this.circles.length < targets.length) {
+      const circle = document.createElementNS(SVG_NS, "circle");
+      circle.setAttribute("fill", "url(#tutorial-hole-fade)");
+      this.holeGroup.appendChild(circle);
+      this.circles.push(circle);
+    }
+    this.circles.forEach((circle, index) => {
+      const hole = targets[index];
+      if (!hole) {
+        circle.setAttribute("r", "0");
+        return;
+      }
+      circle.setAttribute("cx", String(Math.round(hole.x)));
+      circle.setAttribute("cy", String(Math.round(hole.y)));
+      circle.setAttribute("r", String(Math.round(hole.radius)));
+    });
+  }
+
+  /**
+   * 点亮这一步要按的那颗 UI 键：抬到幕布之上，加一圈搏动的光。
+   *
+   * 容器必须一起抬。`.bottom-right` / `#touch-controls` 自带 z-index，
+   * 各自开了层叠上下文，子元素单独调 z-index 爬不出那个笼子。容器抬上来之后，
+   * 同容器里没被点名的兄弟由 CSS 逐个压暗（见 .tutorial-raise 那段），
+   * 于是"暗"是按元素给的 —— 这正是挖洞做不到的那件事。
+   */
+  private syncLit(ids: string[]): void {
+    const wanted = new Set(ids);
+    for (const id of this.litIds) {
+      if (!wanted.has(id)) this.clearLit(id);
+    }
+    for (const id of wanted) {
+      if (this.litIds.has(id)) continue;
+      const element = document.getElementById(id);
+      if (!element) continue;
+      element.classList.add("tutorial-lit");
+      element.closest(HIGHLIGHT_HOSTS)?.classList.add("tutorial-raise");
+      this.litIds.add(id);
+    }
+  }
+
+  private clearLit(id: string): void {
+    this.litIds.delete(id);
+    const element = document.getElementById(id);
+    if (!element) return;
+    element.classList.remove("tutorial-lit");
+    const host = element.closest(HIGHLIGHT_HOSTS);
+    // 同一个容器里可能还亮着别的键，最后一颗灭掉时才把容器放回去。
+    if (host && !host.querySelector(".tutorial-lit")) host.classList.remove("tutorial-raise");
+  }
+
   private renderCaption(): void {
     const step = this.steps[this.index];
     if (!step) return;
@@ -312,18 +421,18 @@ export class Tutorial {
     // urgent 由 paint() 每帧按 stepTime 自己决定，这里不碰 —— 转屏重排文案时
     // 顺手清掉它的话，卡住十秒的玩家会看见提示突然不闪了。
     this.veil.style.opacity = "";
+    this.syncDots();
   }
 
-  private elementHole(id: string): Hole | null {
-    const element = document.getElementById(id);
-    if (!element) return null;
-    const rect = element.getBoundingClientRect();
-    if (rect.width <= 0) return null;
-    return {
-      x: rect.left + rect.width / 2,
-      y: rect.top + rect.height / 2,
-      radius: Math.max(rect.width, rect.height) * 1.05,
-    };
+  private buildDots(): void {
+    this.dots.replaceChildren(...this.steps.map(() => document.createElement("i")));
+  }
+
+  private syncDots(): void {
+    Array.from(this.dots.children).forEach((dot, index) => {
+      dot.classList.toggle("done", index < this.index);
+      dot.classList.toggle("on", index === this.index);
+    });
   }
 
   private distanceToPlayer(point: { x: number; z: number }): number {
