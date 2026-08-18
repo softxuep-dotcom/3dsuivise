@@ -129,6 +129,7 @@ export const en: Record<string, string> = {
   "hint.loadFuel": "Load it onto the bed · {loaded}/{required} after this",
   "hint.mine": "Chip out iron ore · {cost} stamina",
   "hint.none": "",
+  "hud.pcControls": "<kbd>WASD</kbd>or click the ground to move &nbsp;·&nbsp; <kbd>Space</kbd>attack &nbsp;·&nbsp; <kbd>E</kbd>interact &nbsp;·&nbsp; <kbd>B</kbd>pack",
   "hint.takeWood": "Take the deadwood · {cost} stamina",
   "hint.urgentCactus": "Water critical · cut a cactus · {cost} stamina",
   "hint.urgentWell": "Water critical · draw from the well · {cost} stamina",

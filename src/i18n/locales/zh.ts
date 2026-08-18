@@ -128,6 +128,7 @@ export const zh: Record<string, string> = {
   "hint.loadFuel": "装进车斗 · 装完 {loaded}/{required}",
   "hint.mine": "敲取铁矿 · 劳力 {cost}",
   "hint.none": "",
+  "hud.pcControls": "<kbd>WASD</kbd>或点击地面移动 &nbsp;·&nbsp; <kbd>空格</kbd>攻击 &nbsp;·&nbsp; <kbd>E</kbd>互动 &nbsp;·&nbsp; <kbd>B</kbd>背包",
   "hint.takeWood": "拾起枯木入包 · 劳力 {cost}",
   "hint.urgentCactus": "水分告急 · 割仙人掌 · 劳力 {cost}",
   "hint.urgentWell": "水分告急 · 提水 · 劳力 {cost}",

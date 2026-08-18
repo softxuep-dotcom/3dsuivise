@@ -369,7 +369,24 @@ export class HudController {
     const touchLayout = matchMedia("(pointer: coarse)").matches || window.innerWidth <= 760;
     this.actionButton.textContent = t(`action.${hint.action}`);
     if (hint.action === "none") {
-      this.prompt.classList.add("hidden");
+      /*
+       * 键鼠玩家开局什么操作说明都没有。
+       *
+       * 加载卡改成纯进度页之后，原来那行 "WASD 移动 · E 互动 · 空格攻击…"
+       * （controls-copy）被一起删掉了，而现在开场没有按钮、加载完直接进场，
+       * 于是键鼠玩家唯一能学到的键就是 E —— 还得先走到可交互物旁边才会冒出来。
+       * 移动、攻击、背包全靠猜。
+       *
+       * 所以在**还没动过**的时候，把提示位借来说一次怎么走。玩家一移动
+       * （clockStarted 由第一次实际输入触发）它就永远消失，不占常驻版面。
+       * 触屏不显示：那边有摇杆和四颗大按钮，本来就不用教。
+       */
+      if (!touchLayout && !this.simulation.clockStarted && this.simulation.running) {
+        this.prompt.innerHTML = tx({ key: "hud.pcControls" });
+        this.prompt.classList.remove("hidden");
+      } else {
+        this.prompt.classList.add("hidden");
+      }
     } else if (touchLayout) {
       // 提示就贴在"行动"键上方，键名由那颗按钮自己说 —— 这里再写一遍纯属重复。
       this.prompt.textContent = tx(hint.text);
