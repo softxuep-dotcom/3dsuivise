@@ -449,6 +449,11 @@ export interface WolfState extends Vec2 {
   defense: number;
   mode: WolfMode;
   raider: boolean;
+  /**
+   * 第一夜第一只、写死数值的那只教学犬（28 血 / 5 咬伤 / 0 防）。
+   * 它是"夜袭狼什么都不掉"这条规则唯一的例外，见 WolfDirector.killWolf。
+   */
+  tutorial: boolean;
   /** 野狼被打过之后才会主动追击，此前一直巡逻。 */
   provoked: boolean;
   anchor: Vec2;

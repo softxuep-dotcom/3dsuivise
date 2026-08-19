@@ -655,6 +655,28 @@ export class WolfDirector {
     // 不只是为了还原：一夜刷 40~90 只，按每只 1~2 块肉算就是几十上百块，
     // 而一个昼夜只需要约 6 块熟肉。夜袭掉落等于把食物供给放大十几倍，
     // 饥饿和体力这两条轴因此永远咬不住人。
+    //
+    /*
+     * ……唯一的例外是**第一夜那只教学犬**，它掉 1 张兽皮。
+     *
+     * 第一夜原本是**纯风险零回报**：熬过 150 秒，手上什么也没多。对新手来说
+     * 这是最差的留存形状 —— 而 Player Fit（1.0.14，n=500）里最高的一根柱子
+     * 正好落在第一夜，录像显示大部分人没死就走了。给一件带得走的东西，
+     * 天亮那一刻才有"我赚到了"而不是"我白熬了"。
+     *
+     * 三条边界让它不动经济：
+     *
+     *   只给教学犬，不给整夜。 第一夜配额 5 只，全给就是 5 张皮 = 一件兽皮衣
+     *     （要 4 张），等于把"白天出门打野狗攒皮"整条循环跳过去。教学犬是写死的
+     *     剧本（28 血 / 5 咬伤 / 0 防），也是第一夜唯一一只必定打得赢的。
+     *   给皮不给肉。 熟肉 +38 饱食，是真的能松动饥饿轴的东西；而 1 张兽皮
+     *     **什么都做不了**（兽皮衣要 4 张），它的全部价值是"手里有个战利品"。
+     *   数量写死 1。 不吃 kind、不吃难度倍率 —— 这一只本来就不吃那些。
+     *
+     * 顺带教会一件事：打死东西会掉东西。在这之前玩家没有任何理由相信这一点。
+     */
+    if (wolf.tutorial) this.ctx.createDrop(wolf, "hide", 0, 1);
+
     if (wolf.role === "wild") {
       const bulk = wolf.kind === "elite" ? 3 : wolf.kind === "large" ? 2 : 1;
       this.ctx.createDrop(wolf, "raw-meat", -0.65, bulk);
@@ -861,6 +883,7 @@ export class WolfDirector {
       defense,
       mode: role === "wild" || role === "guard" ? "patrol" : raider && !waiting ? "raid" : "entering",
       raider,
+      tutorial: tutorialWolf,
       provoked: false,
       anchor,
       patrolAngle: this.ctx.random() * TAU,
