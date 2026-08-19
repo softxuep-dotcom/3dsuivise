@@ -161,6 +161,21 @@ export class NightIntro {
     return this.running;
   }
 
+  /**
+   * 软重启：把这段教学退回未开始。
+   *
+   * 实际上第二局起它多半根本不会跑 —— shouldRun() 查的是 localStorage 里那面旗，
+   * 看过一次就永久熄灭。但玩家完全可能在第一夜教学演到一半时死掉再重开，
+   * 那时 index/beatTime 还停在半路上。
+   */
+  reset(): void {
+    this.index = 0;
+    this.beatTime = 0;
+    this.totalTime = 0;
+    this.warmedTime = 0;
+    this.running = false;
+  }
+
   handle(event: GameEvent): void {
     // 死了或通关了就立刻收摊。结算页在这两层之上（z 20+ 对 14/1），
     // 留着不收的话玩家会隔着结算卡看到一块还压着暗的 HUD。

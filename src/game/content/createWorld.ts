@@ -329,7 +329,59 @@ function placeBarrels(
   return barrels;
 }
 
-export function createWorld(seed = 71291): WorldDefinition {
+/**
+ * 出生营地轮换：首局永远是设计好的那一座，换图只发生在"再来一局"之后。
+ *
+ * 蓝图里五座营地的平台、坡道、大门、地形烘焙全是现成的，换 startCampId
+ * 连带把卡车也挪走了（placeTruck 的第一个参数就是出生营地），所以"随机出生点"
+ * 和"随机车子落点"本来就是同一个开关。
+ *
+ * **但首局不能动。** 白天 40 秒、46 秒第一次挨咬、最近野外油桶 32 米、
+ * 出生点那桶偏 0.95 弧度 8.5 米 —— 整条开场节奏都是照 #1 调出来的，
+ * 而平台判定最看重的就是这前三分钟。换图放在玩家已经点了"再来一局"之后：
+ * 那时他已经上手，而"每局不一样"正是重开这件事需要的理由。
+ *
+ * 轮换顺序按**到狗巢的距离与 #1 的差**从小到大排。夜袭的到达时刻是这张图上
+ * 最敏感的量（攻营配额与三波节奏全按 #1 的 114 米调的），所以先给差得少的：
+ *
+ *   #1 114m（首局） → #0 104m → #4 137m → #2 67m → #3 193m
+ *
+ * #2 会早二三十秒压上来，#3 要多跑 80 米、第一夜可能一只都摸不到人 ——
+ * 这两座排在后面，等前面两座验证过重开率再说。
+ */
+/**
+ * 蓝图那座出生营地（#1）下，placeBarrels 消耗掉的 random() 次数。
+ *
+ * 这个数存在的理由，是"换营地不该把整张图洗一遍"。
+ *
+ * placeBarrels 是拒绝采样（撞墙、离车太近、跟别的桶挨太近都重抽），而它是主随机流的
+ * **第一个**消费者。出生营地一换，卡车跟着换位置，拒绝次数就变 —— 于是后面的树、
+ * 仙人掌、地物、矿脉、井、地标抽到的数整体错位，**整张图跟着变**。实测换 #1 → #0
+ * 时 world 的 15 个字段里有 10 个不一样。那样软重启就得重建地形以外的几乎所有东西。
+ *
+ * 所以油桶单开一条流，主流则在这里**快进固定的 71 次**，跳到"原先 #1 那一局
+ * placeBarrels 消耗完"的位置。两个效果同时拿到：
+ *
+ *   · 首局（#1）的世界和拆流之前**逐字节相同** —— 油桶那条流起点也是 seed，
+ *     卡车又在原位，所以抽出来的桶位一模一样；主流快进 71 次之后散落物也一模一样。
+ *     "最近野外桶 32 米、单趟 12 秒"这条调好的开场因此原样保住。
+ *   · 其余营地共用 #1 的散落物，只有卡车、油桶、出生营地脚边那 4 根柴不同
+ *     （walls 1/36、initialItems 4/97、barrels 7/10，其余字段全同）。
+ *
+ * **改动 placeBarrels 的采样逻辑就必须重新量这个数**，否则首局那张图会悄悄漂掉。
+ * tests/worldRotation.test.ts 锁着它。
+ */
+const BARREL_STREAM_DRAWS = 71;
+
+const CAMP_ROTATION = [0, 4, 2, 3] as const;
+
+/** runIndex 0 = 这台机器上的第一局。 */
+export function pickStartCamp(runIndex: number): number {
+  if (!Number.isInteger(runIndex) || runIndex <= 0) return BLUEPRINT.startCampId;
+  return CAMP_ROTATION[(runIndex - 1) % CAMP_ROTATION.length];
+}
+
+export function createWorld(seed = 71291, startCampId = BLUEPRINT.startCampId): WorldDefinition {
   const random = mulberry32(seed);
   const size = BLUEPRINT.size;
   const terrain = {
@@ -371,9 +423,25 @@ export function createWorld(seed = 71291): WorldDefinition {
   }));
 
   // 卡车先定 —— 它挂进 walls，后面所有撒点都要绕开它。
-  const truck = placeTruck(camps[BLUEPRINT.startCampId], camps, terrainWorld, walls, size);
+  const truck = placeTruck(camps[startCampId], camps, terrainWorld, walls, size);
   walls.push({ x: truck.x, z: truck.z, radius: TRUCK_RADIUS, kind: "landmark" });
-  const barrels = placeBarrels(dens[0] ?? null, truck, camps, camps[BLUEPRINT.startCampId], terrainWorld, walls, random);
+  /*
+   * 油桶单开一条随机流，不共用 `random`。
+   *
+   * placeBarrels 是拒绝采样（撞到墙、离车太近、跟别的桶挨太近都重抽），而它是
+   * `random` 的第一个消费者 —— 循环多转一圈，后面的树、仙人掌、地物、矿脉、井、
+   * 地标抽到的数就整体错位一格，**整张图跟着变**。
+   *
+   * 这在"每局同一张图"的时候看不出来。但出生营地一换，卡车跟着换位置，
+   * 拒绝次数就变了 —— 于是换营地会把散落物全洗一遍。实测：换 #1 → #0，
+   * world 的 15 个字段里有 10 个不一样。
+   *
+   * 拆开之后换营地只动卡车、油桶、出生营地脚边那 4 根柴，其余逐字节相同 ——
+   * 软重启因此只需要重建这三样，地形网格和几万个散落物的显存都留着不动。
+   */
+  const barrels = placeBarrels(dens[0] ?? null, truck, camps, camps[startCampId], terrainWorld, walls, mulberry32(seed));
+  // 主流快进到"原先 placeBarrels 消耗完"的位置，见 BARREL_STREAM_DRAWS。
+  for (let i = 0; i < BARREL_STREAM_DRAWS; i += 1) random();
 
   /*
    * 树现在能砍（每棵两份柴，见 GameSimulation 的 STAMINA_COST_CHOP 那段），
@@ -454,7 +522,7 @@ export function createWorld(seed = 71291): WorldDefinition {
   }
 
   // The starting abandoned camp contains enough wood to teach fire management immediately.
-  const startCamp = camps[BLUEPRINT.startCampId];
+  const startCamp = camps[startCampId];
   addItem("wood", startCamp.x + 2.2, startCamp.z + 2.6);
   addItem("wood", startCamp.x - 2.4, startCamp.z + 1.4);
   addItem("wood", startCamp.x + 3.4, startCamp.z - 2.2);
@@ -567,6 +635,6 @@ export function createWorld(seed = 71291): WorldDefinition {
     ironNodes,
     wells,
     landmarks,
-    startCampId: BLUEPRINT.startCampId,
+    startCampId,
   };
 }

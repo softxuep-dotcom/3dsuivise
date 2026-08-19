@@ -295,8 +295,9 @@ const wolfBodyColor = (wolf: WolfState): number => {
 export class GameRenderer {
   readonly canvas: HTMLCanvasElement;
 
-  private readonly simulation: GameSimulation;
-  private readonly world: WorldDefinition;
+  /** 软重启会换掉这两个引用，见 resetRun()。 */
+  private simulation: GameSimulation;
+  private world: WorldDefinition;
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.PerspectiveCamera(47, 1, 0.1, 320);
   /*
@@ -417,23 +418,44 @@ export class GameRenderer {
     /*
      * 移动端画质档。
      *
-     * 之前手机和台式机用的是**同一套设置**，而 Poki 实测手机 MEDIAN FPS 只有 19。
-     * 填充率是主因，而且三个乘数全开着：
-     *   pixelRatio 1.6  ⇒ 880×400 的视口实际渲染 1408×640 = 90 万像素（1.0 时 35 万）
-     *   antialias        ⇒ MSAA 在移动 GPU 上按倍数吃填充
-     *   阴影             ⇒ 44 个 castShadow 物体每帧再画一遍进 1024² 深度图
-     * 三者相乘，19 帧完全对得上。
+     * 起因是 Poki 实测手机 MEDIAN FPS 只有 19，而当时手机和台式机用的是
+     * **同一套设置，没有任何降级分支**。1.0.16 一口气关了四样：分辨率、MSAA、
+     * 阴影、远处实体。事后看，那一刀砍得太宽 —— 后三样里有两样砍错了地方：
      *
-     * 触屏一律降到 1.0 / 无 AA / 无阴影：锯齿和平光是看得见的损失，但 19→40 帧
-     * 的手感差距远大于它。桌面端保持原样，那边本来就不卡。
+     *   pixelRatio 1.6 → 1.0   ✔ 留着。片元数直接降到 39%，这是唯一一条
+     *                            效果可以精确算出来、不依赖场景内容的改动。
+     *   MSAA 关掉              ✘ 撤回。移动 GPU 全是 TBR，MSAA 在片上解析，
+     *                            省不下按倍数的填充；而分辨率已经降了，
+     *                            少了超采样兜底，锯齿反而更需要它。
+     *   阴影关掉               ✘ 撤回，改成把阴影本身做便宜（512² 图 + 收紧 far
+     *                            + 小物件不投影），见下面几段。
+     *   45 米外不画            ✔ 留着。它省的是 CPU：每只狗一个 AnimationMixer，
+     *                            80 个实体压到 13 个，而且省在夜里那段最卡的地方。
+     *
+     * 桌面端始终保持原样，那边本来就不卡。
      */
     this.lowPower = matchMedia("(pointer: coarse)").matches || window.innerWidth <= 760;
+    /*
+     * MSAA 在移动端**留着**。
+     *
+     * 1.0.16 曾经在低功耗档一起关掉，那是矫枉过正：移动 GPU 全是 TBR
+     * （Adreno / Mali / Apple），MSAA 在片上解析，代价是多占一点 tile memory
+     * 加一次 resolve —— 不是"按倍数吃填充"。而 pixelRatio 已经从 1.6 压到 1.0，
+     * 少了超采样这层遮掩，锯齿反而更需要 MSAA 兜着。
+     */
     this.renderer = new THREE.WebGLRenderer({
-      antialias: !this.lowPower,
+      antialias: true,
       powerPreference: "high-performance",
     });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.lowPower ? 1 : 1.6));
-    this.renderer.shadowMap.enabled = !this.lowPower;
+    this.renderer.shadowMap.enabled = true;
+    /*
+     * 低功耗档也保留 PCF，不降级成 BasicShadowMap。
+     *
+     * 阴影图在这一档同时缩到 512²（见下），块状边缘正需要 PCF 那几次采样糊开；
+     * 换成 Basic 省下的是主 pass 每个受光片元的几次纹理采样，但换来的硬边
+     * 配上 512² 会直接暴露成阶梯。省错地方了。
+     */
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -449,14 +471,29 @@ export class GameRenderer {
     this.scene.add(this.hemisphere);
     this.sun = new THREE.DirectionalLight(DAY_SUN, DAY_SUN_INTENSITY);
     this.sun.position.set(-35, 55, 25);
-    this.sun.castShadow = !this.lowPower;
-    this.sun.shadow.mapSize.set(1024, 1024);
+    this.sun.castShadow = true;
+    /*
+     * 阴影图在低功耗档缩到 512²。
+     *
+     * 这是这一档里最划算的一刀：深度 pass 要光栅化的片元从 100 万降到 26 万，
+     * 带宽同比例降，而**质量损失是有上限的** —— 阴影相机覆盖 64×64 世界单位，
+     * 1024² 是每单位 16 texel，512² 是 8 texel。低多边形沙漠里的影子本来就是
+     * 大色块，8 texel/米配上 PCF 的软化，在手机屏上看不出台阶。
+     *
+     * 相机范围保持 ±32：它是照着实际能看到的地面范围定的（相机架在焦点偏移
+     * (19,24,19)、竖直 FOV 47°，可视地面纵深约 60 单位）。再收就会在画面里
+     * 出现一条"影子到此为止"的硬线，那比影子糙难看得多。
+     *
+     * far 从 130 收到 110：太阳架在焦点上方 (−35,+55,+25)、距离约 70，
+     * 130 给了 60 单位的富余，用不着那么多。收紧只赚深度精度，不损画面。
+     */
+    this.sun.shadow.mapSize.set(this.lowPower ? 512 : 1024, this.lowPower ? 512 : 1024);
     this.sun.shadow.camera.left = -32;
     this.sun.shadow.camera.right = 32;
     this.sun.shadow.camera.top = 32;
     this.sun.shadow.camera.bottom = -32;
     this.sun.shadow.camera.near = 1;
-    this.sun.shadow.camera.far = 130;
+    this.sun.shadow.camera.far = this.lowPower ? 110 : 130;
     this.scene.add(this.sun, this.fireLight);
 
     this.terrainMesh = this.buildGround();
@@ -617,6 +654,51 @@ export class GameRenderer {
     // cropping the view and pushing the real screen centre down-right.
     this.renderer.setSize(width, height);
   };
+
+  /**
+   * 软重启：换掉世界与模拟层，**不重建渲染器**。
+   *
+   * 原先"再来一局"走的是 `window.location.reload()` —— 整页重载：重新解析 HTML 与
+   * 主包、重下重解 646 KB 的 GLB、重建 resolution² 顶点的地形网格、重编译着色器，
+   * 外加开场那几次 nextPaint() 的 150 ms 兜底。而平台数据显示长会话是**重开叠出来的**
+   * （录像里有人 10 分钟开了 5、6 局），也就是说这笔钱每两分钟收一次。
+   *
+   * 能只换引用，是因为世界在换出生营地时几乎没变 —— placeBarrels 拆出独立随机流之后
+   * （见 createWorld 里那段注释），15 个字段里只有 walls 1/36、initialItems 4/97、
+   * barrels 7/10、truck 和 startCampId 不同，树、仙人掌、矿脉、井、地标逐字节相同。
+   * 地形更是完全一致。
+   *
+   * 而绝大多数视图**每帧都从 simulation 重新摆**（syncBarrels 连卡车带油桶一起摆，
+   * syncItems 发现 kind 对不上会自己重建，狼/猎物/掉落各有清理循环），所以换掉引用
+   * 它们下一帧就归位。真正需要手动收拾的只有下面这几样 —— 它们的共同点是
+   * **只在事件发生的那一刻写一次，之后不再同步**。
+   */
+  resetRun(world: WorldDefinition, simulation: GameSimulation): void {
+    // 砍成树桩的树要长回来。felledTrees 只在砍倒那一刻写实例矩阵，不还原就一直是树桩。
+    // 趁 this.world 还是旧的先还原 —— 树在各营地之间是一样的，但别依赖这一点。
+    for (const id of this.felledTrees) this.placeTree(id, 1);
+    this.felledTrees.clear();
+
+    this.world = world;
+    this.simulation = simulation;
+
+    // 玩家放下的路障：syncStructures 只按当前结构补视图、从不删，
+    // 而新一局的结构 id 从头开始，不清就会有上一局的桩子挂在场上。
+    for (const view of this.structureViews.values()) this.scene.remove(view);
+    this.structureViews.clear();
+    this.barrierFlash.clear();
+
+    // 相机与过场回到开局：上一局若死在推镜或教学聚光灯里，这些值会留着。
+    this.cameraPanTarget = null;
+    this.cameraPanAnchor = null;
+    this.cameraPan = 0;
+    this.tutorialFocus = null;
+    this.tutorialLight = 0;
+    this.cameraShake = 0;
+    const player = simulation.player;
+    this.previousPlayerPosition.set(player.x, player.z);
+    this.cameraFocus.set(player.x, this.worldHeight(player.x, player.z), player.z);
+  }
 
   private buildGround(): THREE.Mesh {
     const size = this.world.size + 8;
@@ -2001,7 +2083,7 @@ export class GameRenderer {
         const log = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 1.65, 7), material);
         log.rotation.z = Math.PI / 2;
         log.position.z = (index - 0.5) * 0.38;
-        log.castShadow = true;
+        log.castShadow = !this.lowPower;
         group.add(log);
       }
       view = group;
@@ -2009,7 +2091,10 @@ export class GameRenderer {
       const group = new THREE.Group();
       const mesh = new THREE.Mesh(new THREE.DodecahedronGeometry(0.7, 0), makeMaterial(STONE_COLOR, 1));
       mesh.scale.set(2.15, 1.32, 1.7);
-      mesh.castShadow = true;
+      // 低功耗档：地上的枯木与石头不投影。它们贴地、影子只有一小片，
+      // 但场上有 97 件 —— 阴影相机 ±32 米内常驻十几二十个，每个都是深度 pass
+      // 里的一次 draw call。这是"看不见的开销"里最容易砍的一笔。
+      mesh.castShadow = !this.lowPower;
       group.add(mesh);
       view = group;
     }
@@ -2312,13 +2397,15 @@ export class GameRenderer {
       const hide = new THREE.Mesh(new THREE.CircleGeometry(0.62, 5), makeMaterial(0x7a4931, 1));
       hide.rotation.x = -Math.PI / 2;
       hide.scale.set(1.25, 0.82, 1);
-      hide.castShadow = true;
+      // 兽皮是一张贴地的圆片，影子和它自己基本重合 —— 低功耗档不投影，看不出来。
+      hide.castShadow = !this.lowPower;
       return hide;
     }
     const group = new THREE.Group();
     const meat = new THREE.Mesh(new THREE.DodecahedronGeometry(0.42, 0), makeMaterial(0x9e3f3d, 0.9));
     meat.scale.set(1.25, 0.65, 0.9);
-    meat.castShadow = true;
+    // 夜里一场仗能掉几十份肉皮牙，全在玩家脚边 —— 正好落在阴影相机里。
+    meat.castShadow = !this.lowPower;
     group.add(meat);
     const bone = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.82, 6), makeMaterial(0xd7c8ad, 1));
     bone.rotation.z = Math.PI / 2;

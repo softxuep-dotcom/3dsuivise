@@ -62,7 +62,8 @@ const LINE_COLORS: Record<string, string> = {
 const itemName = (kind: InventoryItemKind): string => t(`item.${kind}.name`);
 
 export class HudController {
-  private readonly simulation: GameSimulation;
+  /** 软重启会换掉这个引用，见 resetRun()。构造函数绑的那几个监听读的都是 this.simulation，跟着换。 */
+  private simulation: GameSimulation;
   private readonly hud = required<HTMLElement>("hud");
   private readonly intro = required<HTMLElement>("intro");
   private readonly gameOver = required<HTMLElement>("game-over");
@@ -235,6 +236,29 @@ export class HudController {
       this.simulation.craftCookedMeat();
       this.updateInventory();
     });
+  }
+
+  /**
+   * 软重启：换掉模拟层，收掉上一局留在屏幕上的东西。
+   *
+   * 不新建 HudController —— 构造函数往背包格、背包按钮、关闭键、建造键、烤肉键上
+   * 绑了固定监听，每重开一次就会再叠一层。换引用是安全的：那些闭包读的都是
+   * `this.simulation`。
+   */
+  resetRun(simulation: GameSimulation): void {
+    this.simulation = simulation;
+    this.hideReviveOffer();
+    this.gameOver.classList.add("hidden");
+    this.victory.classList.add("hidden");
+    this.closeInventory();
+    this.setPaused(false);
+    this.toast.classList.add("hidden");
+    this.toastTimer = 0;
+    // 两个搏动提示本来就是"每局第一次"的口径（见字段上的注释，它们不写 localStorage）,
+    // 所以新的一局要放回来。
+    this.attackHintUsed = false;
+    this.actionHintUsed = false;
+    this.refreshRecordsLine();
   }
 
   showGame(): void {

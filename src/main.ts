@@ -1,14 +1,14 @@
 import "./styles.css";
 import { applyStaticText, detectLocale, setLocale, t } from "./i18n";
 import { SynthAudio } from "./audio/SynthAudio";
-import { createWorld } from "./game/content/createWorld";
+import { createWorld, pickStartCamp } from "./game/content/createWorld";
 import { InputController } from "./game/input/InputController";
 import { GameSimulation } from "./game/simulation/GameSimulation";
 import { GameRenderer } from "./render/GameRenderer";
 import { HudController } from "./ui/HudController";
 import { NightIntro } from "./ui/NightIntro";
 import { TutorialStage } from "./ui/TutorialStage";
-import { loadDifficulty, saveDifficulty } from "./ui/Settings";
+import { bumpRunIndex, loadDifficulty, loadRunIndex, saveDifficulty } from "./ui/Settings";
 import { normalizeDifficulty } from "./game/simulation/difficulty";
 import { createPlatform } from "./platform";
 
@@ -62,7 +62,11 @@ async function bootstrap(): Promise<void> {
   setProgress(0.5, t("boot.generating"));
   await nextPaint();
 
-  const world = createWorld();
+  /*
+   * 首局用蓝图指定的营地，重开之后轮换到别的营地（连带换掉卡车落点）。
+   * 见 createWorld.pickStartCamp —— 为什么首局不能动，那里写着。
+   */
+  let world = createWorld(undefined, pickStartCamp(loadRunIndex()));
   if (import.meta.env.DEV) {
     const previewCampValue = new URLSearchParams(window.location.search).get("camp");
     if (previewCampValue !== null) {
@@ -74,7 +78,7 @@ async function bootstrap(): Promise<void> {
   }
   // 难度只在这里读一次 —— 换档要重开页面，见 difficulty.ts 顶部那段。
   const difficulty = loadDifficulty();
-  const simulation = new GameSimulation(world, difficulty);
+  let simulation = new GameSimulation(world, difficulty);
   if (import.meta.env.DEV && new URLSearchParams(window.location.search).get("night") === "1") {
     simulation.phase = "night";
     simulation.phaseTime = 105;
@@ -157,6 +161,9 @@ async function bootstrap(): Promise<void> {
   };
 
   let started = false;
+  /** 动物模型是否已到货。软重启建新 simulation 时要照着重新打开，见 softRestart。 */
+  let wolvesReady = false;
+  let crittersReady = false;
   let previousTime = performance.now();
   let hiddenAt = 0;
 
@@ -212,7 +219,8 @@ async function bootstrap(): Promise<void> {
    * 详见 ui/NightIntro.ts 的头注释。
    */
   const nightIntro = new NightIntro({
-    simulation,
+    // getter 而不是值：软重启会换掉 simulation，这里读的必须是当前那一个。
+    get simulation() { return simulation; },
     stage,
     spotlight: (target) => renderer.spotlightOn(target),
     focusCamera: (target) => renderer.focusOn(target),
@@ -284,14 +292,63 @@ async function bootstrap(): Promise<void> {
    *
    * 按钮点完立刻置灰，否则连点两下会叠两次广告请求。
    */
-  const restartWithBreak = async (button: HTMLElement | null): Promise<void> => {
+  /*
+   * 换难度要整页刷新。
+   *
+   * 狼的数值是生成时按难度算进去的，而难度在 bootstrap 开头只读一次
+   * （见 difficulty.ts 顶部）。这条路很少走，留着最保险的做法。
+   */
+  const reloadWithBreak = async (button: HTMLElement | null): Promise<void> => {
     if (button instanceof HTMLButtonElement) button.disabled = true;
+    bumpRunIndex();
     await platform.commercialBreak();
     window.location.reload();
   };
+
+  /*
+   * "再来一局"：软重启，不刷页。
+   *
+   * 平台录像显示长会话是**重开叠出来的**（有人 10 分钟开了 5、6 局），也就是说
+   * 重开这条路每两分钟就要走一次。原先它走的是 window.location.reload()：
+   * 重新解析主包、重下重解 646 KB 的 GLB、重建地形网格、重编译着色器，
+   * 还有开场那几次 nextPaint() 的 150 ms 兜底 —— 全部重来一遍。
+   *
+   * 现在只重建**每局的东西**：world 和 simulation。渲染器、地形、人物模型、
+   * 已编译的着色器、平台 SDK、音频上下文全部留着不动。
+   * 谁需要收拾什么，各自写在 renderer.resetRun / hud.resetRun / nightIntro.reset 里。
+   *
+   * `started` 要退回 false：Poki 要求 gameplayStart 必须直接发生在玩家输入的调用栈里，
+   * 所以新的一局同样要等他第一次真的动一下，跟刚打开页面时是同一条规矩。
+   */
+  const softRestart = async (button: HTMLElement | null): Promise<void> => {
+    if (button instanceof HTMLButtonElement) button.disabled = true;
+    bumpRunIndex();
+    await platform.commercialBreak();
+
+    world = createWorld(undefined, pickStartCamp(loadRunIndex()));
+    simulation = new GameSimulation(world, difficulty);
+    // 动物模型是开场之后才下的。已经到货的要在新的一局里重新打开，
+    // 否则重开之后整夜一只狗都不会来。
+    if (wolvesReady) simulation.enableWolves();
+    if (crittersReady) simulation.enableCritters();
+
+    renderer.resetRun(world, simulation);
+    hud.resetRun(simulation);
+    nightIntro.reset();
+    input.cancelMoveTarget();
+    started = false;
+    revivesLeft = 3;
+    previousTime = performance.now();
+
+    if (import.meta.env.DEV) {
+      Object.assign((window as unknown as { game: Record<string, unknown> }).game, { simulation, world });
+    }
+    if (button instanceof HTMLButtonElement) button.disabled = false;
+  };
+
   for (const id of ["restart-button", "victory-restart-button"]) {
     const button = document.getElementById(id);
-    button?.addEventListener("click", () => { void restartWithBreak(button); });
+    button?.addEventListener("click", () => { void softRestart(button); });
   }
   // 齿轮即暂停键：底排腾出来只放四个操作键，而暂停控件仍然看得见、点得到。
   document.getElementById("settings-button")?.addEventListener("click", () => hud.togglePause());
@@ -310,7 +367,7 @@ async function bootstrap(): Promise<void> {
       difficultyRestart?.classList.toggle("hidden", picked === difficulty);
     });
   }
-  difficultyRestart?.addEventListener("click", () => { void restartWithBreak(difficultyRestart); });
+  difficultyRestart?.addEventListener("click", () => { void reloadWithBreak(difficultyRestart); });
   document.getElementById("sound-button")?.addEventListener("click", async () => {
     await audio.unlock().catch(() => { /* 同上 */ });
     const enabled = audio.toggle();
@@ -378,8 +435,8 @@ async function bootstrap(): Promise<void> {
   // 哪个模型先到就只启用哪类种群，未下载成功的动物不会生成。
   requestAnimationFrame(() => {
     renderer.loadDeferredAnimalAssets((kind) => {
-      if (kind === "wolf") simulation.enableWolves();
-      else simulation.enableCritters();
+      if (kind === "wolf") { wolvesReady = true; simulation.enableWolves(); }
+      else { crittersReady = true; simulation.enableCritters(); }
     });
   });
 }

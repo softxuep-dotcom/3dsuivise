@@ -33,3 +33,32 @@ export function saveDifficulty(difficulty: Difficulty): void {
     // 存不下就算了：本局照常按选中的档跑，只是下次打开回到默认。
   }
 }
+
+/*
+ * 开局计数。只用来决定这一局落在哪座营地（见 createWorld.pickStartCamp）：
+ * 0 = 这台机器上的第一局，必须是设计好的那张图。
+ *
+ * 和难度、纪录一样静默降级 —— localStorage 在隐私模式和跨域 iframe（Poki）下
+ * 会直接抛。存不下的后果只是永远玩首局那张图，不影响可玩性。
+ */
+const RUN_KEY = "desert-survivor.runs.v1";
+
+export function loadRunIndex(): number {
+  try {
+    const raw = window.localStorage.getItem(RUN_KEY);
+    if (!raw) return 0;
+    const runs = (JSON.parse(raw) as { runs?: unknown })?.runs;
+    return typeof runs === "number" && Number.isInteger(runs) && runs > 0 ? runs : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** 点了"再来一局"才加一 —— 重开走的是整页刷新，计数得先落盘。 */
+export function bumpRunIndex(): void {
+  try {
+    window.localStorage.setItem(RUN_KEY, JSON.stringify({ runs: loadRunIndex() + 1 }));
+  } catch {
+    // 同上：存不下就一直是首局那张图。
+  }
+}

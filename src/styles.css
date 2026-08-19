@@ -499,10 +499,15 @@ button { font: inherit; }
  * 卡车的屏幕边缘指示器。
  * 用 translate(-50%,-50%) 把自己的中心对到算出来的那个点，箭头用 rotate 指向车。
  * pointer-events: none —— 它压在画面上，绝不能吃掉点击（那是移动指令）。
+ *
+ * z-index 4 < .bottom-right 的 5：指示器沿视口内缘走，车在右下方向时会正好压在
+ * 四颗操作键上，而那四颗是要按的、它只是要看的。两者同为 #hud 里的 absolute
+ * 子元素、同一个层叠上下文，所以这里比大小是有效的（幕布那次不生效是因为
+ * #hud 自己是 position: fixed，见文件末尾那段）。
  */
 .truck-pointer {
   position: absolute;
-  z-index: 6;
+  z-index: 4;
   display: grid;
   gap: 2px;
   place-items: center;
