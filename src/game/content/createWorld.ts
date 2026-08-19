@@ -1,5 +1,5 @@
 import { distance, mulberry32, normalize, TAU } from "../simulation/geometry";
-import { campGatePosition, campLocalToWorld, isTerrainWalkable, terrainSlopeAt } from "../terrain/TerrainModel";
+import { campGatePosition, campLocalToWorld, distanceToCampApproach, isTerrainWalkable, terrainSlopeAt } from "../terrain/TerrainModel";
 import type {
   CactusPatch,
   CampKind,
@@ -339,16 +339,47 @@ export function createWorld(seed = 71291): WorldDefinition {
   walls.push({ x: truck.x, z: truck.z, radius: TRUCK_RADIUS, kind: "landmark" });
   const barrels = placeBarrels(dens[0] ?? null, truck, camps, terrainWorld, walls, random);
 
+  /*
+   * 树现在能砍（每棵两份柴，见 GameSimulation 的 STAMINA_COST_CHOP 那段），
+   * 所以它们的位置从"随便撒"变成了一件有后果的事。
+   *
+   * 原先纯随机撒 18 棵，实测五座营地里有三座方圆 30 米一棵树都没有 ——
+   * 而柴火不再生、除出生营地外每座营地附近只有两三根枯木。也就是说
+   * 玩家一换营地就断燃料，砍树这条路对最需要它的那三座营地根本不存在。
+   *
+   * 现在分两批：每座营地先保底两棵（18~26 米，走得到但不至于长在门口），
+   * 其余按老规矩满图撒。
+   */
   const trees: TreeDefinition[] = [];
+  const addTree = (point: Vec2): void => {
+    trees.push({ id: trees.length, ...point, rotation: random() * TAU, scale: 0.75 + random() * 0.55 });
+    walls.push({ ...point, radius: 1.05, kind: "tree" });
+  };
+
+  for (const camp of camps) {
+    let placed = 0;
+    for (let guard = 0; guard < 60 && placed < 2; guard += 1) {
+      const angle = random() * TAU;
+      const radius = 18 + random() * 8;
+      const point = { x: camp.x + Math.cos(angle) * radius, z: camp.z + Math.sin(angle) * radius };
+      if (!awayFromCamps(point, camps, 3)) continue;
+      if (!isTerrainWalkable(terrainWorld, point) || terrainSlopeAt(terrainWorld, point) > 0.42) continue;
+      if (trees.some((tree) => distance(point, tree) < 7)) continue;
+      // 别长在坡道上 —— 那是营地唯一的进出口。
+      if (distanceToCampApproach(camp, point) < camp.approachWidth * 0.5 + 2) continue;
+      addTree(point);
+      placed += 1;
+    }
+  }
+
   let attempts = 0;
-  while (trees.length < 18 && attempts < 450) {
+  while (trees.length < 26 && attempts < 450) {
     attempts += 1;
     const point = { x: (random() - 0.5) * 192, z: (random() - 0.5) * 192 };
     if (!awayFromCamps(point, camps, 3)) continue;
     if (!isTerrainWalkable(terrainWorld, point) || terrainSlopeAt(terrainWorld, point) > 0.42) continue;
     if (trees.some((tree) => distance(point, tree) < 8)) continue;
-    trees.push({ id: trees.length, ...point, rotation: random() * TAU, scale: 0.75 + random() * 0.55 });
-    walls.push({ ...point, radius: 1.05, kind: "tree" });
+    addTree(point);
   }
 
   const initialItems: GroundItem[] = [];
@@ -393,8 +424,18 @@ export function createWorld(seed = 71291): WorldDefinition {
   addItem("wood", startCamp.x + 3.4, startCamp.z - 2.2);
   addItem("wood", startCamp.x - 3.8, startCamp.z - 1.7);
 
-  for (let id = 0; id < 68; id += 1) {
-    const kind: GroundItem["kind"] = random() < 0.72 ? "wood" : "stone";
+  /*
+   * 68 → 88 件，木头占比 0.72 → 0.60（石头从 ~19 块涨到 ~35 块）。
+   *
+   * 改这个是因为地图上"看着像石头、其实碰都碰不了"的东西太多了：光是装饰性的
+   * 卵石就有两百多颗（见 GameRenderer.buildGroundCover）。玩家分不出哪块能搬 ——
+   * 而能搬的那种是有用的：封营地缺口靠它，野狗会先去拆挡路的东西。
+   *
+   * 石头是**实体障碍**（isBlockingGroundItem 对未放置的石头也返回 true），
+   * 所以加的量要克制：35 块散在 220×220 上仍然很稀，狼群寻路的回归测试兜着。
+   */
+  for (let id = 0; id < 88; id += 1) {
+    const kind: GroundItem["kind"] = random() < 0.60 ? "wood" : "stone";
     let point = { x: 0, z: 0 };
     for (let guard = 0; guard < 30; guard += 1) {
       point = { x: (random() - 0.5) * 196, z: (random() - 0.5) * 196 };

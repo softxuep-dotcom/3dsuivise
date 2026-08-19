@@ -24,6 +24,31 @@
  * 那一步反而指不准。详见 styles.css 里 .tutorial-lit 那段。
  */
 
+/**
+ * 教学"播过没有"的标记。
+ *
+ * 原先住在 ui/Tutorial.ts 里，那一段开场教学被平台数据否掉之后整个删了
+ * （见 main.ts 里那段注释），这两个助手跟着搬到共用的舞台模块 ——
+ * 第一夜教学还要用它记自己播过没有。
+ *
+ * localStorage 在隐私模式 / 跨域 iframe 里会直接抛。教学是锦上添花，静默降级。
+ */
+export const readTutorialFlag = (key: string): boolean => {
+  try {
+    return window.localStorage.getItem(key) === "1";
+  } catch {
+    return false;
+  }
+};
+
+export const writeTutorialFlag = (key: string): void => {
+  try {
+    window.localStorage.setItem(key, "1");
+  } catch {
+    /* 存不下就算了，最多下次再播一遍 */
+  }
+};
+
 const required = <T extends Element>(id: string): T => {
   const element = document.getElementById(id);
   if (!element) throw new Error(`Missing element #${id}`);

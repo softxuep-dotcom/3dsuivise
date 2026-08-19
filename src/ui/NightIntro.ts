@@ -1,7 +1,7 @@
 import type { GameSimulation } from "../game/simulation/GameSimulation";
 import type { CampDefinition, GameEvent, LocalizedText, Vec2 } from "../game/simulation/types";
 import { t } from "../i18n";
-import { readTutorialFlag, writeTutorialFlag } from "./Tutorial";
+import { readTutorialFlag, writeTutorialFlag } from "./TutorialStage";
 import type { TutorialStage } from "./TutorialStage";
 
 /**
@@ -83,7 +83,6 @@ export interface NightIntroDeps {
   /** 临时改写"行动"键的显示；传 null 还原。 */
   setActionLabel: (hint: { action: "ignite"; text: LocalizedText } | null) => void;
   /** 舞台是不是正被开场教学占着。理论上不会撞（教学期间时钟停着，天黑不了）。 */
-  isStageBusy: () => boolean;
   /** 广告 / 暂停期间冻结计时。 */
   isTimerFrozen: () => boolean;
 }
@@ -174,7 +173,7 @@ export class NightIntro {
   }
 
   private start(): void {
-    if (this.running || this.deps.isStageBusy() || !NightIntro.shouldRun()) return;
+    if (this.running || !NightIntro.shouldRun()) return;
     const camp = this.findHomeCamp();
     if (!camp) return;
     this.camp = camp;

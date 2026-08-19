@@ -7,7 +7,6 @@ import { GameSimulation } from "./game/simulation/GameSimulation";
 import { GameRenderer } from "./render/GameRenderer";
 import { HudController } from "./ui/HudController";
 import { NightIntro } from "./ui/NightIntro";
-import { Tutorial } from "./ui/Tutorial";
 import { TutorialStage } from "./ui/TutorialStage";
 import { loadDifficulty, saveDifficulty } from "./ui/Settings";
 import { normalizeDifficulty } from "./game/simulation/difficulty";
@@ -176,11 +175,7 @@ async function bootstrap(): Promise<void> {
 
   const input = new InputController({
     onGameplayIntent: enterGame,
-    onAction: () => runGameplayAction(() => {
-      // 教学第三步只要求"按过这颗键"，不要求真捡到东西 —— 见 Tutorial 里那段。
-      tutorial.noteAction();
-      simulation.requestInteraction();
-    }),
+    onAction: () => runGameplayAction(() => simulation.requestInteraction()),
     onAttack: () => runGameplayAction(() => simulation.requestAttack()),
     onThermal: () => runGameplayAction(() => simulation.requestThermalAction()),
     onInventory: () => hud.toggleInventory(),
@@ -191,26 +186,23 @@ async function bootstrap(): Promise<void> {
   hud.setProjector((x, z) => renderer.worldToScreen(x, z));
 
   /*
-   * 开场教学。四个动词、一屏之内，详见 ui/Tutorial.ts 的头注释。
+   * 开场**没有**教学了。
    *
-   * 时钟闸在这里一开一关：教学期间 setTutorialHold(true)，五轴不掉、相位不走、
-   * 狗不动。**必须挡**，因为教学第一步教的就是移动，而移动本身会点亮时钟 ——
-   * 不挡的话，教学做得越完整，玩家在第一夜被咬死得越快。
+   * 曾经有过一段四步门禁式教学（停表 + 幕布 + 字幕 + 逐步放行）。平台数据把它否掉了：
+   * 11 场里 4 场活不过 6 秒 —— 那些人一个超时都没碰到，是被"开局先看一段演出"劝走的。
    *
-   * 放开的那一刻不主动开表，仍然等玩家的下一次移动（见 setTutorialHold 的注释）。
+   * 它教的东西并没有丢，只是换了载体：
+   *   出生点 6.3~7.8 米就有猎物、6.5 米有枯木（GameSimulation 的 TUTORIAL_PREY_* /
+   *   TUTORIAL_WOOD_*）—— "第一次命中 43.2 秒 → 0.6 秒"这个数字全部来自这里，
+   *   和字幕无关：玩家学会挥刀能打死东西，是因为脚边真有东西
+   *   四颗键上的键名角标（键鼠档）
+   *   "现在按这颗有用"的搏动（HudController.syncHintPulse）—— 零摩擦、时机精准、
+   *   用过一次就不再出现
+   *
+   * 于是第一帧就能玩，而这在这个平台上是硬道理。
    */
-  // 两段教学共用一块 DOM（压暗、亮洞、字幕、跳过），所以舞台只建一次。
+  // 第一夜教学要用这块 DOM（压暗、字幕、跳过）。
   const stage = new TutorialStage();
-  const tutorial = new Tutorial({
-    simulation,
-    stage,
-    spotlight: (target) => renderer.spotlightOn(target),
-    isInventoryOpen: () => hud.isInventoryOpen(),
-    // 广告和暂停要冻结教学计时；背包开着不算 —— 那正是最后一步要的状态。
-    isTimerFrozen: () => hud.isGameplayBlocked() && !hud.isInventoryOpen(),
-    onFinish: () => simulation.setTutorialHold(false),
-  });
-  if (Tutorial.shouldRun()) simulation.setTutorialHold(true);
 
   /*
    * 第一夜教学。入夜那一刻自己接管，不需要在这里安排时机 —— 它监听 phase 事件。
@@ -226,7 +218,6 @@ async function bootstrap(): Promise<void> {
     focusCamera: (target) => renderer.focusOn(target),
     setHold: (active) => simulation.setTutorialHold(active),
     setActionLabel: (hint) => hud.setActionOverride(hint),
-    isStageBusy: () => tutorial.active,
     isTimerFrozen: () => hud.isGameplayBlocked() && !hud.isInventoryOpen(),
   });
 
@@ -239,7 +230,7 @@ async function bootstrap(): Promise<void> {
      * 而 rAF 在页面不可见时**一帧都不跑**，光靠改 phaseTime 是推不动的。
      */
     Object.assign((window as unknown as { game: Record<string, unknown> }).game, {
-      renderer, tutorial, nightIntro,
+      renderer, nightIntro,
     });
   }
   // 点击移动走模拟层的流场，不走直线 —— 直线在这张有山脊的图上只有四成能走到。
@@ -350,7 +341,6 @@ async function bootstrap(): Promise<void> {
       for (const event of events) {
         audio.handle(event);
         hud.handle(event);
-        tutorial.handle(event);
         nightIntro.handle(event);
         if (event.type === "player-hit") renderer.impact(0.22);
         if (event.type === "wolf-hit") renderer.impact(0.09);
@@ -372,7 +362,6 @@ async function bootstrap(): Promise<void> {
       );
       hud.update(delta);
       // 教学走在 HUD 之后：它要读背包的开合状态，也要按最新的一帧投影去挖亮洞。
-      tutorial.update(delta);
       nightIntro.update(delta);
       renderer.render(delta);
     }
@@ -385,7 +374,6 @@ async function bootstrap(): Promise<void> {
   // 场景可以先展示，但 gameplayStart 与模拟层都必须等玩家第一次实际游戏输入。
   // HUD 已经提示“移动或拿起枯木，开始第一天”，无需重新加一层开始按钮。
   hud.showGame();
-  if (Tutorial.shouldRun()) tutorial.start();
   // 先把可玩的第一帧交给浏览器，再在后台下载动物；它们不再占开场进度条。
   // 哪个模型先到就只启用哪类种群，未下载成功的动物不会生成。
   requestAnimationFrame(() => {

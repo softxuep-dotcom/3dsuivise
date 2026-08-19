@@ -27,6 +27,9 @@ const ACTION_ICON: Record<InteractionHint["action"], string> = {
   feed: "feed",
   cactus: "juice",
   mine: "mine",
+  // 砍树暂时借用通用图标 —— 图集里没有斧头，而拿"采矿"（镐）去指一棵树更容易读错。
+  // 图集补上斧头之后把这里换掉即可，别的都不用动。
+  chop: "action",
   well: "water",
   load: "load",
   board: "drive",
@@ -90,6 +93,25 @@ export class HudController {
     ["hunger", required<HTMLElement>("meter-hunger")],
     ["warmth", required<HTMLElement>("warmth-meter")],
   ];
+  private readonly attackButton = required<HTMLButtonElement>("attack-button");
+  private readonly actionButton = required<HTMLButtonElement>("action-button");
+  /*
+   * "这颗键现在按有用" 的搏动提示，替掉了原来那段门禁式的开场教学。
+   *
+   * 为什么不是教学：教学是一道关 —— 它停表、盖幕布、按固定脚本走，而平台数据里
+   * 11 场有 4 场活不过 6 秒，那些人一个超时都没碰到就走了。搏动没有这些代价：
+   * 第一帧就能玩，提示只在"现在按有用"的那一刻出现，用过一次就再也不出现。
+   *
+   * 两颗键的处境本来就不一样：
+   *   行动键  走近可交互物时**已经**会换图标（拿起/添柴/点燃…）并冒出提示文字，
+   *           缺的只是让人往那儿瞟一眼
+   *   攻击键  从头到尾一个样 —— 眼前有没有东西它都不变。这才是真正的缺口
+   *
+   * 只记在这一局里，不写 localStorage：它本来就在玩家第一次打中 / 第一次拾取后
+   * 立刻停掉（通常几秒内），为它加一个存储键换来的是一个"没显示"却极难查的失败模式。
+   */
+  private attackHintUsed = false;
+  private actionHintUsed = false;
   private readonly conditionBadge = required<HTMLElement>("condition-badge");
   private readonly drainNote = required<HTMLElement>("drain-note");
   private readonly huntProgress = required<HTMLElement>("hunt-progress");
@@ -415,6 +437,22 @@ export class HudController {
    * 喝水同时 +水 −体温，两个数会同时飘起来 —— 那一眼就是这个游戏的核心取舍：
    * 补水要付体温的账。这件事讲一百遍不如让他自己看见一次。
    */
+  /**
+   * 让"现在按有用"的那颗键搏动一下。
+   *
+   * 教学期间（actionOverride 非空，第一夜教学正指着某颗键）一律不搏动 ——
+   * 那时已经有一盏聚光灯和一行字在说同一件事，再加一层只会打架。
+   */
+  private syncHintPulse(hint: InteractionHint): void {
+    const teaching = this.actionOverride !== null;
+    const attack = !teaching && !this.attackHintUsed && this.simulation.running
+      && this.simulation.hasAttackTargetInRange();
+    const action = !teaching && !this.actionHintUsed && this.simulation.running
+      && hint.action !== "none";
+    this.attackButton.classList.toggle("hint-pulse", attack);
+    this.actionButton.classList.toggle("hint-pulse", action);
+  }
+
   private flashNourish(delta: { health: number; water: number; hunger: number; warmth: number }): void {
     for (const [key, meter] of this.nourishMeters) {
       const amount = delta[key];
@@ -495,6 +533,7 @@ export class HudController {
 
     const hint = this.actionOverride ?? this.simulation.getInteractionHint();
     const touchLayout = matchMedia("(pointer: coarse)").matches || window.innerWidth <= 760;
+    this.syncHintPulse(hint);
     this.actionIcon.dataset.icon = ACTION_ICON[hint.action];
     this.actionLabel.textContent = t(`action.${hint.action}`);
     if (hint.action === "none") {
@@ -578,6 +617,10 @@ export class HudController {
   }
 
   handle(event: GameEvent): void {
+    // 判据是"打中过"而不是"按过"：挥空不说明他知道这颗键干什么用。
+    if (event.type === "critter-hit" || event.type === "wolf-hit") this.attackHintUsed = true;
+    // 拾取和添柴都算学会了行动键 —— 它们是这颗键最早能做到的两件事。
+    if (event.type === "pickup" || event.type === "feed-fire") this.actionHintUsed = true;
     if (event.type === "nourish") this.flashNourish(event);
     if (event.type === "message") this.showToast(t(event.key, event.params), 3.1);
     if (event.type === "phase") {

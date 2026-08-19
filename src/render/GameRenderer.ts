@@ -313,6 +313,10 @@ export class GameRenderer {
   private currentPlayerAnimation = "";
   private readonly campViews = new Map<number, CampView>();
   private readonly itemViews = new Map<number, THREE.Object3D>();
+  private treeTrunks: THREE.InstancedMesh | null = null;
+  private treeBranches: THREE.InstancedMesh | null = null;
+  /** 已经变成树桩的树。只记 id，用来避免每帧重写矩阵。 */
+  private readonly felledTrees = new Set<number>();
   /** 路障挨打后的闪光余量（秒），按物品 id 记。 */
   private readonly barrierFlash = new Map<number, number>();
   private readonly cactusViews = new Map<number, THREE.Object3D>();
@@ -467,6 +471,7 @@ export class GameRenderer {
     this.syncBarrels();
     this.syncCacti();
     this.syncIronNodes();
+    this.syncTrees();
     this.syncWells(delta);
     this.syncStructures();
     this.syncCritters(delta);
@@ -755,6 +760,12 @@ export class GameRenderer {
     this.scene.add(mesh);
   }
 
+  /**
+   * 树。树干和树冠各一个 InstancedMesh —— 十八棵树共两次 draw call。
+   *
+   * 砍空之后不删实例，只把它重新摆成一截树桩（见 syncTrees）：碰撞体在 walls 里
+   * 从建好就不再变，所以"砍倒的树还挡着路"是免费的，而实例数固定也省掉了重建网格。
+   */
   private buildTrees(): void {
     const trunkGeometry = new THREE.CylinderGeometry(0.22, 0.4, 3.4, 6);
     const branchGeometry = new THREE.ConeGeometry(1.25, 3.5, 7);
@@ -762,24 +773,56 @@ export class GameRenderer {
     const branchMaterial = makeMaterial(0x8a7550, 1);
     const trunks = new THREE.InstancedMesh(trunkGeometry, trunkMaterial, this.world.trees.length);
     const branches = new THREE.InstancedMesh(branchGeometry, branchMaterial, this.world.trees.length);
-    const matrix = new THREE.Matrix4();
-    const rotation = new THREE.Quaternion();
-    const scale = new THREE.Vector3();
-    const position = new THREE.Vector3();
-    this.world.trees.forEach((tree, index) => {
-      const terrainY = this.worldHeight(tree.x, tree.z);
-      position.set(tree.x, terrainY + 1.65 * tree.scale, tree.z);
-      rotation.setFromAxisAngle(new THREE.Vector3(0, 1, 0), tree.rotation);
-      scale.setScalar(tree.scale);
-      matrix.compose(position, rotation, scale);
-      trunks.setMatrixAt(index, matrix);
-      position.y = terrainY + 3.55 * tree.scale;
-      matrix.compose(position, rotation, scale);
-      branches.setMatrixAt(index, matrix);
-    });
+    trunks.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    branches.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     trunks.castShadow = true;
     branches.castShadow = true;
+    this.treeTrunks = trunks;
+    this.treeBranches = branches;
+    this.world.trees.forEach((_, index) => this.placeTree(index, 1));
     this.scene.add(trunks, branches);
+  }
+
+  /**
+   * 把第 index 棵树摆成给定的"完整度"：1 是整棵，0 是一截树桩。
+   *
+   * 树桩做法是把树干压到两成高、树冠缩到零 —— 缩到零的实例仍然会被提交，
+   * 但零体积不产生像素，比维护一份"哪些实例还活着"的映射简单得多。
+   */
+  private placeTree(index: number, fullness: number): void {
+    const tree = this.world.trees[index];
+    if (!tree || !this.treeTrunks || !this.treeBranches) return;
+    const matrix = new THREE.Matrix4();
+    const rotation = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), tree.rotation);
+    const terrainY = this.worldHeight(tree.x, tree.z);
+    const position = new THREE.Vector3();
+    const scale = new THREE.Vector3();
+
+    // 树干：整棵是原高，树桩压到 0.2 —— 还看得出是根桩子，不至于矮到像块石头。
+    const trunkScaleY = fullness > 0 ? 1 : 0.2;
+    position.set(tree.x, terrainY + 1.65 * tree.scale * trunkScaleY, tree.z);
+    scale.set(tree.scale, tree.scale * trunkScaleY, tree.scale);
+    matrix.compose(position, rotation, scale);
+    this.treeTrunks.setMatrixAt(index, matrix);
+    this.treeTrunks.instanceMatrix.needsUpdate = true;
+
+    // 树冠：砍空就没了。
+    position.set(tree.x, terrainY + 3.55 * tree.scale, tree.z);
+    scale.setScalar(fullness > 0 ? tree.scale : 0);
+    matrix.compose(position, rotation, scale);
+    this.treeBranches.setMatrixAt(index, matrix);
+    this.treeBranches.instanceMatrix.needsUpdate = true;
+  }
+
+  /** 每帧对一遍：砍空的树该是树桩。只在状态真的变了时才写矩阵。 */
+  private syncTrees(): void {
+    for (const tree of this.simulation.trees) {
+      const felled = tree.wood <= 0;
+      if (this.felledTrees.has(tree.id) === felled) continue;
+      if (felled) this.felledTrees.add(tree.id);
+      else this.felledTrees.delete(tree.id);
+      this.placeTree(tree.id, felled ? 0 : 1);
+    }
   }
 
   private buildGroundCover(): void {
@@ -803,7 +846,14 @@ export class GameRenderer {
 
     const grassPoints = collect(760, 0.5, 0.62);
     const heathPoints = collect(210, 0.42, 0.88);
-    const pebblePoints = collect(260, 0.62, -0.18);
+    /*
+     * 卵石 260 → 110。
+     *
+     * 草和灌木没人会误会，卵石会：它是全场唯一"长得像可搬石头、却碰都碰不了"的
+     * 东西，而真正能搬的石头只有三十几块。两百多颗假石头混在里面，等于把那三十几块
+     * 真的藏起来了。砍掉一半多，地表纹理还在，误导少一大半。
+     */
+    const pebblePoints = collect(110, 0.62, -0.18);
     const grass = new THREE.InstancedMesh(
       this.createGrassTuftGeometry(),
       new THREE.MeshStandardMaterial({ color: 0x9c8a5a, roughness: 1, side: THREE.DoubleSide }),
@@ -1113,29 +1163,73 @@ export class GameRenderer {
     this.playerGroup.visible = !this.simulation.isDeparting();
   }
 
+  /**
+   * 铁矿脉：一丛**立起来的**深色棱柱 + 亮橙的矿脉。
+   *
+   * 改之前它和地上的可搬石头几乎分不出来 —— 两个都是压扁的十二面体，
+   * 差别只有色调，加三颗半径 0.24 的小疙瘩。而相机拉近之后角色才占屏高 13%，
+   * 那三颗疙瘩在实际尺寸下等于不存在。
+   *
+   * 所以这一版把差别做在**剪影**上，不做在颜色上：
+   *
+   *   可搬石头   压扁的圆卵石   高 ~0.9   横向铺开（scale 2.15 × 1.32 × 1.7）
+   *   铁矿脉     竖起的尖棱柱   高 ~2.0   向上收拢，四根朝外倾斜
+   *
+   * 一个趴着、一个立着，一眼就分得开，不用凑近看颜色。矿脉本身也放大到 0.34
+   * 并调高自发光 —— 它是"这块能挖"的唯一记号，得在十几米外读得出来。
+   */
   private buildIronNodes(): void {
-    const rockMaterial = makeMaterial(0x7d6a52, 1);
+    const rockMaterial = makeMaterial(0x4a4038, 1);
     const oreMaterial = new THREE.MeshStandardMaterial({
-      color: 0xa26a45,
-      emissive: 0x32170b,
-      emissiveIntensity: 0.65,
-      roughness: 0.72,
+      color: 0xd08a4a,
+      emissive: 0x6b2f10,
+      emissiveIntensity: 0.9,
+      roughness: 0.62,
       flatShading: true,
     });
     for (const node of this.simulation.ironNodes) {
       const group = new THREE.Group();
       group.position.set(node.x, this.worldHeight(node.x, node.z), node.z);
       group.rotation.y = node.rotation;
-      const base = new THREE.Mesh(new THREE.DodecahedronGeometry(0.88, 0), rockMaterial);
-      base.position.y = 0.58;
-      base.scale.set(1.25, 0.76, 1);
+
+      // 底座压得很扁，只是让棱柱有个"从地里长出来"的根，不参与剪影。
+      const base = new THREE.Mesh(new THREE.DodecahedronGeometry(0.72, 0), rockMaterial);
+      base.position.y = 0.22;
+      base.scale.set(1.15, 0.42, 1.05);
       base.castShadow = true;
       group.add(base);
+
+      // 四根高矮不一的尖棱柱，向外倾斜 —— 参差和倾角是"矿脉"读感的全部来源，
+      // 四根一样高一样直的话就变成一座塔了。
+      const shards: Array<[number, number, number, number]> = [
+        // [绕 Y 的方位, 离心距, 高度, 外倾角]
+        [0.0, 0.0, 2.05, 0.0],
+        [1.9, 0.46, 1.42, 0.26],
+        [3.6, 0.52, 1.68, 0.19],
+        [5.2, 0.40, 1.15, 0.31],
+      ];
+      for (const [angle, radius, height, tilt] of shards) {
+        const shard = new THREE.Mesh(
+          // 上细下粗的五棱柱：顶端收到 0.05，剪影是尖的。
+          new THREE.CylinderGeometry(0.05, 0.3, height, 5),
+          rockMaterial,
+        );
+        shard.position.set(Math.cos(angle) * radius, 0.3 + height / 2, Math.sin(angle) * radius);
+        shard.rotation.z = Math.cos(angle) * tilt;
+        shard.rotation.x = -Math.sin(angle) * tilt;
+        shard.castShadow = true;
+        group.add(shard);
+      }
+
+      // 矿脉：贴在棱柱根部朝外的一圈，三颗，比原先大四成、自发光更强。
       for (let index = 0; index < 3; index += 1) {
-        const ore = new THREE.Mesh(new THREE.OctahedronGeometry(0.24, 0), oreMaterial);
-        ore.position.set(-0.42 + index * 0.4, 0.78 + (index % 2) * 0.18, 0.48 - index * 0.15);
+        const angle = 0.7 + index * 2.1;
+        const ore = new THREE.Mesh(new THREE.OctahedronGeometry(0.34, 0), oreMaterial);
+        ore.position.set(Math.cos(angle) * 0.52, 0.5 + (index % 2) * 0.42, Math.sin(angle) * 0.52);
+        ore.rotation.set(index * 0.7, index * 1.1, index * 0.4);
         group.add(ore);
       }
+
       this.scene.add(group);
       this.ironViews.set(node.id, group);
     }

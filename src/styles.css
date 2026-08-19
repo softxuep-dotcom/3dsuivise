@@ -335,7 +335,7 @@ button { font: inherit; }
 }
 
 /* 攻击键大一圈，角标跟着往外挪一点，别压在连击弧上。 */
-.round-button.attack .key-hint { top: -2px; right: -2px; }
+.round-button.action .key-hint { top: -2px; right: -2px; }
 
 @media (pointer: fine) {
   .key-hint { display: block; }
@@ -417,10 +417,16 @@ button { font: inherit; }
 
 .utility-button .hud-sprite,
 .round-button .hud-sprite { width: 32px; height: 32px; }
-.round-button.attack .hud-sprite { width: 38px; height: 38px; }
+.round-button.attack .hud-sprite { width: 35px; height: 35px; }
 
-.round-button.action { background: rgba(48, 110, 127, .7); }
-.round-button.attack { width: 78px; height: 78px; background: rgba(147, 62, 48, .72); }
+/*
+ * 三档尺寸：主位（行动 78）> 攻击（72）> 背包 / 体温（68）。
+ * 攻击只让出了 6px 和那个角，仍然明显比另外两颗大 —— 它没有被降级，
+ * 只是不再是最优先的那一颗。
+ */
+.round-button.action { width: 78px; height: 78px; background: rgba(48, 110, 127, .7); }
+.round-button.attack { width: 72px; height: 72px; background: rgba(147, 62, 48, .72); }
+.round-button.action .hud-sprite { width: 38px; height: 38px; }
 
 /*
  * 圆里能放字的宽度比外接方框窄得多（68px 的圆在标签那一行只剩 ~52px），
@@ -469,8 +475,22 @@ button { font: inherit; }
 
 #thermal-button  { right: calc(var(--arc-r) * 0.961); bottom: calc(var(--arc-r) * 0.276); }
 #backpack-button { right: calc(var(--arc-r) * 0.669); bottom: calc(var(--arc-r) * 0.743); }
-#action-button   { right: calc(var(--arc-r) * 0.174); bottom: calc(var(--arc-r) * 0.985); }
-#attack-button   { right: calc(var(--arc-r) * 0.257); bottom: calc(var(--arc-r) * 0.257); }
+/*
+ * 拇指落点（弧内侧那个角）给**行动键**，攻击退到弧上。
+ *
+ * 原来是反过来的，理由是"攻击是反射动作，得在拇指下"。数据否掉了它：
+ * 两轮测试 20 个人里只有 3~4 个捡过柴，带教学那轮也没好转 ——
+ * 而柴是唯一决定能不能活过第一夜的东西。
+ *
+ * 而且"攻击要反射"这条在**决定生死的那段时间里根本不成立**：第一天白天
+ * 野狼只有被激怒才追，攻击一点都不紧急；真正紧急的是把柴捡回来生火。
+ * 等到夜里攻击变紧急时，玩家已经玩过一整天，那时按哪颗键早就是肌肉记忆了。
+ *
+ * 误触的代价也是不对称的：行动键在什么都够不着时按下去毫无反应，
+ * 而攻击误触要扣劳力、还可能惊动附近的狗。放在拇指下的应该是更安全的那颗。
+ */
+#action-button   { right: calc(var(--arc-r) * 0.257); bottom: calc(var(--arc-r) * 0.257); }
+#attack-button   { right: calc(var(--arc-r) * 0.174); bottom: calc(var(--arc-r) * 0.985); }
 
 .round-button:active,
 .utility-button:active { transform: translate(50%, 50%) scale(.94); filter: brightness(1.2); }
@@ -1328,7 +1348,8 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
   .joystick i { top: 28px; left: 28px; width: 38px; height: 38px; }
   .utility-button,
   .round-button { width: 64px; height: 64px; }
-  .round-button.attack { width: 72px; height: 72px; }
+  .round-button.action { width: 72px; height: 72px; }
+  .round-button.attack { width: 68px; height: 68px; }
   .backpack-card { width: min(620px, 86vw); padding: 18px 22px; }
   .inventory-slot { min-height: 68px; }
 }
@@ -1359,7 +1380,8 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
   .meter { margin-bottom: 2px; font-size: 8px; }
   .utility-button,
   .round-button { width: 56px; height: 56px; }
-  .round-button.attack { width: 64px; height: 64px; }
+  .round-button.action { width: 64px; height: 64px; }
+  .round-button.attack { width: 60px; height: 60px; }
   /* 键缩到 56px，图标和标签也得跟着收，否则字会顶到圆边。 */
   .utility-button .hud-sprite,
   .round-button .hud-sprite { width: 26px; height: 26px; }
@@ -1627,6 +1649,23 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
 #hud.tutorial-dim .prompt,
 #hud.tutorial-dim .bottom-right button,
 #hud.tutorial-dim .joystick { transition: opacity .28s ease; }
+
+/*
+ * "这颗键现在按有用"。替掉了门禁式的开场教学，理由见 HudController 里 attackHintUsed 那段。
+ *
+ * 比 .tutorial-lit 轻一档：那个是教学在点名（配聚光灯和字幕），这个只是让眼睛
+ * 往那儿瞟一下，玩家该能忽略它继续做自己的事。所以只有一圈呼吸的描边，
+ * 不放大、不改底色、不遮挡。
+ */
+.hint-pulse { animation: hint-pulse 1.35s ease-in-out infinite; }
+
+@keyframes hint-pulse {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(255, 214, 170, .5), 0 0 9px 1px rgba(255, 214, 170, .2); }
+  50% { box-shadow: 0 0 0 2px rgba(255, 214, 170, .95), 0 0 18px 5px rgba(255, 214, 170, .42); }
+}
+
+/* 教学点名时它自己让位 —— 两层光叠在同一颗键上只会互相打架。 */
+.tutorial-lit.hint-pulse { animation: tutorial-key-glow 1.5s ease-in-out infinite; }
 
 .tutorial-lit {
   animation: tutorial-key-glow 1.5s ease-in-out infinite;

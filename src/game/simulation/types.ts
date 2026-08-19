@@ -205,6 +205,19 @@ export interface TreeDefinition extends Vec2 {
   scale: number;
 }
 
+/**
+ * 树的运行时状态。
+ *
+ * 砍空之后**树桩仍然留在 walls 里**（那份碰撞在 createWorld 建好就不再变），
+ * 所以砍树不改变任何寻路和碰撞 —— 变的只有外观和这里的储量。
+ * 这也让"砍倒的树还挡着路"成立，那是它作为掩体的价值。
+ */
+export interface TreeState extends Vec2 {
+  id: number;
+  /** 还剩几份柴。归零后只剩一截树桩。 */
+  wood: number;
+}
+
 export interface HillDefinition extends Vec2 {
   id: number;
   scaleX: number;
@@ -527,7 +540,7 @@ export type GameEvent =
   | { type: "game-over" };
 
 export interface InteractionHint {
-  action: "pickup" | "drop" | "ignite" | "feed" | "cactus" | "mine" | "well" | "load" | "board" | "none";
+  action: "pickup" | "drop" | "ignite" | "feed" | "cactus" | "mine" | "chop" | "well" | "load" | "board" | "none";
   text: LocalizedText;
 }
 

@@ -33,6 +33,7 @@ import type {
   WellState,
   PlacedStructure,
   StructureKind,
+  TreeState,
   InventoryItemKind,
   InventoryStack,
   Phase,
@@ -531,12 +532,36 @@ const STAMINA_ACTIVE_REGEN = 1.1; // 移动中：仍只有休息的 1/7，但走
 const STAMINA_COST_CACTUS = 10;
 const STAMINA_COST_MINE = 15;
 /**
- * 捡一根枯木 30 劳力。
- * 木头进背包之后，原来"双手被占、一次一根、不能攻击"这三条约束同时消失，
- * 木头会变成免费无限。基准版本用采集成本接住稀缺性（砍一根 150 劳力 / 满值 225，
- * 一管只够 1.5 根），我们按量程缩到 30 —— 一管三根，而一夜要烧两根。
+ * 砍树 30，是捡柴（12）的两倍半。
+ *
+ * 这个价差就是"柴从哪来"的全部经济：地上现成的便宜、砍树贵。玩家自然会先捡光
+ * 触手可及的，等那些没了再去砍树 —— 而砍树本来就该是后期的路，它是唯一
+ * 在营地附近保底存在的燃料（每座营地保底两棵，见 createWorld）。
  */
-const STAMINA_COST_WOOD = 30;
+const STAMINA_COST_CHOP = 30;
+/** 一棵树砍两次砍空。 */
+const TREE_WOOD = 2;
+/** 砍树的够得着距离。比铁矿脉（2.8）远一点：树的树冠本来就占地方。 */
+const TREE_REACH = 3.2;
+/**
+ * 捡一根枯木 12 劳力（原先 30）。
+ *
+ * 30 是全游戏最贵的常规动作 —— 等于砍倒一整棵树、两倍挖矿、三倍割仙人掌，
+ * 而它只是弯腰捡一根棍子。一管劳力只够捡三根，提示上还明晃晃写着"劳力 30/根"：
+ * 少数真去读提示的玩家，读到的是"这事很贵"。
+ *
+ * 实测两轮，20 个人里只有 3~4 个捡过柴，而带教学那一轮也没好转 ——
+ * 也就是说这不是"不知道怎么捡"，是这个动作本身在劝退。而柴是唯一决定
+ * 能不能活过第一夜的东西。
+ *
+ * 原注释给 30 的理由是"木头进背包后会变成免费无限，用采集成本接住稀缺性"。
+ * 那条理由现在不成立了：**稀缺已经由存量兜住** —— 全图 56 根地上柴 + 26 棵树
+ * 各两份，一根都不再生。再收 30 劳力是重复收税。
+ *
+ * 现在的价差改成表达"这根柴好不好拿"：地上现成的 12，砍树 30。
+ * 于是玩家会先把地上的捡光，再开始考虑砍树 —— 这正是想要的顺序。
+ */
+const STAMINA_COST_WOOD = 12;
 /**
  * 随身枯木每根 +2 攻击，最多两根生效。
  * 沿用「一块木头也能当武器使」的设计 —— 背包里的材料同时是个边际武器，
@@ -617,6 +642,14 @@ export class GameSimulation {
   readonly items: GroundItem[];
   readonly cacti: CactusPatch[];
   readonly ironNodes: IronNode[];
+  /**
+   * 可砍的树。
+   *
+   * 加这条是因为地图上柴火**不再生、而且分布极不均**：全图 56 根枯木看着够烧
+   * 二十多夜，但除出生营地外每座营地方圆 30 米只有 2~3 根 —— 玩家一换营地就没燃料，
+   * 而火是活过夜晚的唯一条件。18 棵树原先只有碰撞、零交互，长得却正是柴火本身。
+   */
+  readonly trees: TreeState[];
   readonly wells: WellState[];
   readonly structures: PlacedStructure[] = [];
   readonly player: PlayerState;
@@ -740,6 +773,7 @@ export class GameSimulation {
     this.items = world.initialItems.map((item) => ({ ...item }));
     this.cacti = world.initialCacti.map((patch) => ({ ...patch }));
     this.ironNodes = world.ironNodes.map((node) => ({ ...node }));
+    this.trees = world.trees.map((tree) => ({ id: tree.id, x: tree.x, z: tree.z, wood: TREE_WOOD }));
     this.wells = world.wells.map((well) => ({ id: well.id, charges: WELL_CHARGES_INITIAL, refillAt: 0 }));
     this.barrels = world.barrels.map((barrel) => ({
       id: barrel.id,
@@ -1140,6 +1174,20 @@ export class GameSimulation {
       return;
     }
 
+    const tree = this.findNearestTree(TREE_REACH);
+    if (tree) {
+      if (!this.spendStamina(STAMINA_COST_CHOP, "labour.chop")) return;
+      if (!this.addInventory("wood", 1)) {
+        // 劳力要退回去 —— 背包满时这一下什么也没发生，不该收钱。
+        this.player.stamina = Math.min(this.player.maxStamina, this.player.stamina + STAMINA_COST_CHOP);
+        this.events.push({ type: "message", key: "msg.2" });
+        return;
+      }
+      tree.wood -= 1;
+      this.events.push({ type: "pickup", kind: "wood" });
+      return;
+    }
+
     const well = this.findNearestWell(WELL_REACH);
     if (well) {
       this.beginWaterDraw(well);
@@ -1231,6 +1279,8 @@ export class GameSimulation {
     if (cactus && distance(this.player, cactus) < hearthDistance) return true;
     const iron = this.findNearestIron(2.8);
     if (iron && distance(this.player, iron) < hearthDistance) return true;
+    const tree = this.findNearestTree(TREE_REACH);
+    if (tree && distance(this.player, tree) < hearthDistance) return true;
     const well = this.findNearestWell(WELL_REACH);
     if (well && distance(this.player, this.world.wells[well.id]) < hearthDistance) return true;
     return false;
@@ -1860,6 +1910,25 @@ export class GameSimulation {
     return this.player.inventory.reduce((total, stack) => total + (stack?.kind === kind ? stack.count : 0), 0);
   }
 
+  /**
+   * 攻击距离内有没有能打的东西（活猎物或活狗）。
+   *
+   * 给 HUD 的"攻击键搏动"用：这颗键**从来没有上下文反馈** —— 行动键走近可交互物
+   * 会换图标、还会冒出提示文字，攻击键则不管眼前有没有东西都长一个样。
+   * 触屏玩家面对的是四颗没有键名的圆键（key-hint 角标只在 pointer: fine 显示），
+   * 于是"哪颗是攻击"只能靠试。
+   *
+   * 判据用**距离**不用扇形：扇形要求玩家已经对准，而这条提示的意义正是
+   * 告诉还没上手的人"现在按这颗有用"。扛着桶时打不了架，那时不提示。
+   */
+  hasAttackTargetInRange(): boolean {
+    if (this.player.carrying) return false;
+    const range = WEAPON_STATS[this.player.weapon].range;
+    const rangeSq = range * range;
+    return this.wolves.some((wolf) => wolf.mode !== "dead" && distanceSquared(this.player, wolf) <= rangeSq)
+      || this.critters.some((critter) => critter.mode !== "dead" && distanceSquared(this.player, critter) <= rangeSq);
+  }
+
   getInteractionHint(): InteractionHint {
     if (this.departTimer > 0) return { action: "none", text: loc("hint.none") };
     // 与 requestInteraction 保持一致：水分告急时，仙人掌优先、其次找井。
@@ -1904,6 +1973,9 @@ export class GameSimulation {
     if (structure) return { action: "pickup", text: loc("hint.liftStake") };
     if (this.findNearestCactus(2.7)) return { action: "cactus", text: loc("hint.cactus", { cost: STAMINA_COST_CACTUS }) };
     if (this.findNearestIron(2.8)) return { action: "mine", text: loc("hint.mine", { cost: STAMINA_COST_MINE }) };
+    if (this.findNearestTree(TREE_REACH)) {
+      return { action: "chop", text: loc("hint.chop", { cost: STAMINA_COST_CHOP }) };
+    }
     const well = this.findNearestWell(WELL_REACH);
     if (well) return { action: "well", text: loc("hint.well", { cost: STAMINA_COST_DRAW, left: well.charges }) };
     return { action: "none", text: loc("hint.none") };
@@ -3041,6 +3113,21 @@ export class GameSimulation {
       const value = distanceSquared(this.player, patch);
       if (value < best) {
         nearest = patch;
+        best = value;
+      }
+    }
+    return nearest;
+  }
+
+  /** 射程内还有柴的树；砍空的树桩不再返回。 */
+  private findNearestTree(maxDistance: number): TreeState | null {
+    let nearest: TreeState | null = null;
+    let best = maxDistance * maxDistance;
+    for (const tree of this.trees) {
+      if (tree.wood <= 0) continue;
+      const value = distanceSquared(this.player, tree);
+      if (value < best) {
+        nearest = tree;
         best = value;
       }
     }
