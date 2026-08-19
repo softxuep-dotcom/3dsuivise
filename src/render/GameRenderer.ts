@@ -247,6 +247,25 @@ const wolfScale = (wolf: WolfState): number => (
   wolf.kind === "elite" ? 2.7 : wolf.kind === "large" ? 1.7 : 1.15
 );
 
+/*
+ * 昼夜光照配色表。**改这里就是改整个游戏的气质**，所以摊开写成常量而不是散在函数里。
+ *
+ * 白天走"暖主光 + 冷填充"，夜晚走"冷到底 + 一盏篝火"。见 syncDayNight 里那段。
+ * 想回到 1.0.14 的全暖白天：DAY_SKY=d8bf8d、DAY_HEMI_SKY=ffeec4、
+ * DAY_HEMI_GROUND=8a6a44、DAY_HEMI_INTENSITY=2.2、DAY_SUN_INTENSITY=3.2。
+ */
+const DAY_SKY = new THREE.Color(0xc9c3b4);
+const DAY_HEMI_SKY = new THREE.Color(0xcdd8e6);
+const DAY_HEMI_GROUND = new THREE.Color(0x8a7250);
+const DAY_SUN = new THREE.Color(0xfff0cc);
+const DAY_HEMI_INTENSITY = 1.15;
+const DAY_SUN_INTENSITY = 4.1;
+
+const NIGHT_SKY = new THREE.Color(0x2c3d5c);
+const NIGHT_HEMI_SKY = new THREE.Color(0x8fa6cf);
+const NIGHT_HEMI_GROUND = new THREE.Color(0x3a4356);
+const NIGHT_SUN = new THREE.Color(0xa8bce0);
+
 /** 腹面与口鼻的浅色。跟主色同色相、抬明度，模型自带的 Main_Light 槽正好吃这个。 */
 const wolfBellyColor = (wolf: WolfState): number => {
   if (wolf.kind === "elite") return 0x7d5a3f;
@@ -395,11 +414,11 @@ export class GameRenderer {
     this.bindContextRecovery();
 
     // 荒漠白天：泛黄的尘霾天空，地面反照强烈。
-    this.scene.background = new THREE.Color(0xd8bf8d);
-    this.scene.fog = new THREE.FogExp2(0xcbae7d, 0.0075);
-    this.hemisphere = new THREE.HemisphereLight(0xffeec4, 0x8a6a44, 2.2);
+    this.scene.background = DAY_SKY.clone();
+    this.scene.fog = new THREE.FogExp2(DAY_SKY.getHex(), 0.0075);
+    this.hemisphere = new THREE.HemisphereLight(DAY_HEMI_SKY, DAY_HEMI_GROUND, DAY_HEMI_INTENSITY);
     this.scene.add(this.hemisphere);
-    this.sun = new THREE.DirectionalLight(0xfff0cc, 3.2);
+    this.sun = new THREE.DirectionalLight(DAY_SUN, DAY_SUN_INTENSITY);
     this.sun.position.set(-35, 55, 25);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(1024, 1024);
@@ -2377,13 +2396,33 @@ export class GameRenderer {
 
   private syncDayNight(): void {
     const daylight = this.simulation.getDaylight();
-    // 沙漠昼夜温差极大，配色也走两个极端：
-    // 白天是被尘霾漂白的暖黄，夜晚是冷到发青的深蓝 —— 视觉上直接对应体温轴的两端。
-    const sky = new THREE.Color().lerpColors(new THREE.Color(0x2c3d5c), new THREE.Color(0xd8bf8d), daylight);
+    /*
+     * 沙漠昼夜温差极大，配色也走两个极端：
+     * 白天是被尘霾漂白的暖黄，夜晚是冷到发青的深蓝 —— 视觉上直接对应体温轴的两端。
+     *
+     * ## 白天这一半重调过一次：冷暖分离
+     *
+     * 原来白天四盏光**全是暖的**（天空 d8bf8d / 半球天 ffeec4 / 半球地 8a6a44 /
+     * 太阳 fff0cc），于是整张画面的明度全挤在 55%~85% 之间、色相只有一个 ——
+     * 沙丘的体积读不出来，远近也分不开，看上去像一块糊掉的黄板。
+     * （夜晚那一半没有这个毛病，它本来就是冷的，所以一个数没动。）
+     *
+     * 现在只改**填充光**，不动主光：太阳仍然是暖的（沙漠正午就该这样），
+     * 但天空/半球两盏填充光转成带尘的冷调 —— 现实里晴天的阴影本来就是天光染蓝的，
+     * 这既是物理上对的，也正是低多边形风格"看起来贵"的那条分界线。
+     * 三个数配合着改，缺一个都不成立：
+     *
+     *   DAY_SKY        d8bf8d → c9c3b4   天边不再和沙子同色，雾一拉开就有了纵深
+     *   DAY_HEMI_SKY   ffeec4 → cdd8e6   朝上的面吃冷光，朝向太阳的面吃暖光 = 冷暖分离
+     *   DAY_HEMI_ANGLE 2.2    → 1.15     环境光越强阴影越浅；砍一半，沙丘才有背光面
+     *
+     * 半球光砍掉的亮度由太阳补回去（3.2 → 4.1），整体曝光不变，变的只有**对比**。
+     */
+    const sky = new THREE.Color().lerpColors(NIGHT_SKY, DAY_SKY, daylight);
     this.scene.background = sky;
     if (this.scene.fog) this.scene.fog.color.copy(sky);
-    this.hemisphere.color.lerpColors(new THREE.Color(0x8fa6cf), new THREE.Color(0xffeec4), daylight);
-    this.hemisphere.groundColor.lerpColors(new THREE.Color(0x3a4356), new THREE.Color(0x8a6a44), daylight);
+    this.hemisphere.color.lerpColors(NIGHT_HEMI_SKY, DAY_HEMI_SKY, daylight);
+    this.hemisphere.groundColor.lerpColors(NIGHT_HEMI_GROUND, DAY_HEMI_GROUND, daylight);
     // 夜晚半球光强度从 1.34 提到 1.85，让地形细节可见
     /*
      * 教学期间把环境光压到四成。
@@ -2396,10 +2435,10 @@ export class GameRenderer {
      * 四成是实测下来"明显暗了但仍然认得出地形"的位置。
      */
     const dim = lerp(1, 0.4, this.tutorialLight);
-    this.hemisphere.intensity = lerp(1.85, 2.2, daylight) * dim;
-    this.sun.color.lerpColors(new THREE.Color(0xa8bce0), new THREE.Color(0xfff0cc), daylight);
+    this.hemisphere.intensity = lerp(1.85, DAY_HEMI_INTENSITY, daylight) * dim;
+    this.sun.color.lerpColors(NIGHT_SUN, DAY_SUN, daylight);
     // 夜晚太阳（当作月光）强度从 0.82 提到 1.45，地面不再糊成一片
-    this.sun.intensity = lerp(1.45, 3.2, daylight) * dim;
+    this.sun.intensity = lerp(1.45, DAY_SUN_INTENSITY, daylight) * dim;
     // 夜晚曝光略提，让篝火光圈外也能辨识
     this.renderer.toneMappingExposure = lerp(1.12, 1.05, daylight) * lerp(1, 0.82, this.tutorialLight);
     if (this.tutorialLight > 0.01 && this.scene.background instanceof THREE.Color) {
