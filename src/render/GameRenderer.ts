@@ -299,6 +299,18 @@ export class GameRenderer {
   private readonly world: WorldDefinition;
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.PerspectiveCamera(47, 1, 0.1, 320);
+  /*
+   * 低功耗档下，超过这个距离的狗和猎物直接不画。
+   *
+   * 45 米的依据：相机看得到的范围本来就有限，而雾（FogExp2 密度 0.0075）
+   * 在 45 米外已经把东西糊成背景色 —— 剔掉它们肉眼看不出来。
+   * 夜里一口气 30 只狗、白天 52 只猎物，绝大多数时刻都在这个半径之外。
+   * 注意只关**渲染**，模拟层照跑：狗该来还是会来，只是走到近处才画出来。
+   */
+  private static readonly LOW_POWER_DRAW_DISTANCE = 45;
+
+  /** 触屏 / 窄屏走低功耗档：无 AA、pixelRatio 1、无实时阴影、远处实体剔除。 */
+  private readonly lowPower: boolean;
   private readonly renderer: THREE.WebGLRenderer;
   /** 上下文丢失期间跳过绘制，否则每帧都会刷一串 GL 错误。 */
   private contextLost = false;
@@ -402,9 +414,26 @@ export class GameRenderer {
     this.world = world;
     this.simulation = simulation;
     this.onAssetProgress = onAssetProgress;
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.6));
-    this.renderer.shadowMap.enabled = true;
+    /*
+     * 移动端画质档。
+     *
+     * 之前手机和台式机用的是**同一套设置**，而 Poki 实测手机 MEDIAN FPS 只有 19。
+     * 填充率是主因，而且三个乘数全开着：
+     *   pixelRatio 1.6  ⇒ 880×400 的视口实际渲染 1408×640 = 90 万像素（1.0 时 35 万）
+     *   antialias        ⇒ MSAA 在移动 GPU 上按倍数吃填充
+     *   阴影             ⇒ 44 个 castShadow 物体每帧再画一遍进 1024² 深度图
+     * 三者相乘，19 帧完全对得上。
+     *
+     * 触屏一律降到 1.0 / 无 AA / 无阴影：锯齿和平光是看得见的损失，但 19→40 帧
+     * 的手感差距远大于它。桌面端保持原样，那边本来就不卡。
+     */
+    this.lowPower = matchMedia("(pointer: coarse)").matches || window.innerWidth <= 760;
+    this.renderer = new THREE.WebGLRenderer({
+      antialias: !this.lowPower,
+      powerPreference: "high-performance",
+    });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.lowPower ? 1 : 1.6));
+    this.renderer.shadowMap.enabled = !this.lowPower;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -420,7 +449,7 @@ export class GameRenderer {
     this.scene.add(this.hemisphere);
     this.sun = new THREE.DirectionalLight(DAY_SUN, DAY_SUN_INTENSITY);
     this.sun.position.set(-35, 55, 25);
-    this.sun.castShadow = true;
+    this.sun.castShadow = !this.lowPower;
     this.sun.shadow.mapSize.set(1024, 1024);
     this.sun.shadow.camera.left = -32;
     this.sun.shadow.camera.right = 32;
@@ -2068,6 +2097,12 @@ export class GameRenderer {
         this.critterViews.set(critter.id, view);
         this.scene.add(view.group);
       }
+      if (this.lowPower) {
+        const far = Math.hypot(critter.x - this.simulation.player.x, critter.z - this.simulation.player.z)
+          > GameRenderer.LOW_POWER_DRAW_DISTANCE;
+        view.group.visible = !far;
+        if (far) continue;
+      }
       const spec = CRITTER_SPECS[critter.kind];
       const terrainY = this.worldHeight(critter.x, critter.z);
       view.animal?.mixer.update(delta);
@@ -2148,6 +2183,14 @@ export class GameRenderer {
         this.wolfViews.set(wolf.id, view);
         this.scene.add(view.group);
         this.scene.add(view.bar);
+      }
+      if (this.lowPower) {
+        const far = Math.hypot(wolf.x - this.simulation.player.x, wolf.z - this.simulation.player.z)
+          > GameRenderer.LOW_POWER_DRAW_DISTANCE;
+        // 远处的狗跳过全部同步：动画混合器、朝向插值、血条、材质染色都不用算。
+        // 近处的血条交回 syncWolfBar 决定（它只在受伤后亮 2.6 秒）。
+        view.group.visible = !far;
+        if (far) { view.bar.visible = false; continue; }
       }
       this.syncWolfBar(wolf, view, delta);
       const movedX = wolf.x - view.lastPosition.x;

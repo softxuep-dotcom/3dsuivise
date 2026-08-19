@@ -90,6 +90,16 @@ export async function loadAnimal(loader: GLTFLoader, url: string): Promise<Anima
     object.castShadow = true;
     // 蒙皮网格的包围盒不会跟着动画走，开剔除会在动作幅度大的时候整只消失。
     object.frustumCulled = false;
+    /*
+     * flatShading 在**源材质**上设一次，让后面每只的 clone 直接继承。
+     *
+     * 原先是在每一份 clone 上设 flatShading + needsUpdate —— 那等于每生成一只狗
+     * 就让它的每份材质翻一次版本。夜里一口气刷 30 只，这个开销集中在入夜那几秒，
+     * 正好是帧数最紧的时候。源材质设好之后 clone 自带该属性，无需再翻版本。
+     */
+    for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
+      if (material instanceof THREE.MeshStandardMaterial) material.flatShading = true;
+    }
   });
 
   return { source, clips: gltf.animations, yaw, scale, lift };
@@ -103,7 +113,11 @@ export function instantiateAnimal(asset: AnimalAsset): AnimalInstance {
   model.position.y = asset.lift;
   root.add(model);
 
-  // 材质必须每只一份，否则给头犬染色会把全场的狗一起染了。
+  /*
+   * 材质必须每只一份，**不能共享** —— syncWolves 每帧都按各自的状态染色：
+   * 受击闪红、撤退转灰、追击时加自发光、大小狗底色不同。共享会让全场一起闪。
+   * （flatShading 已经在源材质上设过，这里不再逐个翻版本。）
+   */
   const materials = new Map<string, THREE.MeshStandardMaterial>();
   const owned: THREE.Material[] = [];
   model.traverse((object) => {
@@ -112,11 +126,8 @@ export function instantiateAnimal(asset: AnimalAsset): AnimalInstance {
     const cloned = list.map((material) => {
       const copy = material.clone();
       owned.push(copy);
-      if (copy instanceof THREE.MeshStandardMaterial) {
-        // 全局是平面着色的低多边形观感，素材自带的光滑法线在这里会显得发油。
-        copy.flatShading = true;
-        copy.needsUpdate = true;
-        if (copy.name && !materials.has(copy.name)) materials.set(copy.name, copy);
+      if (copy instanceof THREE.MeshStandardMaterial && copy.name && !materials.has(copy.name)) {
+        materials.set(copy.name, copy);
       }
       return copy;
     });
