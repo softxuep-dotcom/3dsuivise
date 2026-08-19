@@ -237,8 +237,24 @@ index.ts          createPlatform()：按构建期常量选，永远 resolve
 ```bash
 npm run build        # 默认：不接任何平台（GitHub Pages / itch.io 走这个）
 npm run build:poki   # Poki 版，输出 dist-poki/
-npm run package:poki # Poki 上传包，输出 desert-survivor-poki-1.0.0.zip
+npm run package:poki # Poki 上传包，输出 last-truck-out-poki-<版本>.zip
 ```
+
+**要传 Poki 就双击仓库根目录的 [`打包Poki.cmd`](打包Poki.cmd)**，打完会在资源管理器里
+把 ZIP 选中。它比 `npm run package:poki` 多做三件事，三件都是为"双击运行"这个场景加的：
+
+- **先跑 typecheck**。`build:poki` 故意不带 `tsc`，而双击打包的人多半是要直接传上去的 ——
+  让一个类型错误溜进 Poki 比多等十秒贵得多。
+- **打完回读一遍 ZIP**，确认 `index.html` 在根目录、路径全是正斜杠。这个包**坏过一次而且
+  坏得看不出来**：`Compress-Archive` 把路径写成 `assets\index.css`，Poki Inspector 按 URL
+  `assets/index.css` 找不到，结果是 index.html 能开、CSS/JS 全 404，只剩一页裸 HTML。
+  根因在 `package-poki.ps1` 里已经修了，这里再验一次成品。
+- **每一步自己判成败、失败时停下来解释**。双击起来的窗口没有终端上下文，
+  报错一闪而过等于没报。
+
+批处理那个文件本身是**纯 ASCII** 的 —— 中文 Windows 上 `.cmd` 按 GBK 解码，
+写中文进去双击就是乱码；中文输出全部交给它调起来的 `scripts/one-click-poki.ps1`。
+（同理，为什么不直接双击 `.ps1`：默认关联是"用记事本打开"，而且还要过 ExecutionPolicy。）
 
 版本号以 `package.json` 为唯一来源：游戏左下角和 Poki 上传包文件名都使用完整版本 `1.0.0`。
 GitHub Pages 工作流执行的是普通 `npm run build`，上传 `dist/`；
