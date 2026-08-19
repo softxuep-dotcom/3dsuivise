@@ -341,6 +341,7 @@ export const zh: Record<string, string> = {
   "sim.costPart": "{name}×{count}",
   "sim.departing": "驶出荒原…",
   "sim.fuelCarrying": "扛着油桶 · 卡车在{bearing}约 {metres} 米",
+  "sim.fuelFirst": "开着卡车离开就通关 · 先把{bearing}约 {metres} 米那桶汽油搬上车（要 {required} 桶）",
   "sim.fuelHunt": "还差 {left} 桶汽油 · 最近一桶在{bearing}约 {metres} 米",
   "sim.fuelNone": "汽油 {loaded}/{required} · 地上已经没有散落的桶了",
   "sim.fuelHuntGuarded": "还差 {left} 桶汽油 · 最近一桶在{bearing}约 {metres} 米，有大狼守着",

@@ -297,10 +297,15 @@ export interface LandmarkDefinition extends Vec2 {
 /**
  * 汽油桶。通关要往卡车里装满 {@link FUEL_REQUIRED} 桶。
  *
- * 全图放 9 桶而只要 5 桶，是为了让两条路线都走得通而不是二选一：
+ * 全图放 10 桶而只要 6 桶，是为了让两条路线都走得通而不是二选一：
  *   - **巢边 3 桶** 离卡车只有三十几米，但守巢的五只大狼就趴在旁边；
- *   - **野外 6 桶** 谁也不看着，但散在半张图上，扛一趟要一个白天的一大半。
- * 拿光巢边三桶也还差两桶，所以无论怎么打都得出门至少两趟。
+ *   - **野外 6 桶** 谁也不看着，但散在半张图上，扛一趟要一个白天的一大半；
+ *   - **出生点 1 桶** 白送的教学桶，见 placeBarrels 末尾。
+ * 拿光巢边三桶（加白送那桶）也还差两桶，所以无论怎么打都得出门至少两趟。
+ *
+ * **余量必须保持 1。** 不碰狗巢能拿到 6 + 1 = 7 桶，要 6 桶 —— 和改之前
+ * （能拿 6 要 5）是同一个余量。教学桶是"把需求也抬一格"换来的，不是白给的难度折扣：
+ * 只加桶不加需求会让猥琐路线多出一桶容错，那条路线就不再需要计划了。
  */
 export interface FuelBarrelDefinition extends Vec2 {
   id: number;
@@ -483,8 +488,14 @@ export interface WorldDefinition {
   startCampId: number;
 }
 
-/** 通关要往卡车里装几桶油。 */
-export const FUEL_REQUIRED = 5;
+/**
+ * 通关要往卡车里装几桶油。
+ *
+ * 5 → 6，和"出生点白送一桶"是同一笔账的两半，必须一起改（见
+ * {@link FuelBarrelDefinition} 那段）。送的那桶抵掉多出来的那桶，
+ * **实际要跑的趟数一趟没变**；变的只是玩家在第 10 秒就见过一次计数器跳格。
+ */
+export const FUEL_REQUIRED = 6;
 
 export type GameEvent =
   | { type: "pickup"; kind: CarryKind | InventoryItemKind }

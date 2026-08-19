@@ -342,6 +342,7 @@ export const en: Record<string, string> = {
   "sim.costPart": "{name}×{count}",
   "sim.departing": "Driving out of the wasteland…",
   "sim.fuelCarrying": "Carrying a barrel · the truck is {metres} m {bearing}",
+  "sim.fuelFirst": "Drive the truck out to win · start with the barrel {metres} m {bearing} ({required} needed)",
   "sim.fuelHunt": "{left} barrels short · the nearest one is {metres} m {bearing}",
   "sim.fuelNone": "Fuel {loaded}/{required} · no loose barrels left on the ground",
   "sim.fuelHuntGuarded": "{left} barrels short · nearest is {metres} m {bearing}, under guard",

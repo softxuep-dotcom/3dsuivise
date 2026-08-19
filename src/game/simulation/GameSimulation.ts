@@ -2231,6 +2231,33 @@ export class GameSimulation {
         bearing: loc(this.bearingKey(screenBearing(this.player, this.truck))),
       });
     }
+    /*
+     * 第一桶：**第一个白天里，目标行只说通关目标这一件事。**
+     *
+     * 平台数据（1.0.14，n=500）最高的一根柱子在 1~2 分钟，而录像显示大部分人
+     * **没死就走了**。也就是说卡住他们的不是难度，是"这游戏要我干嘛"从头到尾没有答案：
+     * 玩家一迈步，目标行就从「加满 6 桶油，开着卡车离开」跳成「走到篝火旁添柴」
+     * （因为开局口粮里就有一根柴，下面那条 sim.14 恒真），t=26s 再跳成「用大石封门」。
+     * 整个第一昼夜 190 秒里，通关进度一格都不动 —— 而囤柴封门这笔投资是为第 2 天付的，
+     * 大部分人没有第 2 天。
+     *
+     * 所以这条排在捡柴生火链**之前**：出生点 8.5 米就有一桶（createWorld 末尾的教学桶），
+     * 扛到 7.7 米外的车上，「汽油 1/6」当场跳格。第一桶进车之后这条自己消失，
+     * 后面那条链原样接上，一个字没删。
+     *
+     * 三道闸：只在第 1 天、只在白天、只在还没装过任何一桶之前。
+     * `phaseTime > 14` 是把最后 14 秒让给 sim.23 的入夜警告 ——
+     * 8.5 米的桶如果 26 秒还没搬动，这条提示已经不起作用了，而天要黑是真的更急。
+     */
+    if (this.day === 1 && this.phase === "day" && this.phaseTime > 14
+      && this.truck.loaded === 0 && fuel.nearest) {
+      return loc("sim.fuelFirst", {
+        required: fuel.required,
+        metres: Math.round(fuel.nearest.distance),
+        bearing: loc(this.bearingKey(fuel.nearest.bearing)),
+      });
+    }
+
     // 枯木现在进背包，所以指引从"往哪搬"变成"够不够、去哪烧"。
     // 同样要让过 requestInteraction 的优先级：手上占着东西、或者脚边有东西可捡时，
     // E 都不会去添柴，这里就不能喊"按互动键添柴"。

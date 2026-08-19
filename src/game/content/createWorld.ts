@@ -71,6 +71,9 @@ const TRUCK_RADIUS = 2.4;
 /** 巢边那一组油桶离巢心多远。巢的土垄半径 8，12 米刚好落在垄外的平地上。 */
 const DEN_BARREL_RADIUS = 12;
 const DEN_BARREL_COUNT = 3;
+/** 教学桶离出生点多远、朝卡车偏多少弧度。见 placeBarrels 末尾那段。 */
+const TUTORIAL_BARREL_RADIUS = 8.5;
+const TUTORIAL_BARREL_SPREAD = 0.95;
 
 /**
  * 卡车停在**出生营地大门外**：出门就看得见它，它就是"我在为什么忙活"的实体答案。
@@ -225,6 +228,7 @@ function placeBarrels(
   den: DenDefinition | null,
   truck: TruckDefinition,
   camps: CampDefinition[],
+  startCamp: CampDefinition,
   terrainWorld: TerrainWorld,
   walls: CircleObstacle[],
   random: () => number,
@@ -290,6 +294,38 @@ function placeBarrels(
     }
   }
 
+  /*
+   * 第十桶：**出生点脚边的教学桶**，最后 push 所以 id 固定是 9，前九桶的 id 一个没动。
+   *
+   * 平台数据（1.0.14，n=500）里最高的一根柱子是 1~2 分钟，而录像显示大部分人
+   * **没死就走了** —— 也就是说他们不是打不过，是不知道自己在干嘛。而通关目标
+   * "往车里装 6 桶油"在整个第一昼夜（190 秒）里进度一格都不会动：最近的野外桶
+   * 32 米，目标行又在玩家一迈步就跳去讲捡柴，于是"这游戏要我做什么"从头到尾没有答案。
+   *
+   * 这一桶是唯一的答案：出生点朝卡车偏 0.95 弧度、8.5 米，正好落在开场那一帧里。
+   * 玩家走两步 → 扛起来（移速 ×0.54、不能攻击，扛运的代价当场就懂）→ 走到车边 →
+   * 装车 → 「汽油 1/6」跳格。**十秒钟里他把通关循环整个跑了一遍。**
+   *
+   * 偏角取负值是为了和教学枯木岔开：那一根在 spawnFacing **+1.15**、6.5 米
+   * （GameSimulation.addTutorialWood），两件教学道具分居左右，开场那一帧里不会叠在一起。
+   *
+   * 摆在这里而不是 GameSimulation 里，是因为它得和别的桶一样进 world 定义 ——
+   * 渲染层、寻路网格、getFuelProgress 全都读 world.barrels，特判一个"第十桶"
+   * 要在四个地方各写一遍。
+   */
+  const approach = startCamp.approach.map((local) => campLocalToWorld(startCamp, local));
+  const spawn = approach[approach.length - 1] ?? campGatePosition(startCamp);
+  const toTruck = Math.atan2(truck.z - spawn.z, truck.x - spawn.x);
+  const tutorialAngle = toTruck - TUTORIAL_BARREL_SPREAD;
+  barrels.push({
+    id: barrels.length,
+    x: spawn.x + Math.cos(tutorialAngle) * TUTORIAL_BARREL_RADIUS,
+    z: spawn.z + Math.sin(tutorialAngle) * TUTORIAL_BARREL_RADIUS,
+    // 朝向写死、不消费 random()：这一桶每局都要出现在同一个地方。
+    rotation: tutorialAngle,
+    guarded: false,
+  });
+
   return barrels;
 }
 
@@ -337,7 +373,7 @@ export function createWorld(seed = 71291): WorldDefinition {
   // 卡车先定 —— 它挂进 walls，后面所有撒点都要绕开它。
   const truck = placeTruck(camps[BLUEPRINT.startCampId], camps, terrainWorld, walls, size);
   walls.push({ x: truck.x, z: truck.z, radius: TRUCK_RADIUS, kind: "landmark" });
-  const barrels = placeBarrels(dens[0] ?? null, truck, camps, terrainWorld, walls, random);
+  const barrels = placeBarrels(dens[0] ?? null, truck, camps, camps[BLUEPRINT.startCampId], terrainWorld, walls, random);
 
   /*
    * 树现在能砍（每棵两份柴，见 GameSimulation 的 STAMINA_COST_CHOP 那段），
