@@ -1,5 +1,5 @@
 import { distance, mulberry32, normalize, TAU } from "../simulation/geometry";
-import { campGatePosition, campLocalToWorld, distanceToCampApproach, isTerrainWalkable, terrainSlopeAt } from "../terrain/TerrainModel";
+import { campGatePosition, campLocalToWorld, distanceToCampApproach, isTerrainWalkable, terrainHeightAt, terrainSlopeAt } from "../terrain/TerrainModel";
 import type {
   CactusPatch,
   CampKind,
@@ -11,6 +11,7 @@ import type {
   IronNode,
   WellDefinition,
   LandmarkDefinition,
+  SaltCrustDefinition,
   TerrainStyle,
   TreeDefinition,
   TruckDefinition,
@@ -74,6 +75,11 @@ const DEN_BARREL_COUNT = 3;
 /** 教学桶离出生点多远、朝卡车偏多少弧度。见 placeBarrels 末尾那段。 */
 const TUTORIAL_BARREL_RADIUS = 8.5;
 const TUTORIAL_BARREL_SPREAD = 0.95;
+
+/** 盐壳长短轴。长轴横在运输线上，绕行有代价，但椭圆永远不是碰撞体。 */
+const SALT_CRUST_RADIUS_X = 8.2;
+const SALT_CRUST_RADIUS_Z = 5.2;
+const SALT_CRUST_COUNT = 2;
 
 /**
  * 卡车停在**出生营地大门外**：出门就看得见它，它就是"我在为什么忙活"的实体答案。
@@ -329,6 +335,161 @@ function placeBarrels(
   return barrels;
 }
 
+/** 把世界坐标变到风险椭圆的局部坐标。 */
+function saltLocal(point: Vec2, centre: Vec2, rotation: number): Vec2 {
+  const dx = point.x - centre.x;
+  const dz = point.z - centre.z;
+  const cosine = Math.cos(-rotation);
+  const sine = Math.sin(-rotation);
+  return { x: dx * cosine - dz * sine, z: dx * sine + dz * cosine };
+}
+
+/** 一个带圆形余量的物体是否侵入盐壳。只用于生成时保持画面清楚，不会改变碰撞。 */
+function overlapsSaltEllipse(
+  point: Vec2,
+  padding: number,
+  centre: Vec2,
+  rotation: number,
+  radiusX: number,
+  radiusZ: number,
+): boolean {
+  const local = saltLocal(point, centre, rotation);
+  const x = local.x / (radiusX + padding);
+  const z = local.z / (radiusZ + padding);
+  return x * x + z * z < 1;
+}
+
+/**
+ * 把两块脆盐壳放到两条远端油桶回车的直线上。
+ *
+ * 这里刻意不接收 random：油桶位置会随出生营地改变，而主世界的随机流被
+ * BARREL_STREAM_DRAWS 锁死。盐壳若去消费那条流，软重启就会让树、井、矿脉全部漂位。
+ * 候选顺序只由现有坐标和桶 id 决定，因此同一张世界永远得到同样的两块盐壳。
+ */
+function placeSaltCrusts(
+  size: number,
+  startCamp: CampDefinition,
+  truck: TruckDefinition,
+  barrels: FuelBarrelDefinition[],
+  camps: CampDefinition[],
+  dens: DenDefinition[],
+  terrainWorld: TerrainWorld,
+  walls: CircleObstacle[],
+  items: GroundItem[],
+  cacti: CactusPatch[],
+  ironNodes: IronNode[],
+  wells: WellDefinition[],
+  landmarks: LandmarkDefinition[],
+): SaltCrustDefinition[] {
+  const candidates = barrels
+    // 出生脚边那桶不该把新玩家送进风险区；守巢桶本来已经有一层战斗风险。
+    .filter((barrel) => !barrel.guarded && distance(barrel, startCamp) > 16)
+    .sort((a, b) => distance(b, truck) - distance(a, truck));
+  const result: SaltCrustDefinition[] = [];
+  const half = size / 2;
+
+  const usable = (centre: Vec2, rotation: number, relaxed: boolean): boolean => {
+    const edge = SALT_CRUST_RADIUS_X + 4;
+    if (Math.abs(centre.x) > half - edge || Math.abs(centre.z) > half - edge) return false;
+    if (distance(centre, truck) < 15) return false;
+    if (camps.some((camp) => distance(centre, camp) < camp.radius + SALT_CRUST_RADIUS_X + 4)) return false;
+    if (dens.some((den) => distance(centre, den) < den.radius + SALT_CRUST_RADIUS_X + 4)) return false;
+    if (barrels.some((barrel) => overlapsSaltEllipse(barrel, 3.2, centre, rotation, SALT_CRUST_RADIUS_X, SALT_CRUST_RADIUS_Z))) return false;
+    if (result.some((site) => distance(centre, site) < SALT_CRUST_RADIUS_X * 2 + 12)) return false;
+    // 这些物件会从盐白平面里穿出来，既破坏美术轮廓，也让玩家误以为它们能支撑盐壳。
+    // 即便走 terrain 的 relaxed 兜底也不能放宽。
+    if (walls.some((wall) => overlapsSaltEllipse(wall, wall.radius + 1.2, centre, rotation, SALT_CRUST_RADIUS_X, SALT_CRUST_RADIUS_Z))) return false;
+    if (items.some((item) => overlapsSaltEllipse(item, item.kind === "stone" ? 2.2 : 1.2, centre, rotation, SALT_CRUST_RADIUS_X, SALT_CRUST_RADIUS_Z))) return false;
+    if (cacti.some((cactus) => overlapsSaltEllipse(cactus, 1.8, centre, rotation, SALT_CRUST_RADIUS_X, SALT_CRUST_RADIUS_Z))) return false;
+    if (ironNodes.some((node) => overlapsSaltEllipse(node, 2, centre, rotation, SALT_CRUST_RADIUS_X, SALT_CRUST_RADIUS_Z))) return false;
+    if (wells.some((well) => overlapsSaltEllipse(well, 3, centre, rotation, SALT_CRUST_RADIUS_X, SALT_CRUST_RADIUS_Z))) return false;
+    if (landmarks.some((landmark) => overlapsSaltEllipse(landmark, 3, centre, rotation, SALT_CRUST_RADIUS_X, SALT_CRUST_RADIUS_Z))) return false;
+
+    // 不是只验中心：整个椭圆都要落在平缓可走地面上，否则白色圆片会穿进山坡。
+    let minimumHeight = Number.POSITIVE_INFINITY;
+    let maximumHeight = Number.NEGATIVE_INFINITY;
+    for (let ring = 0; ring <= 2; ring += 1) {
+      const amount = ring / 2;
+      const samples = ring === 0 ? 1 : 16;
+      for (let index = 0; index < samples; index += 1) {
+        const angle = samples === 1 ? 0 : index / samples * TAU;
+        const localX = Math.cos(angle) * SALT_CRUST_RADIUS_X * amount;
+        const localZ = Math.sin(angle) * SALT_CRUST_RADIUS_Z * amount;
+        const cosine = Math.cos(rotation);
+        const sine = Math.sin(rotation);
+        const point = {
+          x: centre.x + localX * cosine - localZ * sine,
+          z: centre.z + localX * sine + localZ * cosine,
+        };
+        if (!isTerrainWalkable(terrainWorld, point) || terrainSlopeAt(terrainWorld, point) > (relaxed ? 0.34 : 0.26)) return false;
+        const height = terrainHeightAt(terrainWorld, point);
+        minimumHeight = Math.min(minimumHeight, height);
+        maximumHeight = Math.max(maximumHeight, height);
+      }
+    }
+    if (maximumHeight - minimumHeight > (relaxed ? 1.8 : 1.15)) return false;
+
+    // 风险椭圆本身不进导航；先保证外围地形没有断崖或陡坡。圈外零散矮墙/石头
+    // 仍可局部绕开，不要求这里人为清成一条完美跑道。
+    for (let index = 0; index < 24; index += 1) {
+      const angle = index / 24 * TAU;
+      const localX = Math.cos(angle) * (SALT_CRUST_RADIUS_X + 2.4);
+      const localZ = Math.sin(angle) * (SALT_CRUST_RADIUS_Z + 2.4);
+      const cosine = Math.cos(rotation);
+      const sine = Math.sin(rotation);
+      const point = {
+        x: centre.x + localX * cosine - localZ * sine,
+        z: centre.z + localX * sine + localZ * cosine,
+      };
+      if (!isTerrainWalkable(terrainWorld, point) || terrainSlopeAt(terrainWorld, point) > 0.46) return false;
+    }
+
+    return true;
+  };
+
+  const tryRoutes = (relaxed: boolean): void => {
+    for (const barrel of candidates) {
+      if (result.length >= SALT_CRUST_COUNT) return;
+      const route = normalize({ x: truck.x - barrel.x, z: truck.z - barrel.z });
+      if (route.x === 0 && route.z === 0) continue;
+      // 局部 X（长轴）与运输方向垂直，局部 Z（短轴）沿运输方向。
+      const rotation = Math.atan2(route.z, route.x) + Math.PI / 2;
+      const side = { x: -route.z, z: route.x };
+      // 最大偏移小于长轴，保证对应的桶—卡车直线一定穿过风险区。
+      // 横移最多 4.5m：再靠近长轴边缘，桶路线虽然还会擦到椭圆，真正踩在盐壳上的
+      // 时间却短到连第一段裂纹都看不到。宁可继续试下一桶，也不要生成一块纸面风险。
+      const positiveOffsets = [0, 1.5, -1.5, 3, -3, 4.5, -4.5];
+      const offsets = barrel.id % 2 === 0 ? positiveOffsets : positiveOffsets.map((offset) => -offset);
+      const amounts = Array.from({ length: 20 }, (_, index) => 0.24 + index * 0.03)
+        .sort((a, b) => Math.abs(a - 0.54) - Math.abs(b - 0.54));
+      let placed = false;
+      for (const amount of amounts) {
+        for (const offset of offsets) {
+          const centre = {
+            x: barrel.x + (truck.x - barrel.x) * amount + side.x * offset,
+            z: barrel.z + (truck.z - barrel.z) * amount + side.z * offset,
+          };
+          if (!usable(centre, rotation, relaxed)) continue;
+          result.push({
+            id: result.length,
+            ...centre,
+            radiusX: SALT_CRUST_RADIUS_X,
+            radiusZ: SALT_CRUST_RADIUS_Z,
+            rotation,
+          });
+          placed = true;
+          break;
+        }
+        if (placed) break;
+      }
+    }
+  };
+
+  tryRoutes(false);
+  if (result.length < SALT_CRUST_COUNT) tryRoutes(true);
+  return result;
+}
+
 /**
  * 出生营地轮换：首局永远是设计好的那一座，换图只发生在"再来一局"之后。
  *
@@ -366,7 +527,7 @@ function placeBarrels(
  *     卡车又在原位，所以抽出来的桶位一模一样；主流快进 71 次之后散落物也一模一样。
  *     "最近野外桶 32 米、单趟 12 秒"这条调好的开场因此原样保住。
  *   · 其余营地共用 #1 的散落物，只有卡车、油桶、出生营地脚边那 4 根柴不同
- *     （walls 1/36、initialItems 4/97、barrels 7/10，其余字段全同）。
+ *     （walls 1/36、initialItems 4/97、barrels 7/10、路线盐壳会重算，其余字段全同）。
  *
  * **改动 placeBarrels 的采样逻辑就必须重新量这个数**，否则首局那张图会悄悄漂掉。
  * tests/worldRotation.test.ts 锁着它。
@@ -436,7 +597,7 @@ export function createWorld(seed = 71291, startCampId = BLUEPRINT.startCampId): 
    * 拒绝次数就变了 —— 于是换营地会把散落物全洗一遍。实测：换 #1 → #0，
    * world 的 15 个字段里有 10 个不一样。
    *
-   * 拆开之后换营地只动卡车、油桶、出生营地脚边那 4 根柴，其余逐字节相同 ——
+   * 拆开之后换营地只动卡车、油桶、路线盐壳、出生营地脚边那 4 根柴，其余逐字节相同 ——
    * 软重启因此只需要重建这三样，地形网格和几万个散落物的显存都留着不动。
    */
   const barrels = placeBarrels(dens[0] ?? null, truck, camps, camps[startCampId], terrainWorld, walls, mulberry32(seed));
@@ -620,6 +781,22 @@ export function createWorld(seed = 71291, startCampId = BLUEPRINT.startCampId): 
     }
   }
 
+  const saltCrusts = placeSaltCrusts(
+    size,
+    startCamp,
+    truck,
+    barrels,
+    camps,
+    dens,
+    terrainWorld,
+    walls,
+    initialItems,
+    initialCacti,
+    ironNodes,
+    wells,
+    landmarks,
+  );
+
   return {
     size,
     terrain,
@@ -635,6 +812,7 @@ export function createWorld(seed = 71291, startCampId = BLUEPRINT.startCampId): 
     ironNodes,
     wells,
     landmarks,
+    saltCrusts,
     startCampId,
   };
 }

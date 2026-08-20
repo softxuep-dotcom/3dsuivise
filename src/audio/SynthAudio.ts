@@ -315,6 +315,29 @@ export class SynthAudio {
       case "barrier-hit":
         this.thud(0.1, 0.26, event.material === "stone" ? 700 : 480);
         break;
+      case "salt-crust":
+        // 每个阶段只由模拟层发一次。持续倒计时交给环的脉冲，声音不排队，
+        // 玩家撤出去之后就不会还听见一串已经过期的警报。
+        if (event.stage === "enter") {
+          this.thud(0.035, 0.08, 1250);
+        } else if (event.stage === "warning") {
+          this.thud(0.055, 0.12, 1050);
+          this.noise(0.08, 0.08);
+        } else if (event.stage === "critical") {
+          this.thud(0.09, 0.2, 680);
+          this.tone(155, 0.2, "triangle", 0.22, 0.58);
+        } else if (event.stage === "grace") {
+          this.thud(0.14, 0.28, 430);
+          this.tone(120, 0.34, "sawtooth", 0.3, 0.46);
+        } else if (event.stage === "support") {
+          this.thud(0.09, 0.18, 760);
+          this.tone(360, 0.12, "sine", 0.18, 1.3);
+        } else if (event.stage === "collapse") {
+          this.thud(0.24, 0.42, 260);
+          this.noise(0.32, 0.3);
+          this.tone(90, 0.42, "triangle", 0.34, 0.32);
+        }
+        break;
       case "phase":
         this.phaseCue(event.phase === "night");
         // 第一夜的那一声要压过其余所有反馈：那是整局唯一一次"狼群第一次出现"，

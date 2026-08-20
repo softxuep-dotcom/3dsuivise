@@ -297,6 +297,41 @@ export interface LandmarkDefinition extends Vec2 {
 }
 
 /**
+ * 脆盐壳风险区。
+ *
+ * 它不是碰撞体：椭圆外始终能绕行，椭圆内则是一条更直接的搬运捷径。
+ * 长轴横在「远端油桶 → 卡车」的直线上，玩家可以选择绕过两端，也可以承担承重风险
+ * 直接穿过去。位置由 createWorld 用独立的确定性流程生成，不消费主世界的随机流。
+ */
+export interface SaltCrustDefinition extends Vec2 {
+  id: number;
+  /** 椭圆局部 X 轴半径（横跨路线的长轴）。 */
+  radiusX: number;
+  /** 椭圆局部 Z 轴半径（沿路线的短轴）。 */
+  radiusZ: number;
+  /** 局部 X 轴在世界中的朝向。 */
+  rotation: number;
+}
+
+export type SaltCrustStage = "stable" | "warning" | "critical" | "grace" | "collapsed";
+
+/** 模拟层公开给 HUD 与渲染层的盐壳运行时状态。 */
+export interface SaltCrustState extends SaltCrustDefinition {
+  /** 0~1；到 1 后进入仍可撤退的 grace 阶段。 */
+  pressure: number;
+  stage: SaltCrustStage;
+  inside: boolean;
+  /** 脚边有玩家放下的大石时为 true，承重会快速回落。 */
+  supported: boolean;
+  /** grace 阶段剩余秒数，其他阶段为 0。 */
+  graceRemaining: number;
+  /** 塌陷外观与重置还剩多久。 */
+  collapsedRemaining: number;
+  /** 本次进入前最后一个安全点；塌陷时玩家和手上货物一起回到这里。 */
+  entry: Vec2 | null;
+}
+
+/**
  * 汽油桶。通关要往卡车里装满 {@link FUEL_REQUIRED} 桶。
  *
  * 全图放 10 桶而只要 6 桶，是为了让两条路线都走得通而不是二选一：
@@ -547,6 +582,7 @@ export interface WorldDefinition {
   ironNodes: IronNode[];
   wells: WellDefinition[];
   landmarks: LandmarkDefinition[];
+  saltCrusts: SaltCrustDefinition[];
   dens: DenDefinition[];
   barrels: FuelBarrelDefinition[];
   truck: TruckDefinition;
@@ -613,6 +649,7 @@ export type GameEvent =
   | { type: "truck-depart" }
   | { type: "player-hit"; amount: number }
   | { type: "barrier-hit"; itemId: number; material: "stone" | "wood" }
+  | { type: "salt-crust"; siteId: number; stage: "enter" | "warning" | "critical" | "grace" | "support" | "collapse" | "eject" }
   | { type: "build"; kind: StructureKind }
   | { type: "structure-destroyed"; kind: StructureKind }
   | { type: "phase"; phase: Phase; day: number }

@@ -33,7 +33,7 @@ describe("出生营地轮换", () => {
    * BARREL_STREAM_DRAWS 那段）。这条断言一旦挂掉，重开之后画面上的树和寻路用的树
    * 就不是同一批，而且不会报错，只会"看着能走的地方走不过去"。
    */
-  it("换营地不动散落物 —— 只有卡车、油桶和出生营地脚边那几根柴会变", () => {
+  it("换营地不动散落物 —— 卡车、油桶、路线盐壳和出生营地脚边那几根柴会变", () => {
     const base = createWorld(undefined, pickStartCamp(0));
     const j = (v: unknown): string => JSON.stringify(v);
     for (const run of [1, 2, 3, 4]) {
@@ -45,6 +45,7 @@ describe("出生营地轮换", () => {
       }
       // 该变的确实变了，否则说明营地压根没换。
       expect(j(other.truck), `${where} 的卡车没跟着挪`).not.toBe(j(base.truck));
+      expect(j(other.saltCrusts), `${where} 的路线盐壳没跟着卡车与油桶重算`).not.toBe(j(base.saltCrusts));
       expect(other.startCampId).toBe(camp);
     }
   });

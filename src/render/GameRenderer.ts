@@ -3,7 +3,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import type { GameSimulation } from "../game/simulation/GameSimulation";
 import { clamp, lerp, mulberry32 } from "../game/simulation/geometry";
-import type { CampDefinition, CritterState, GroundItem, Vec2, WeaponKind, WolfState, WorldDefinition, WorldDrop } from "../game/simulation/types";
+import type { CampDefinition, CritterState, GroundItem, SaltCrustState, Vec2, WeaponKind, WolfState, WorldDefinition, WorldDrop } from "../game/simulation/types";
 import { BARRIER_STATS, CRITTER_SPECS, FUEL_REQUIRED } from "../game/simulation/types";
 import { distanceToCampApproach, terrainHeightAt, terrainMoistureAt, terrainSaltAt, terrainSlopeAt } from "../game/terrain/TerrainModel";
 import { instantiateAnimal, loadAnimal, type AnimalAsset, type AnimalInstance } from "./AnimalModels";
@@ -133,6 +133,31 @@ interface CritterView {
   /** 没受击时该显示的颜色。程序化几何是白（顶点色自带配色），鹿是它的沙褐主色。 */
   baseColor: number;
 }
+
+interface SaltCrustView {
+  group: THREE.Group;
+  surface: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
+  surfaceBaseY: Float32Array;
+  sinkWeights: Float32Array;
+  cracks: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
+  crackBaseY: Float32Array;
+  crackSinkWeights: Float32Array;
+  crackSegments: number;
+  rim: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
+  rimBaseY: Float32Array;
+  rimSinkWeights: Float32Array;
+  lastSink: number;
+}
+
+const SALT_CRUST_COLOR = new THREE.Color(0xe2ddc9);
+const SALT_CRUST_STRAIN_COLOR = new THREE.Color(0xc69a67);
+const SALT_CRUST_BROKEN_COLOR = new THREE.Color(0x6f5140);
+const SALT_SURFACE_NEUTRAL = new THREE.Color(0xffffff);
+const SALT_RING_SAFE = new THREE.Color(0xf4e8bd);
+const SALT_RING_WARNING = new THREE.Color(0xe9a33b);
+const SALT_RING_DANGER = new THREE.Color(0xc95435);
+const SALT_CRACK_SEGMENTS = 18;
+const SALT_RING_SEGMENTS = 48;
 
 const makeMaterial = (color: THREE.ColorRepresentation, roughness = 0.9): THREE.MeshStandardMaterial => (
   new THREE.MeshStandardMaterial({ color, roughness, flatShading: true })
@@ -348,6 +373,8 @@ export class GameRenderer {
   private currentPlayerAnimation = "";
   private readonly campViews = new Map<number, CampView>();
   private readonly itemViews = new Map<number, THREE.Object3D>();
+  /** 盐壳会随软重启换路线；地表小物也要重撒，不能让旧局草簇穿进新局盐壳。 */
+  private readonly groundCoverViews: THREE.InstancedMesh[] = [];
   private treeTrunks: THREE.InstancedMesh | null = null;
   private treeBranches: THREE.InstancedMesh | null = null;
   /** 已经变成树桩的树。只记 id，用来避免每帧重写矩阵。 */
@@ -358,6 +385,16 @@ export class GameRenderer {
   private readonly ironViews = new Map<number, THREE.Object3D>();
   private readonly wellViews = new Map<number, THREE.Object3D>();
   private readonly wellPips = new Map<number, THREE.Object3D[]>();
+  private readonly saltCrustViews = new Map<number, SaltCrustView>();
+  /** 玩家脚下的承重环：暗底轨 + 可裁剪进度弧。 */
+  private readonly saltLoadRing: THREE.Group;
+  private readonly saltLoadTrack: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>;
+  private readonly saltLoadFill: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>;
+  /** 两块风险区共用一池沙尘；玩家不可能同时站在两块互不重叠的盐壳里。 */
+  private readonly saltDust: THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial>;
+  private readonly saltDustBase = new Float32Array(30 * 3);
+  private readonly saltRingColor = new THREE.Color();
+  private readonly reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
   private readonly structureViews = new Map<number, THREE.Object3D>();
   /** 井顶水珠的浮动相位。 */
   private wellBob = 0;
@@ -503,6 +540,7 @@ export class GameRenderer {
     this.buildCampWalls();
     this.buildTrees();
     this.buildGroundCover();
+    this.buildSaltCrusts();
     this.buildLandmarks();
     this.buildDens();
     this.buildCamps();
@@ -532,6 +570,13 @@ export class GameRenderer {
     this.warmthRing = aura.ring;
     this.warmthMotes = aura.motes;
     this.scene.add(this.warmthAura);
+    const loadRing = this.buildSaltLoadRing();
+    this.saltLoadRing = loadRing.group;
+    this.saltLoadTrack = loadRing.track;
+    this.saltLoadFill = loadRing.fill;
+    this.scene.add(this.saltLoadRing);
+    this.saltDust = this.buildSaltDust();
+    this.scene.add(this.saltDust);
     // 聚光灯不投阴影：教学要的是"这里亮"，不是多一层几何解算。
     this.tutorialSpot.castShadow = false;
     this.tutorialSpot.target = this.tutorialSpotTarget;
@@ -557,6 +602,7 @@ export class GameRenderer {
     this.syncPlayer(delta);
     this.syncItems(delta);
     this.syncBarrels(delta);
+    this.syncSaltCrusts(delta);
     this.syncCacti();
     this.syncIronNodes();
     this.syncTrees();
@@ -682,7 +728,7 @@ export class GameRenderer {
    *
    * 能只换引用，是因为世界在换出生营地时几乎没变 —— placeBarrels 拆出独立随机流之后
    * （见 createWorld 里那段注释），15 个字段里只有 walls 1/36、initialItems 4/97、
-   * barrels 7/10、truck 和 startCampId 不同，树、仙人掌、矿脉、井、地标逐字节相同。
+   * barrels 7/10、路线盐壳、truck 和 startCampId 不同，树、仙人掌、矿脉、井、地标逐字节相同。
    * 地形更是完全一致。
    *
    * 而绝大多数视图**每帧都从 simulation 重新摆**（syncBarrels 连卡车带油桶一起摆，
@@ -698,10 +744,30 @@ export class GameRenderer {
 
     this.world = world;
     this.simulation = simulation;
+    // 盐壳跟着本局「远端桶 → 卡车」路线变化，地形不重建，但这两块小视图要重算。
+    this.buildGroundCover();
+    this.buildSaltCrusts();
+    this.saltLoadRing.visible = false;
+    this.saltDust.visible = false;
+    const dustPosition = this.saltDust.geometry.getAttribute("position") as THREE.BufferAttribute;
+    (dustPosition.array as Float32Array).set(this.saltDustBase);
+    dustPosition.needsUpdate = true;
 
     // 玩家放下的路障：syncStructures 只按当前结构补视图、从不删，
     // 而新一局的结构 id 从头开始，不清就会有上一局的桩子挂在场上。
-    for (const view of this.structureViews.values()) this.scene.remove(view);
+    for (const view of this.structureViews.values()) {
+      const geometries = new Set<THREE.BufferGeometry>();
+      const materials = new Set<THREE.Material>();
+      view.traverse((child) => {
+        const mesh = child as THREE.Mesh;
+        if (mesh.geometry) geometries.add(mesh.geometry);
+        if (Array.isArray(mesh.material)) mesh.material.forEach((material) => materials.add(material));
+        else if (mesh.material) materials.add(mesh.material);
+      });
+      geometries.forEach((geometry) => geometry.dispose());
+      materials.forEach((material) => material.dispose());
+      this.scene.remove(view);
+    }
     this.structureViews.clear();
     this.barrierFlash.clear();
 
@@ -975,6 +1041,13 @@ export class GameRenderer {
   }
 
   private buildGroundCover(): void {
+    for (const view of this.groundCoverViews) {
+      this.scene.remove(view);
+      view.geometry.dispose();
+      if (Array.isArray(view.material)) view.material.forEach((material) => material.dispose());
+      else view.material.dispose();
+    }
+    this.groundCoverViews.length = 0;
     const random = mulberry32(this.world.terrain.seed + 4403);
     const collect = (targetCount: number, maxSlope: number, moistureBias: number): Array<{ x: number; z: number; scale: number; rotation: number }> => {
       const points: Array<{ x: number; z: number; scale: number; rotation: number }> = [];
@@ -988,6 +1061,20 @@ export class GameRenderer {
         if (this.world.camps.some((camp) => Math.hypot(point.x - camp.x, point.z - camp.z) < camp.radius - 1.6)) continue;
         const hitsTrail = this.world.camps.some((camp) => distanceToCampApproach(camp, point) < camp.approachWidth * 0.5 + 1.6);
         if (hitsTrail) continue;
+        // 地表植被是渲染层随机撒的，createWorld 看不见它们；这里单独留白，避免草簇、
+        // 石子从程序化盐壳中间穿出来，破坏一整块脆壳的干净轮廓。
+        const hitsSaltCrust = this.world.saltCrusts.some((site) => {
+          const dx = point.x - site.x;
+          const dz = point.z - site.z;
+          const cosine = Math.cos(-site.rotation);
+          const sine = Math.sin(-site.rotation);
+          const localX = dx * cosine - dz * sine;
+          const localZ = dx * sine + dz * cosine;
+          const radiusX = site.radiusX + 0.45;
+          const radiusZ = site.radiusZ + 0.45;
+          return localX * localX / (radiusX * radiusX) + localZ * localZ / (radiusZ * radiusZ) < 1;
+        });
+        if (hitsSaltCrust) continue;
         points.push({ ...point, scale: 0.62 + random() * 0.78, rotation: random() * Math.PI * 2 });
       }
       return points;
@@ -1037,6 +1124,7 @@ export class GameRenderer {
       });
       mesh.receiveShadow = true;
       this.scene.add(mesh);
+      this.groundCoverViews.push(mesh);
     };
     place(grass, grassPoints, 0.02, 1.12);
     place(heath, heathPoints, 0.18, 0.62);
@@ -1112,6 +1200,376 @@ export class GameRenderer {
       group.position.y += 0.02;
       this.scene.add(group);
     }
+  }
+
+  /**
+   * 两块程序化脆盐壳。
+   *
+   * 3 圈低面数顶点贴着真实地形，外圈固定、中心按承重下沉；裂纹是窄三角带而不是
+   * LineSegments —— 移动 GPU 往往把线宽强制成 1px，真机上几乎看不见。
+   */
+  private buildSaltCrusts(): void {
+    for (const view of this.saltCrustViews.values()) {
+      this.scene.remove(view.group);
+      view.surface.geometry.dispose();
+      view.surface.material.dispose();
+      view.cracks.geometry.dispose();
+      view.cracks.material.dispose();
+      view.rim.geometry.dispose();
+      view.rim.material.dispose();
+    }
+    this.saltCrustViews.clear();
+
+    for (const site of this.world.saltCrusts) {
+      const group = new THREE.Group();
+      const centreHeight = this.worldHeight(site.x, site.z);
+      group.position.set(site.x, centreHeight, site.z);
+      // Three 的 Y 轴正旋转与地图的 x/z 约定方向相反。
+      group.rotation.y = -site.rotation;
+
+      const sectors = 36;
+      const rings = [0.38, 0.7, 1];
+      const count = 1 + sectors * rings.length;
+      const positions = new Float32Array(count * 3);
+      const colors = new Float32Array(count * 3);
+      const baseY = new Float32Array(count);
+      const sinkWeights = new Float32Array(count);
+      const random = mulberry32(0x51a7 + site.id * 8191 + Math.round((site.x + 110) * 17));
+      const tint = new THREE.Color();
+      const worldCosine = Math.cos(site.rotation);
+      const worldSine = Math.sin(site.rotation);
+      const localHeight = (x: number, z: number, lift: number): number => {
+        const worldX = site.x + x * worldCosine - z * worldSine;
+        const worldZ = site.z + x * worldSine + z * worldCosine;
+        return this.worldHeight(worldX, worldZ) - centreHeight + lift;
+      };
+      const radialAmount = (x: number, z: number): number => Math.sqrt(
+        x * x / (site.radiusX * site.radiusX) + z * z / (site.radiusZ * site.radiusZ),
+      );
+      // 与表面三圈的下沉权重一致；裂纹和边缘也各自贴地、各自下沉，不再是一张
+      // 浮在中心高度上的平贴图。
+      const sinkWeightAt = (amount: number): number => {
+        if (amount <= 0.38) return 1 - amount / 0.38 * 0.18;
+        if (amount <= 0.7) return 0.82 - (amount - 0.38) / 0.32 * 0.46;
+        return Math.max(0, 0.36 - (amount - 0.7) / 0.3 * 0.36);
+      };
+
+      const writeVertex = (index: number, x: number, y: number, z: number, sink: number, shade: number): void => {
+        positions[index * 3] = x;
+        positions[index * 3 + 1] = y;
+        positions[index * 3 + 2] = z;
+        baseY[index] = y;
+        sinkWeights[index] = sink;
+        tint.copy(SALT_CRUST_COLOR).multiplyScalar(shade);
+        colors[index * 3] = tint.r;
+        colors[index * 3 + 1] = tint.g;
+        colors[index * 3 + 2] = tint.b;
+      };
+      writeVertex(0, 0, 0.045, 0, 1, 0.96);
+      for (let ringIndex = 0; ringIndex < rings.length; ringIndex += 1) {
+        const amount = rings[ringIndex];
+        for (let index = 0; index < sectors; index += 1) {
+          const angle = index / sectors * Math.PI * 2;
+          const irregularity = ringIndex === rings.length - 1 ? 0.94 + random() * 0.1 : 0.98 + random() * 0.04;
+          const x = Math.cos(angle) * site.radiusX * amount * irregularity;
+          const z = Math.sin(angle) * site.radiusZ * amount * irregularity;
+          const y = localHeight(x, z, 0.045);
+          const weight = ringIndex === 0 ? 0.82 : ringIndex === 1 ? 0.36 : 0;
+          writeVertex(1 + ringIndex * sectors + index, x, y, z, weight, 0.92 + random() * 0.13);
+        }
+      }
+
+      const indices: number[] = [];
+      for (let index = 0; index < sectors; index += 1) {
+        const current = 1 + index;
+        const next = 1 + (index + 1) % sectors;
+        indices.push(0, next, current);
+      }
+      for (let ringIndex = 1; ringIndex < rings.length; ringIndex += 1) {
+        const innerStart = 1 + (ringIndex - 1) * sectors;
+        const outerStart = 1 + ringIndex * sectors;
+        for (let index = 0; index < sectors; index += 1) {
+          const next = (index + 1) % sectors;
+          const inner = innerStart + index;
+          const innerNext = innerStart + next;
+          const outer = outerStart + index;
+          const outerNext = outerStart + next;
+          indices.push(inner, outerNext, outer, inner, innerNext, outerNext);
+        }
+      }
+      const surfaceGeometry = new THREE.BufferGeometry();
+      surfaceGeometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+      surfaceGeometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+      surfaceGeometry.setIndex(indices);
+      surfaceGeometry.computeVertexNormals();
+      const surfaceMaterial = new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        vertexColors: true,
+        roughness: 0.98,
+        flatShading: true,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+        polygonOffsetUnits: -1,
+      });
+      const surface = new THREE.Mesh(surfaceGeometry, surfaceMaterial);
+      surface.receiveShadow = true;
+      group.add(surface);
+
+      // 六条主裂纹，各三段。按「第一段全出现 → 第二段 → 第三段」排序，drawRange
+      // 增长时会从中心往外扩散，而不是先画完一整条再突然跳到下一条。
+      const crackPositions: number[] = [];
+      const crackBaseY: number[] = [];
+      const crackSinkWeights: number[] = [];
+      const crackIndices: number[] = [];
+      const roots = Array.from({ length: 6 }, (_, index) => index / 6 * Math.PI * 2 + (random() - 0.5) * 0.24);
+      let crackVertex = 0;
+      for (let depth = 0; depth < 3; depth += 1) {
+        for (let branch = 0; branch < roots.length; branch += 1) {
+          const bend = (random() - 0.5) * (0.12 + depth * 0.06);
+          const angle = roots[branch] + bend;
+          const startAmount = 0.12 + depth * 0.23;
+          const endAmount = startAmount + 0.25 + random() * 0.08;
+          const startX = Math.cos(angle - bend * 0.4) * site.radiusX * startAmount;
+          const startZ = Math.sin(angle - bend * 0.4) * site.radiusZ * startAmount;
+          const endX = Math.cos(angle) * site.radiusX * Math.min(0.9, endAmount);
+          const endZ = Math.sin(angle) * site.radiusZ * Math.min(0.9, endAmount);
+          const dx = endX - startX;
+          const dz = endZ - startZ;
+          const length = Math.max(0.001, Math.hypot(dx, dz));
+          const width = 0.035 + depth * 0.012;
+          const sideX = -dz / length * width;
+          const sideZ = dx / length * width;
+          for (const [x, z] of [
+            [startX + sideX, startZ + sideZ],
+            [startX - sideX, startZ - sideZ],
+            [endX + sideX, endZ + sideZ],
+            [endX - sideX, endZ - sideZ],
+          ]) {
+            const y = localHeight(x, z, 0.085);
+            crackPositions.push(x, y, z);
+            crackBaseY.push(y);
+            crackSinkWeights.push(sinkWeightAt(radialAmount(x, z)));
+          }
+          crackIndices.push(
+            crackVertex, crackVertex + 2, crackVertex + 1,
+            crackVertex + 1, crackVertex + 2, crackVertex + 3,
+          );
+          crackVertex += 4;
+        }
+      }
+      const crackGeometry = new THREE.BufferGeometry();
+      crackGeometry.setAttribute("position", new THREE.Float32BufferAttribute(crackPositions, 3));
+      crackGeometry.setIndex(crackIndices);
+      crackGeometry.setDrawRange(0, 0);
+      const cracks = new THREE.Mesh(
+        crackGeometry,
+        new THREE.MeshBasicMaterial({ color: 0x503c31, transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide }),
+      );
+      cracks.renderOrder = 3;
+      group.add(cracks);
+
+      const rimPositions: number[] = [];
+      const rimBaseY: number[] = [];
+      const rimSinkWeights: number[] = [];
+      const rimIndices: number[] = [];
+      for (let index = 0; index < sectors; index += 1) {
+        const angle = index / sectors * Math.PI * 2;
+        for (const amount of [0.985, 1.025]) {
+          const x = Math.cos(angle) * site.radiusX * amount;
+          const z = Math.sin(angle) * site.radiusZ * amount;
+          const y = localHeight(x, z, 0.075);
+          rimPositions.push(x, y, z);
+          rimBaseY.push(y);
+          rimSinkWeights.push(sinkWeightAt(amount));
+        }
+      }
+      for (let index = 0; index < sectors; index += 1) {
+        const next = (index + 1) % sectors;
+        const inner = index * 2;
+        const outer = inner + 1;
+        const nextInner = next * 2;
+        const nextOuter = nextInner + 1;
+        rimIndices.push(inner, nextOuter, outer, inner, nextInner, nextOuter);
+      }
+      const rimGeometry = new THREE.BufferGeometry();
+      rimGeometry.setAttribute("position", new THREE.Float32BufferAttribute(rimPositions, 3));
+      rimGeometry.setIndex(rimIndices);
+      const rim = new THREE.Mesh(
+        rimGeometry,
+        new THREE.MeshBasicMaterial({ color: 0xf2ead5, transparent: true, opacity: 0.56, depthWrite: false, side: THREE.DoubleSide }),
+      );
+      rim.renderOrder = 2;
+      group.add(rim);
+
+      this.scene.add(group);
+      this.saltCrustViews.set(site.id, {
+        group,
+        surface,
+        surfaceBaseY: baseY,
+        sinkWeights,
+        cracks,
+        crackBaseY: Float32Array.from(crackBaseY),
+        crackSinkWeights: Float32Array.from(crackSinkWeights),
+        crackSegments: SALT_CRACK_SEGMENTS,
+        rim,
+        rimBaseY: Float32Array.from(rimBaseY),
+        rimSinkWeights: Float32Array.from(rimSinkWeights),
+        lastSink: -1,
+      });
+    }
+  }
+
+  private buildSaltLoadRing(): {
+    group: THREE.Group;
+    track: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>;
+    fill: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>;
+  } {
+    const group = new THREE.Group();
+    group.visible = false;
+    const track = new THREE.Mesh(
+      new THREE.RingGeometry(0.82, 1.16, SALT_RING_SEGMENTS),
+      new THREE.MeshBasicMaterial({ color: 0x352e27, transparent: true, opacity: 0.5, depthWrite: false, depthTest: false, side: THREE.DoubleSide }),
+    );
+    const fill = new THREE.Mesh(
+      new THREE.RingGeometry(0.87, 1.11, SALT_RING_SEGMENTS),
+      new THREE.MeshBasicMaterial({ color: SALT_RING_SAFE, transparent: true, opacity: 0.94, depthWrite: false, depthTest: false, side: THREE.DoubleSide }),
+    );
+    track.rotation.x = fill.rotation.x = -Math.PI / 2;
+    track.position.y = 0.055;
+    fill.position.y = 0.075;
+    track.renderOrder = 7;
+    fill.renderOrder = 8;
+    fill.geometry.setDrawRange(0, 0);
+    group.add(track, fill);
+    return { group, track, fill };
+  }
+
+  private buildSaltDust(): THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial> {
+    const count = 30;
+    const positions = new Float32Array(count * 3);
+    const random = mulberry32(0x5a17d057);
+    for (let index = 0; index < count; index += 1) {
+      const angle = random() * Math.PI * 2;
+      const radius = 0.5 + random() * 4.3;
+      positions[index * 3] = Math.cos(angle) * radius;
+      positions[index * 3 + 1] = random() * 0.8;
+      positions[index * 3 + 2] = Math.sin(angle) * radius;
+    }
+    this.saltDustBase.set(positions);
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    const dust = new THREE.Points(geometry, new THREE.PointsMaterial({
+      color: 0xd8c39a,
+      size: 0.22,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      sizeAttenuation: true,
+    }));
+    dust.visible = false;
+    dust.renderOrder = 4;
+    return dust;
+  }
+
+  private saltSink(state: SaltCrustState): number {
+    if (state.stage === "collapsed") {
+      // 前三秒保持断口，最后两秒缓慢拱回，明确告诉玩家可以再试。
+      return state.collapsedRemaining > 2 ? 0.5 : 0.5 * clamp(state.collapsedRemaining / 2, 0, 1);
+    }
+    if (state.stage === "grace") {
+      return 0.14 + (1 - state.graceRemaining / 2) * 0.12;
+    }
+    if (state.pressure < 0.42) return 0;
+    if (state.pressure < 0.72) return 0.04 * (state.pressure - 0.42) / 0.3;
+    return 0.04 + 0.1 * (state.pressure - 0.72) / 0.28;
+  }
+
+  private syncSaltCrusts(delta: number): void {
+    for (const state of this.simulation.saltCrusts) {
+      const view = this.saltCrustViews.get(state.id);
+      if (!view) continue;
+      const sink = this.saltSink(state);
+      if (Math.abs(sink - view.lastSink) > 0.001) {
+        const attribute = view.surface.geometry.getAttribute("position") as THREE.BufferAttribute;
+        for (let index = 0; index < attribute.count; index += 1) {
+          attribute.setY(index, view.surfaceBaseY[index] - view.sinkWeights[index] * sink);
+        }
+        attribute.needsUpdate = true;
+        view.surface.geometry.computeVertexNormals();
+        view.surface.geometry.getAttribute("normal").needsUpdate = true;
+        const crackAttribute = view.cracks.geometry.getAttribute("position") as THREE.BufferAttribute;
+        for (let index = 0; index < crackAttribute.count; index += 1) {
+          crackAttribute.setY(index, view.crackBaseY[index] - view.crackSinkWeights[index] * sink);
+        }
+        crackAttribute.needsUpdate = true;
+        const rimAttribute = view.rim.geometry.getAttribute("position") as THREE.BufferAttribute;
+        for (let index = 0; index < rimAttribute.count; index += 1) {
+          rimAttribute.setY(index, view.rimBaseY[index] - view.rimSinkWeights[index] * sink);
+        }
+        rimAttribute.needsUpdate = true;
+        view.lastSink = sink;
+      }
+
+      const crackPressure = state.stage === "collapsed" ? 1 : state.pressure;
+      const visibleSegments = Math.floor(clamp((crackPressure - 0.16) / 0.84, 0, 1) * view.crackSegments);
+      view.cracks.geometry.setDrawRange(0, visibleSegments * 6);
+      view.cracks.visible = visibleSegments > 0;
+      view.surface.material.color.copy(state.stage === "collapsed"
+        ? SALT_CRUST_BROKEN_COLOR
+        : SALT_SURFACE_NEUTRAL).lerp(SALT_CRUST_STRAIN_COLOR, state.stage === "collapsed" ? 0 : state.pressure * 0.28);
+      view.rim.material.color.copy(state.stage === "collapsed" ? SALT_RING_DANGER : SALT_RING_SAFE)
+        .lerp(SALT_RING_WARNING, state.stage === "collapsed" ? 0 : state.pressure * 0.7);
+      view.rim.material.opacity = state.stage === "collapsed" ? 0.25 : 0.42 + state.pressure * 0.28;
+    }
+
+    const active = this.simulation.getActiveSaltCrust();
+    this.saltLoadRing.visible = active !== null;
+    if (active) {
+      this.saltLoadRing.position.set(
+        this.simulation.player.x,
+        this.worldHeight(this.simulation.player.x, this.simulation.player.z),
+        this.simulation.player.z,
+      );
+      const indices = Math.ceil(clamp(active.pressure, 0, 1) * SALT_RING_SEGMENTS) * 6;
+      this.saltLoadFill.geometry.setDrawRange(0, indices);
+      if (active.pressure < 0.65) {
+        this.saltRingColor.copy(SALT_RING_SAFE).lerp(SALT_RING_WARNING, active.pressure / 0.65);
+      } else {
+        this.saltRingColor.copy(SALT_RING_WARNING).lerp(SALT_RING_DANGER, (active.pressure - 0.65) / 0.35);
+      }
+      if (active.supported) this.saltRingColor.copy(SALT_RING_SAFE);
+      this.saltLoadFill.material.color.copy(this.saltRingColor);
+      this.saltLoadTrack.material.opacity = active.stage === "grace" ? 0.72 : 0.46;
+      const pulse = !this.reducedMotion && active.stage === "grace" ? 1 + Math.sin(this.time * 11) * 0.09 : 1;
+      this.saltLoadRing.scale.setScalar(pulse);
+    } else {
+      this.saltLoadFill.geometry.setDrawRange(0, 0);
+      this.saltLoadRing.scale.setScalar(1);
+    }
+
+    const dustState = this.simulation.saltCrusts.find((site) => site.stage === "collapsed")
+      ?? (active && active.pressure >= 0.34 ? active : null);
+    this.saltDust.visible = dustState !== null;
+    if (!dustState) return;
+    this.saltDust.position.set(dustState.x, this.worldHeight(dustState.x, dustState.z) + 0.08, dustState.z);
+    const dustStrength = dustState.stage === "collapsed" ? 0.8
+      : dustState.stage === "grace" ? 0.58 : clamp((dustState.pressure - 0.34) / 0.66, 0, 1) * 0.34;
+    this.saltDust.material.opacity = this.reducedMotion ? dustStrength * 0.45 : dustStrength;
+    if (this.reducedMotion) return;
+    const attribute = this.saltDust.geometry.getAttribute("position") as THREE.BufferAttribute;
+    const array = attribute.array as Float32Array;
+    for (let index = 0; index < attribute.count; index += 1) {
+      const offset = index * 3;
+      array[offset] += delta * (0.18 + index % 5 * 0.035);
+      array[offset + 1] += delta * (0.55 + index % 7 * 0.08);
+      array[offset + 2] += delta * (0.08 + index % 3 * 0.035);
+      if (array[offset + 1] > 2.6) {
+        array[offset] = this.saltDustBase[offset];
+        array[offset + 1] = 0.04;
+        array[offset + 2] = this.saltDustBase[offset + 2];
+      }
+    }
+    attribute.needsUpdate = true;
   }
 
   private buildLandmarks(): void {

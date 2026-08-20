@@ -11,6 +11,7 @@ import { NightIntro } from "./ui/NightIntro";
 import { TutorialStage } from "./ui/TutorialStage";
 import { bumpRunIndex, loadDifficulty, loadRunIndex, saveDifficulty } from "./ui/Settings";
 import { normalizeDifficulty } from "./game/simulation/difficulty";
+import type { Difficulty } from "./game/simulation/difficulty";
 import { createPlatform } from "./platform";
 
 /**
@@ -78,12 +79,23 @@ async function bootstrap(): Promise<void> {
       }
     }
   }
-  // 难度只在这里读一次 —— 换档要重开页面，见 difficulty.ts 顶部那段。
-  const difficulty = loadDifficulty();
+  // 每局构造时读一次；通关页可以在软重开时把下一局切到另一档。
+  let difficulty = loadDifficulty();
   let simulation = new GameSimulation(world, difficulty);
   if (import.meta.env.DEV && new URLSearchParams(window.location.search).get("night") === "1") {
     simulation.phase = "night";
     simulation.phaseTime = 105;
+  }
+  if (import.meta.env.DEV) {
+    // 程序化盐壳的视觉验收入口：直接从中心开始，fuel 会把承重推到红区。
+    // 只在 Vite 开发环境存在，不改纪录、不进生产包分支。
+    const saltPreview = new URLSearchParams(window.location.search).get("salt");
+    const site = simulation.saltCrusts[0];
+    if (site && (saltPreview === "1" || saltPreview === "fuel")) {
+      simulation.player.x = site.x;
+      simulation.player.z = site.z;
+      if (saltPreview === "fuel") simulation.player.carrying = "fuel";
+    }
   }
   const audio = new SynthAudio(boot?.audioContext ?? null);
   /*
@@ -295,19 +307,6 @@ async function bootstrap(): Promise<void> {
    * 按钮点完立刻置灰，否则连点两下会叠两次广告请求。
    */
   /*
-   * 换难度要整页刷新。
-   *
-   * 狼的数值是生成时按难度算进去的，而难度在 bootstrap 开头只读一次
-   * （见 difficulty.ts 顶部）。这条路很少走，留着最保险的做法。
-   */
-  const reloadWithBreak = async (button: HTMLElement | null): Promise<void> => {
-    if (button instanceof HTMLButtonElement) button.disabled = true;
-    bumpRunIndex();
-    await platform.commercialBreak();
-    window.location.reload();
-  };
-
-  /*
    * "再来一局"：软重启，不刷页。
    *
    * 平台录像显示长会话是**重开叠出来的**（有人 10 分钟开了 5、6 局），也就是说
@@ -322,43 +321,70 @@ async function bootstrap(): Promise<void> {
    * `started` 要退回 false：Poki 要求 gameplayStart 必须直接发生在玩家输入的调用栈里，
    * 所以新的一局同样要等他第一次真的动一下，跟刚打开页面时是同一条规矩。
    */
-  const softRestart = async (button: HTMLElement | null): Promise<void> => {
-    if (button instanceof HTMLButtonElement) button.disabled = true;
-    const run = bumpRunIndex();
-    await platform.commercialBreak();
-
-    world = createWorld(undefined, pickStartCamp(run));
-    simulation = new GameSimulation(world, difficulty);
-    // 动物模型是开场之后才下的。已经到货的要在新的一局里重新打开，
-    // 否则重开之后整夜一只狗都不会来。
-    if (wolvesReady) simulation.enableWolves();
-    if (crittersReady) simulation.enableCritters();
-
-    renderer.resetRun(world, simulation);
-    hud.resetRun(simulation);
-    nightIntro.reset();
-    input.cancelMoveTarget();
-    started = false;
-    revivesLeft = 3;
-    previousTime = performance.now();
-
-    if (import.meta.env.DEV) {
-      Object.assign((window as unknown as { game: Record<string, unknown> }).game, { simulation, world });
-    }
-    if (button instanceof HTMLButtonElement) button.disabled = false;
+  let restartPending = false;
+  const setRestartControlsDisabled = (disabled: boolean): void => {
+    for (const control of document.querySelectorAll<HTMLButtonElement>(
+      "#restart-button, [data-victory-difficulty]",
+    )) control.disabled = disabled;
   };
 
-  for (const id of ["restart-button", "victory-restart-button"]) {
-    const button = document.getElementById(id);
-    button?.addEventListener("click", () => { void softRestart(button); });
+  const softRestart = async (
+    button: HTMLElement | null,
+    targetDifficulty: Difficulty = difficulty,
+  ): Promise<void> => {
+    // 三个通关按钮共用这一道锁；只禁刚点的按钮挡不住并发广告与重复建局。
+    if (restartPending) return;
+    restartPending = true;
+    setRestartControlsDisabled(true);
+    const run = bumpRunIndex();
+    try {
+      await platform.commercialBreak();
+
+      difficulty = targetDifficulty;
+      saveDifficulty(difficulty);
+      world = createWorld(undefined, pickStartCamp(run));
+      simulation = new GameSimulation(world, difficulty);
+      // 动物模型是开场之后才下的。已经到货的要在新的一局里重新打开，
+      // 否则重开之后整夜一只狗都不会来。
+      if (wolvesReady) simulation.enableWolves();
+      if (crittersReady) simulation.enableCritters();
+
+      renderer.resetRun(world, simulation);
+      hud.resetRun(simulation, difficulty);
+      nightIntro.reset();
+      input.cancelMoveTarget();
+      started = false;
+      revivesLeft = 3;
+      previousTime = performance.now();
+      document.getElementById("difficulty-restart")?.classList.add("hidden");
+
+      if (import.meta.env.DEV) {
+        Object.assign((window as unknown as { game: Record<string, unknown> }).game, { simulation, world });
+      }
+    } finally {
+      restartPending = false;
+      setRestartControlsDisabled(false);
+      if (button instanceof HTMLButtonElement) button.disabled = false;
+    }
+  };
+
+  const restartButton = document.getElementById("restart-button");
+  restartButton?.addEventListener("click", () => {
+    // 本局中途在设置里选过新档的话，结算后的下一局顺手应用它。
+    void softRestart(restartButton, hud.getDifficultySelection());
+  });
+  for (const button of document.querySelectorAll<HTMLButtonElement>("[data-victory-difficulty]")) {
+    button.addEventListener("click", () => {
+      void softRestart(button, normalizeDifficulty(button.dataset.victoryDifficulty));
+    });
   }
   // 齿轮即暂停键：底排腾出来只放四个操作键，而暂停控件仍然看得见、点得到。
   document.getElementById("settings-button")?.addEventListener("click", () => hud.togglePause());
   document.getElementById("pause-resume")?.addEventListener("click", () => hud.setPaused(false));
 
   /*
-   * 难度：点一下就存下来（下次自然重开即生效），同时亮出"重开一局"。
-   * 不做热切换 —— 狼的数值是生成时算的，跑到一半换档只会让新旧狼混在同一夜里。
+   * 难度：点一下先保存并亮出"重开一局"；确认后走同一条软重启，
+   * 只让**新建的** simulation 吃到新系数，不会在半夜混出两套狼数值。
    */
   const difficultyRestart = document.getElementById("difficulty-restart");
   for (const option of document.querySelectorAll<HTMLButtonElement>("#difficulty-options [data-difficulty]")) {
@@ -369,7 +395,9 @@ async function bootstrap(): Promise<void> {
       difficultyRestart?.classList.toggle("hidden", picked === difficulty);
     });
   }
-  difficultyRestart?.addEventListener("click", () => { void reloadWithBreak(difficultyRestart); });
+  difficultyRestart?.addEventListener("click", () => {
+    void softRestart(difficultyRestart, hud.getDifficultySelection());
+  });
   /*
    * 声音按钮的文字**不能**交给 applyStaticText 重刷。
    *
@@ -458,6 +486,11 @@ async function bootstrap(): Promise<void> {
         if (event.type === "barrier-hit") {
           renderer.impact(0.035);
           renderer.barrierHit(event.itemId);
+        }
+        if (event.type === "salt-crust" && (event.stage === "collapse" || event.stage === "eject")) {
+          // 模拟层也清了内部 clickTarget；输入层这份目标不清会在下一帧又把人送回断口。
+          input.cancelMoveTarget();
+          if (event.stage === "collapse") renderer.impact(0.18);
         }
         if (event.type === "game-over") input.cancelMoveTarget();
         // 结算页不算在玩。这一对信号报得越准，平台越不会把广告插在

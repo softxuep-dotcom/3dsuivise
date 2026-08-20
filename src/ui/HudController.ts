@@ -176,6 +176,7 @@ export class HudController {
   private readonly clock = required<HTMLElement>("clock");
   private readonly prompt = required<HTMLElement>("prompt");
   private readonly restIndicator = required<HTMLElement>("rest-indicator");
+  private readonly saltCrustStatus = required<HTMLElement>("salt-crust-status");
   private readonly actionIcon = required<HTMLElement>("action-icon");
   private readonly actionLabel = required<HTMLElement>("action-label");
   private readonly recordsLine = required<HTMLElement>("records-line");
@@ -271,9 +272,12 @@ export class HudController {
   private lastBlocked = false;
   private blockedListener: ((blocked: boolean) => void) | null = null;
 
-  /** 本局实际在跑的难度 —— 记录只和同难度比。 */
-  private readonly difficulty: Difficulty;
-  private readonly victoryDifficultyHint = required<HTMLElement>("victory-difficulty-hint");
+  /** 本局实际在跑的难度 —— 软重开选档时会与 simulation 一起更新。 */
+  private difficulty: Difficulty;
+  private readonly victoryProgressionCopy = required<HTMLElement>("victory-progression-copy");
+  private readonly victoryChoices = [
+    ...document.querySelectorAll<HTMLButtonElement>("[data-victory-difficulty]"),
+  ];
   /** 设置面板里当前高亮的那一档，可能已经和 difficulty 不同（选了但还没重开）。 */
   private difficultySelection: Difficulty;
 
@@ -314,8 +318,10 @@ export class HudController {
    * 绑了固定监听，每重开一次就会再叠一层。换引用是安全的：那些闭包读的都是
    * `this.simulation`。
    */
-  resetRun(simulation: GameSimulation): void {
+  resetRun(simulation: GameSimulation, difficulty: Difficulty = this.difficulty): void {
     this.simulation = simulation;
+    this.difficulty = difficulty;
+    this.setDifficultySelection(difficulty);
     this.lastGameOver = null;
     this.retrofitOpen = false;
     this.retrofitPending = [];
@@ -330,6 +336,7 @@ export class HudController {
     this.toastTimer = 0;
     this.objectiveChip.classList.remove("muted");
     this.huntProgress.classList.remove("fuel-loaded");
+    this.saltCrustStatus.className = "status-pill salt-crust-status hidden";
     // 两个搏动提示本来就是"每局第一次"的口径（见字段上的注释，它们不写 localStorage）,
     // 所以新的一局要放回来。
     this.attackHintUsed = false;
@@ -610,6 +617,7 @@ export class HudController {
     this.updateConditionBadge();
     this.updateDrainNote();
     this.updateHuntProgress();
+    this.updateSaltCrustStatus();
 
     for (const [element, kind] of this.supplies) {
       const count = this.simulation.getInventoryCount(kind);
@@ -681,6 +689,20 @@ export class HudController {
     this.conditionBadge.className = "condition-badge hidden";
   }
 
+  /** 世界空间的环负责直觉反馈，这颗短胶囊只给它一个明确名字和精确倒计时。 */
+  private updateSaltCrustStatus(): void {
+    const state = this.simulation.getActiveSaltCrust();
+    this.saltCrustStatus.classList.toggle("hidden", state === null);
+    if (!state) return;
+    this.saltCrustStatus.classList.toggle("warning", state.stage === "warning");
+    this.saltCrustStatus.classList.toggle("critical", state.stage === "critical" || state.stage === "grace");
+    this.saltCrustStatus.classList.toggle("supported", state.supported);
+    const value = this.saltCrustStatus.querySelector("b");
+    if (value) value.textContent = state.stage === "grace"
+      ? `${Math.round(state.pressure * 100)}% · ${state.graceRemaining.toFixed(1)}s`
+      : `${Math.round(state.pressure * 100)}%`;
+  }
+
   /**
    * 体力恒定流失最容易被误读成"被看不见的东西攻击"，所以要有一行说明 ——
    * 但**不必常驻**。满血时它只是噪音，而右上角本来就挤。
@@ -742,6 +764,13 @@ export class HudController {
     if (event.type === "truck-depart") {
       this.closeInventory();
       this.showToast(t("toast.truckDepart"), 5);
+    }
+    if (event.type === "salt-crust") {
+      if (event.stage === "enter") this.showToast(t("risk.salt.enter"), 3.2);
+      else if (event.stage === "critical") this.showToast(t("risk.salt.critical"), 2.6);
+      else if (event.stage === "grace") this.showToast(t("risk.salt.grace"), 2.2);
+      else if (event.stage === "support") this.showToast(t("risk.salt.support"), 2.4);
+      else if (event.stage === "collapse") this.showToast(t("risk.salt.collapse"), 3.2);
     }
     if (event.type === "victory") {
       this.closeInventory();
@@ -1119,28 +1148,30 @@ export class HudController {
       t("win.summary", { day: this.simulation.day, count: player.kills }),
       this.submitAndDescribe(true),
     ].filter(Boolean).join(" ");
-    this.showNextDifficultyHint();
+    this.showVictoryProgression();
     this.victory.classList.remove("hidden");
   }
 
   /**
-   * 通关页上的"下一步"：告诉玩家还有更高的难度，以及去哪儿调。
-   *
-   * 只在**还有更高档**时出现 —— 默认是简单档，所以绝大多数第一次通关的人都会看到；
-   * 而已经打穿令人发狂的人不该被劝"再难一点"，那一行对他只是噪音，整行隐藏。
-   *
-   * 放在通关的那一刻，是因为这是玩家唯一一个"我做到了、还有什么"的时刻：
-   * 死亡页说这句话像是在嘲讽，开场页说则没人在意。
+   * 通关页直接给下一局入口，不再把玩家赶去设置里找开关。
+   * 当前档显示“再玩一遍”，另外两档显示“挑战…”。推荐色落在下一档；
+   * 已打穿困难时则落回当前档，重点变成刷新纪录。
    */
-  private showNextDifficultyHint(): void {
+  private showVictoryProgression(): void {
+    this.victoryProgressionCopy.textContent = t(`win.progress.${this.difficulty}`);
     const index = DIFFICULTIES.indexOf(this.difficulty);
-    const next = index >= 0 ? DIFFICULTIES[index + 1] : undefined;
-    this.victoryDifficultyHint.classList.toggle("hidden", !next);
-    if (!next) return;
-    this.victoryDifficultyHint.textContent = t("win.tryHarder", {
-      current: t(`difficulty.${this.difficulty}`),
-      next: t(`difficulty.${next}`),
-      blurb: t(`difficulty.${next}.blurb`),
-    });
+    const recommended = DIFFICULTIES[index + 1] ?? this.difficulty;
+    for (const button of this.victoryChoices) {
+      const target = button.dataset.victoryDifficulty as Difficulty;
+      const replay = target === this.difficulty;
+      button.textContent = replay
+        ? t("win.replay")
+        : t("win.challenge", { difficulty: t(`difficulty.${target}`) });
+      button.title = t(`difficulty.${target}.blurb`);
+      button.classList.toggle("recommended", target === recommended);
+      button.classList.toggle("replay", replay);
+      if (replay) button.setAttribute("aria-current", "true");
+      else button.removeAttribute("aria-current");
+    }
   }
 }

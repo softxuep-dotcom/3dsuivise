@@ -31,8 +31,8 @@ const EARLY_NIGHT_RAID_TARGETS = [5, 9, 14] as const;
  * 实测风脊营地整夜只剩 1 只摸到玩家（回归测试要求至少 2 只）。
  * 一波两三只则既有节奏又有分量：一波打完能喘口气，喘完下一波又来。
  *
- * 末尾留出的那 40% 是给路上用的：巢到营地约 53 米，跑完要三十多秒，
- * 最后一波再晚就赶不上天亮前咬到人了。
+ * 简单档末尾留 40% 给赶路；普通/困难把波次铺得更晚，但最后一波的中心点
+ * 最多仍只到整夜约 65%，巢到营地的三十多秒路程不会被黎明截断。
  */
 const RAID_WAVES_PER_NIGHT = 3;
 /**
@@ -44,7 +44,6 @@ const RAID_WAVES_PER_NIGHT = 3;
  * 所以波数不是死的 3，而是"先保证每波有分量，再看能分几波"。
  */
 const RAID_MIN_WAVE_SIZE = 2.5;
-const RAID_RELEASE_WINDOW = 0.6;
 /** 同一波内的错身抖动（占一波间隔的比例）：一起来，但不要像列队一样整齐。 */
 const RAID_RELEASE_JITTER = 0.16;
 
@@ -211,7 +210,7 @@ export class WolfDirector {
     const wave = Math.min(waveCount - 1, Math.floor((this.raidersSpawnedThisNight - 1) / waveSize));
     const nightDuration = this.ctx.getPhaseDuration();
     const nightElapsed = nightDuration - this.ctx.phaseTime;
-    const window = nightDuration * RAID_RELEASE_WINDOW;
+    const window = nightDuration * this.ctx.tuning.raidReleaseWindow;
     const gap = window / waveCount;
     const jitter = (this.ctx.random() - 0.5) * gap * RAID_RELEASE_JITTER * 2;
     const releaseIn = (wave + 0.5) * gap + jitter - nightElapsed;
@@ -889,7 +888,8 @@ export class WolfDirector {
      * 攻营犬的动身时刻。**教学犬（第一夜第一只）不排班**，它就是要立刻来 ——
      * 那只狗的全部作用是让玩家学会"面对它、挥一刀"，让他等三十秒等于没教。
      *
-     * 其余的按第几只均分整夜的前 78%：第 i 只（从 0 数）在 (i+0.5)/N 那一档动身。
+     * 其余的按第几只均分整夜的前 60%~78%（由难度决定）：第 i 只（从 0 数）
+     * 在 (i+0.5)/N 那一档动身。
      * 已经过去的夜晚时间要扣掉 —— 刷怪全挤在前 45 秒，第 5 只出生时夜晚才走了
      * 三十几秒，而它那一档在 70% 处，所以真正的等待发生在这里。
      */

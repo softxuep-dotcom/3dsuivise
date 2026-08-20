@@ -45,6 +45,7 @@ import type {
   WorldDefinition,
   WorldDrop,
   RetrofitId,
+  SaltCrustState,
 } from "./types";
 import { PLAYER_RADIUS, STONE_COLLIDE_RADIUS, WOLF_RADIUS, BARRIER_STATS, CRITTER_SPECS, FUEL_REQUIRED, INVENTORY_CAPACITY, INVENTORY_STACK_LIMITS, STRUCTURE_SPECS,
   RETROFIT_DRAW, RETROFIT_IDS, RETROFIT_LOG_SECONDS, RETROFIT_MEDKIT_HEAL, RETROFIT_MEDKIT_TRIGGER,
@@ -667,6 +668,29 @@ const TRUCK_BOARD_REACH = 4.5;
 const TRUCK_DEPART_SPEED = 11;
 const TRUCK_DEPART_MAX_SECONDS = 12;
 
+/*
+ * 脆盐壳承重。
+ *
+ * 数字按 10.4 米的短轴跨度校准：空手直穿只积约 23%，油桶直穿约 89%，
+ * 大石会把环推入最后两秒，但路线走得直仍来得及撤出或把石头放下做落脚点。
+ * 风险只收时间，不碰五轴，也不吞玩家手上的货物。
+ */
+const SALT_PRESSURE_RATE: Record<"empty" | "stake" | "fuel" | "stone", number> = {
+  empty: 0.18,
+  stake: 0.30,
+  fuel: 0.38,
+  stone: 0.52,
+};
+const SALT_PRESSURE_RECOVERY = 0.25;
+const SALT_SUPPORT_RECOVERY = 0.62;
+const SALT_WARNING_PRESSURE = 0.42;
+const SALT_CRITICAL_PRESSURE = 0.72;
+const SALT_GRACE_SECONDS = 2;
+const SALT_COLLAPSED_SECONDS = 5;
+// 放下的大石自身有 1.18m 碰撞半径；3.2m 支撑圈给玩家留出约 1.3m 的侧绕空间，
+// 不会出现“石头明明稳住了地面，却被自己的碰撞卡死”的窄环。
+const SALT_SUPPORT_RADIUS = 3.2;
+
 export class GameSimulation {
   readonly world: WorldDefinition;
   readonly camps: CampState[];
@@ -690,6 +714,8 @@ export class GameSimulation {
   readonly critters: CritterState[] = [];
   readonly drops: WorldDrop[] = [];
   readonly barrels: FuelBarrelState[];
+  /** 脆盐壳状态；渲染层只读这里，不从 Three.js 反推任何玩法。 */
+  readonly saltCrusts: SaltCrustState[];
   /** 卡车。位置在驶离时会变，所以它是状态不是定义的引用。 */
   readonly truck: { x: number; z: number; rotation: number; loaded: number };
 
@@ -754,6 +780,8 @@ export class GameSimulation {
   private victorySent = false;
   /** 玩家正扛着的那桶油；放下时要把同一个对象放回地面，而不是新建一桶。 */
   private carriedBarrel: FuelBarrelState | null = null;
+  /** 入区提示每块只说一次，反复进出只保留环、裂纹和声音。 */
+  private readonly visitedSaltCrusts = new Set<number>();
   /** >0 表示卡车正在驶离，玩家已经在车上，只剩结算动画。 */
   private departTimer = 0;
   // 死因记录，供 UI 显示游戏结束文案
@@ -817,6 +845,16 @@ export class GameSimulation {
       z: barrel.z,
       rotation: barrel.rotation,
       placement: "ground" as const,
+    }));
+    this.saltCrusts = world.saltCrusts.map((site) => ({
+      ...site,
+      pressure: 0,
+      stage: "stable" as const,
+      inside: false,
+      supported: false,
+      graceRemaining: 0,
+      collapsedRemaining: 0,
+      entry: null,
     }));
     this.truck = { x: world.truck.x, z: world.truck.z, rotation: world.truck.rotation, loaded: 0 };
     /*
@@ -981,7 +1019,10 @@ export class GameSimulation {
     this.player.attackFlash = Math.max(0, this.player.attackFlash - delta);
     this.player.hurtFlash = Math.max(0, this.player.hurtFlash - delta);
     const isMoving = Math.hypot(movement.x, movement.z) >= 0.08;
+    const previousPlayerPosition = { x: this.player.x, z: this.player.z };
     this.updatePlayerMovement(delta, movement, isMoving);
+    // 放在时钟闸之前：教学暂停的是昼夜与生存轴，不是脚下会不会塌。
+    this.updateSaltCrusts(delta, previousPlayerPosition);
     /*
      * 拾取在时钟闸**之前**结算。
      *
@@ -2477,13 +2518,202 @@ export class GameSimulation {
     this.moveEntity(this.player, movement.x * speed * delta, movement.z * speed * delta, PLAYER_RADIUS, true);
   }
 
+  /** 点是否落在这块盐壳的椭圆边界内。 */
+  private pointInSaltCrust(point: Vec2, site: SaltCrustState, padding = 0): boolean {
+    const dx = point.x - site.x;
+    const dz = point.z - site.z;
+    const cosine = Math.cos(-site.rotation);
+    const sine = Math.sin(-site.rotation);
+    const localX = dx * cosine - dz * sine;
+    const localZ = dx * sine + dz * cosine;
+    const radiusX = Math.max(0.1, site.radiusX + padding);
+    const radiusZ = Math.max(0.1, site.radiusZ + padding);
+    return localX * localX / (radiusX * radiusX) + localZ * localZ / (radiusZ * radiusZ) < 1;
+  }
+
+  /**
+   * 从椭圆内部沿 `toward` 找到边缘外的安全点。
+   * 正常进入时直接记上一帧坐标；这个函数只兜测试传送、断口二次闯入等没有上一帧边界的情况。
+   */
+  private saltCrustRimPoint(site: SaltCrustState, toward: Vec2): Vec2 {
+    const dx = toward.x - site.x;
+    const dz = toward.z - site.z;
+    const cosine = Math.cos(-site.rotation);
+    const sine = Math.sin(-site.rotation);
+    let localX = dx * cosine - dz * sine;
+    let localZ = dx * sine + dz * cosine;
+    if (Math.hypot(localX, localZ) < 0.001) localZ = site.radiusZ;
+    const scale = 1 / Math.sqrt(
+      localX * localX / (site.radiusX * site.radiusX)
+      + localZ * localZ / (site.radiusZ * site.radiusZ),
+    );
+    localX *= scale * 1.12;
+    localZ *= scale * 1.12;
+    const worldCosine = Math.cos(site.rotation);
+    const worldSine = Math.sin(site.rotation);
+    return this.findNearestWalkablePoint({
+      x: site.x + localX * worldCosine - localZ * worldSine,
+      z: site.z + localX * worldSine + localZ * worldCosine,
+    });
+  }
+
+  private saltCrustStageForPressure(pressure: number): SaltCrustState["stage"] {
+    if (pressure >= SALT_CRITICAL_PRESSURE) return "critical";
+    if (pressure >= SALT_WARNING_PRESSURE) return "warning";
+    return "stable";
+  }
+
+  /** 玩家亲手放下的大石会形成安全落脚点；地图天然散石不算，避免无意中白送答案。 */
+  private saltCrustHasSupport(site: SaltCrustState): boolean {
+    const radiusSquared = SALT_SUPPORT_RADIUS * SALT_SUPPORT_RADIUS;
+    return this.items.some((item) => item.active && item.placed && item.kind === "stone"
+      && this.pointInSaltCrust(item, site)
+      && distanceSquared(this.player, item) <= radiusSquared);
+  }
+
+  private ejectFromSaltCrust(site: SaltCrustState, fallback: Vec2, useStoredEntry = true): Vec2 {
+    const anchor = useStoredEntry && site.entry && !this.pointInSaltCrust(site.entry, site)
+      ? site.entry
+      : this.saltCrustRimPoint(site, fallback);
+    this.player.x = anchor.x;
+    this.player.z = anchor.z;
+    // 不调用 dropCarriedItem：油桶、大石和树桩都继续由原引用持有，零损失。
+    this.clickTarget = null;
+    site.inside = false;
+    site.supported = false;
+    return anchor;
+  }
+
+  /** 玩家先把桶放下也不能钻规则空子：塌陷把壳面上的地面油桶一起送到入口外侧。 */
+  private rescueSaltCrustBarrels(site: SaltCrustState, anchor: Vec2): void {
+    const barrels = this.barrels.filter((barrel) => barrel.placement === "ground" && this.pointInSaltCrust(barrel, site));
+    if (barrels.length === 0) return;
+    let outward = normalize({ x: anchor.x - site.x, z: anchor.z - site.z });
+    if (outward.x === 0 && outward.z === 0) outward = { x: 0, z: 1 };
+    const tangent = { x: -outward.z, z: outward.x };
+    barrels.forEach((barrel, index) => {
+      const spread = (index - (barrels.length - 1) / 2) * 1.15;
+      const target = this.findNearestWalkablePoint({
+        x: anchor.x + outward.x * 1.25 + tangent.x * spread,
+        z: anchor.z + outward.z * 1.25 + tangent.z * spread,
+      });
+      barrel.x = target.x;
+      barrel.z = target.z;
+      barrel.rotation = Math.atan2(tangent.z, tangent.x);
+    });
+  }
+
+  private collapseSaltCrust(site: SaltCrustState, fallback: Vec2): void {
+    const anchor = this.ejectFromSaltCrust(site, fallback);
+    this.rescueSaltCrustBarrels(site, anchor);
+    site.pressure = 1;
+    site.stage = "collapsed";
+    site.graceRemaining = 0;
+    site.collapsedRemaining = SALT_COLLAPSED_SECONDS;
+    this.events.push({ type: "salt-crust", siteId: site.id, stage: "collapse" });
+  }
+
+  /**
+   * 承重 → 裂纹 → 最后两秒 → 弹回。
+   *
+   * 这段只改盐壳自己的状态和玩家坐标，绝不碰 health / water / hunger / warmth / stamina。
+   * 塌陷恢复 5 秒后可以再试，失败成本因此始终只是绕回入口的时间。
+   */
+  private updateSaltCrusts(delta: number, previousPlayerPosition: Vec2): void {
+    for (const site of this.saltCrusts) {
+      const insideNow = this.pointInSaltCrust(this.player, site);
+
+      if (site.stage === "collapsed") {
+        site.collapsedRemaining = Math.max(0, site.collapsedRemaining - delta);
+        if (insideNow) {
+          // 断口恢复前从另一侧误踩进去，只退回“这一次”跨入的边，不横穿整块地面
+          // 瞬移回第一次塌陷时保存的旧入口。
+          this.ejectFromSaltCrust(site, previousPlayerPosition, false);
+          // simulation.clickTarget 已在上面清空；这个无声事件只负责让 main 同步清掉
+          // InputController 的外部点击目标，免得接下来 5 秒每帧都把玩家重新拉回断口。
+          this.events.push({ type: "salt-crust", siteId: site.id, stage: "eject" });
+        }
+        if (site.collapsedRemaining <= 0) {
+          site.pressure = 0;
+          site.stage = "stable";
+          site.entry = null;
+        }
+        continue;
+      }
+
+      if (!insideNow) {
+        if (site.stage === "grace") {
+          // 跨出边界就立刻解除倒计时，但保留裂纹；马上折返仍然危险。
+          site.graceRemaining = 0;
+          site.pressure = Math.min(site.pressure, 0.94);
+        }
+        site.inside = false;
+        site.supported = false;
+        site.pressure = Math.max(0, site.pressure - delta * SALT_PRESSURE_RECOVERY);
+        site.stage = this.saltCrustStageForPressure(site.pressure);
+        if (site.pressure === 0) site.entry = null;
+        continue;
+      }
+
+      if (!site.inside) {
+        site.entry = this.pointInSaltCrust(previousPlayerPosition, site)
+          ? this.saltCrustRimPoint(site, previousPlayerPosition)
+          : { ...previousPlayerPosition };
+        if (!this.visitedSaltCrusts.has(site.id)) {
+          this.visitedSaltCrusts.add(site.id);
+          this.events.push({ type: "salt-crust", siteId: site.id, stage: "enter" });
+        }
+      }
+      site.inside = true;
+
+      const wasSupported = site.supported;
+      site.supported = this.saltCrustHasSupport(site);
+      if (site.supported) {
+        if (!wasSupported) this.events.push({ type: "salt-crust", siteId: site.id, stage: "support" });
+        site.graceRemaining = 0;
+        site.pressure = Math.max(0, Math.min(site.pressure, 0.9) - delta * SALT_SUPPORT_RECOVERY);
+        site.stage = this.saltCrustStageForPressure(site.pressure);
+        continue;
+      }
+
+      if (site.stage === "grace") {
+        site.graceRemaining = Math.max(0, site.graceRemaining - delta);
+        if (site.graceRemaining <= 0) this.collapseSaltCrust(site, previousPlayerPosition);
+        continue;
+      }
+
+      const before = site.pressure;
+      const load = this.player.carrying ?? "empty";
+      site.pressure = Math.min(1, site.pressure + delta * SALT_PRESSURE_RATE[load]);
+      if (site.pressure >= 1) {
+        site.pressure = 1;
+        site.stage = "grace";
+        site.graceRemaining = SALT_GRACE_SECONDS;
+        this.events.push({ type: "salt-crust", siteId: site.id, stage: "grace" });
+      } else if (before < SALT_CRITICAL_PRESSURE && site.pressure >= SALT_CRITICAL_PRESSURE) {
+        site.stage = "critical";
+        this.events.push({ type: "salt-crust", siteId: site.id, stage: "critical" });
+      } else if (before < SALT_WARNING_PRESSURE && site.pressure >= SALT_WARNING_PRESSURE) {
+        site.stage = "warning";
+        this.events.push({ type: "salt-crust", siteId: site.id, stage: "warning" });
+      } else {
+        site.stage = this.saltCrustStageForPressure(site.pressure);
+      }
+    }
+  }
+
+  /** HUD 与渲染层共同读取的当前承重；一次只可能站在一块互不重叠的盐壳里。 */
+  getActiveSaltCrust(): SaltCrustState | null {
+    return this.saltCrusts.find((site) => site.inside && site.stage !== "collapsed") ?? null;
+  }
+
   private updateNeeds(delta: number): void {
     // --- 代谢：水分与饥饿独立衰减，任一归零立即死亡 ---
-    this.player.water = clamp(this.player.water - delta * WATER_DECAY, 0, 100);
-    this.player.hunger = clamp(this.player.hunger - delta * HUNGER_DECAY, 0, 100);
+    this.player.water = clamp(this.player.water - delta * WATER_DECAY * this.tuning.waterDecay, 0, 100);
+    this.player.hunger = clamp(this.player.hunger - delta * HUNGER_DECAY * this.tuning.hungerDecay, 0, 100);
 
     // --- 体力恒定流失：把"吃饭"从可拖延的提示变成硬心跳（基准 -0.7/600HP）---
-    this.player.health -= delta * HEALTH_DECAY;
+    this.player.health -= delta * HEALTH_DECAY * this.tuning.healthDecay;
     // updateNeeds 先于狼 AI。若同一帧随后被狼咬，damagePlayer 会把来源覆盖成 killed；
     // 没被咬则保留 exhausted，正好对应真正补掉最后一点体力的来源。
     this.healthDamageCause = "exhausted";
@@ -2524,7 +2754,9 @@ export class GameSimulation {
       ? STAMINA_REST_REGEN
       : this.player.idleTime > 0.4
         ? STAMINA_IDLE_REGEN
-        : STAMINA_ACTIVE_REGEN) * ARMOR_STATS[this.player.armor].staminaScale;
+        : STAMINA_ACTIVE_REGEN)
+      * ARMOR_STATS[this.player.armor].staminaScale
+      * this.tuning.staminaRegen;
     this.player.stamina = clamp(this.player.stamina + delta * staminaRegen, 0, this.player.maxStamina);
 
     // --- 连击窗口：手停下来层数就掉 ---
@@ -2553,8 +2785,8 @@ export class GameSimulation {
     const nearFire = this.findNearestLitFire(FIRE_WARMTH_RADIUS) !== null;
     let warmthDelta = 0;
     if (nearFire) warmthDelta += WARMTH_FIRE_GAIN;
-    if (this.phase === "day") warmthDelta += WARMTH_DAY_BASE;
-    else warmthDelta -= WARMTH_NIGHT_LOSS;
+    if (this.phase === "day") warmthDelta += WARMTH_DAY_BASE * this.tuning.thermalPressure;
+    else warmthDelta -= WARMTH_NIGHT_LOSS * this.tuning.thermalPressure;
     let warmth = this.player.warmth + delta * warmthDelta;
 
     // 昼夜反向夹逼：白天有地板、夜晚有天花板。
@@ -2691,7 +2923,8 @@ export class GameSimulation {
     // 回得太慢的话"休息"只是名义上的选择：满血 66 秒 → 53 秒 → 38 秒。
     // 38 秒仍然是一段要主动付出的时间，但在手机上不再长到让人宁可继续跑。
     // 饥渴档没跟着提：吃饱喝足才回得快，这条差距是"先去吃饭"的动力所在。
-    const healingRate = (this.player.hunger < 40 || this.player.water < 40 ? 1.1 : 2.6) + HEALTH_DECAY;
+    const healingRate = (this.player.hunger < 40 || this.player.water < 40 ? 1.1 : 2.6)
+      + HEALTH_DECAY * this.tuning.healthDecay;
     // health > 0：跟被动回复同一道闸，血已经归零就不许再被拽回来。见 updateNeeds。
     if (this.player.resting && this.player.health > 0) {
       this.player.health = clamp(this.player.health + delta * healingRate, 0, this.player.maxHealth);
