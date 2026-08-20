@@ -530,6 +530,30 @@ button { font: inherit; }
 .round-button.action .hud-sprite { width: 38px; height: 38px; }
 
 /*
+ * 行动键的两档亮度：脚边有东西可按，还是什么都够不着。
+ *
+ * 触屏档这颗键上只有一个 38px 图标和一行 8px 的动词。够不着任何东西时它写着
+ * "行动"、图标是通用的那张 —— 和真能按的时候长得一模一样，于是"要走到多近才
+ * 算数"只能靠一路点过去试。亮度差不用读字就分得出来，而且它一直在，不像搏动
+ * 那样用过一次就停（见 HudController.syncHintPulse）。
+ *
+ * 压暗那一档照抄体温键冷却时的口径（.utility-button:disabled 的 opacity .42）——
+ * 界面里"现在按不动"就该是同一种长相。
+ *
+ * **只压暗，不给 disabled**：这颗键的 pointerdown 还兼着向平台报 gameplayStart
+ * （InputController.bindButton → onGameplayIntent）。出生点周围没有可交互物，
+ * 所以开局它本来就是暗的 —— 真给它 disabled，第一下点在这颗键上的玩家在平台
+ * 看来就从没开始玩过。
+ *
+ * 键鼠档不进这套：那边四颗键早就摊平成贴底边的文字 chip，动词本身就是全部内容。
+ */
+@media (pointer: coarse) {
+  #action-button { transition: opacity .14s ease-out, background-color .14s ease-out; }
+  #action-button:not(.armed) { opacity: .42; background: rgba(48, 110, 127, .55); }
+  #action-button.armed { background: rgba(64, 148, 170, .88); }
+}
+
+/*
  * 圆里能放字的宽度比外接方框窄得多（68px 的圆在标签那一行只剩 ~52px），
  * 而这些标签要过六种语言 —— 法语的"Température normale"比中文的"体温适宜"长四倍。
  * 所以圆里的标签最多两行，超出省略；完整文案一直在 aria-label 里。
