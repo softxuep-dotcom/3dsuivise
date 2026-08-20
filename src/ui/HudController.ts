@@ -35,6 +35,9 @@ const required = <T extends HTMLElement>(id: string): T => {
   return element as T;
 };
 
+/** 行动键熄灭前的余量拍数。HUD 每 0.08 秒走一拍，三拍 ≈ 0.24 秒。见 syncActionArmed。 */
+const ARMED_GRACE_TICKS = 3;
+
 const ACTION_ICON: Record<InteractionHint["action"], string> = {
   pickup: "pickup",
   drop: "drop",
@@ -128,6 +131,8 @@ export class HudController {
    */
   private attackHintUsed = false;
   private actionHintUsed = false;
+  /** 行动键"亮着"还能维持几拍。见 syncActionArmed。 */
+  private armedGrace = 0;
   private readonly conditionBadge = required<HTMLElement>("condition-badge");
   private readonly drainNote = required<HTMLElement>("drain-note");
   private readonly huntProgress = required<HTMLElement>("hunt-progress");
@@ -279,6 +284,7 @@ export class HudController {
     // 所以新的一局要放回来。
     this.attackHintUsed = false;
     this.actionHintUsed = false;
+    this.armedGrace = 0;
     this.refreshRecordsLine();
   }
 
@@ -498,6 +504,24 @@ export class HudController {
     this.actionButton.classList.toggle("hint-pulse", action);
   }
 
+  /**
+   * 行动键的两档亮度：脚边有东西可按，还是什么都够不着。
+   *
+   * 和上面那个搏动是两回事。搏动是**教学**，第一次拾取或添柴之后就永久停掉
+   * （actionHintUsed）；而"这颗键现在有没有用"是个一直存在的问题 —— 触屏档
+   * 它上面只有一个 38px 图标和一行 8px 的动词，够不着东西时写着"行动"、图标是
+   * 通用的那张，和真能按的时候长得一模一样。亮度差不需要读字就分得出来。
+   *
+   * 熄灭留三拍余量。判定半径只有 2.5~3.2 米，人停在边界上轻微晃动就会让 hint
+   * 在 none 和非 none 之间来回跳，那样这颗键会闪。余量只推迟"熄灭"，不推迟
+   * "点亮" —— 走进范围要当拍就有反馈。
+   */
+  private syncActionArmed(hint: InteractionHint): void {
+    if (hint.action !== "none") this.armedGrace = ARMED_GRACE_TICKS;
+    else if (this.armedGrace > 0) this.armedGrace -= 1;
+    this.actionButton.classList.toggle("armed", this.armedGrace > 0);
+  }
+
   private flashNourish(delta: { health: number; water: number; hunger: number; warmth: number }): void {
     for (const [key, meter] of this.nourishMeters) {
       const amount = delta[key];
@@ -576,6 +600,7 @@ export class HudController {
     const hint = this.actionOverride ?? this.simulation.getInteractionHint();
     const touchLayout = matchMedia("(pointer: coarse)").matches || window.innerWidth <= 760;
     this.syncHintPulse(hint);
+    this.syncActionArmed(hint);
     this.actionIcon.dataset.icon = ACTION_ICON[hint.action];
     this.actionLabel.textContent = t(`action.${hint.action}`);
     if (hint.action === "none") {
