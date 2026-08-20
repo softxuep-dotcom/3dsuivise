@@ -381,6 +381,59 @@ export interface StructureSpec {
  *
  * 枯木：成堆时才算路障（见 findBlockingItem 的 clusterSize 判定），聊胜于无。
  */
+/**
+ * 卡车改装。**每装一桶油触发一次三选一**，一局最多 6 次（FUEL_REQUIRED）。
+ *
+ * 为什么挂在装车而不是黎明：黎明落在 175s / 535s / 895s，而 5m+ 群体平均停在
+ * 9.5 分钟 —— 挂黎明的话他们整局只拿得到 1~2 次。装车一局触发 6 次、均匀铺开，
+ * 而且**直接奖励通关条件本身**：主线推一格就变强一点。
+ *
+ * 为什么这六样都作用在夜里：模拟层量过第二夜（水食体温托管、血全交给狼），
+ * 无装备 / 一阶 / 三阶的存活是 392s / 478s / 479s —— **一阶到三阶只买到 1 秒**。
+ * 防 18 时大狼一口才掉 2 血，扛不住是因为**被围**，45 只狼同时啃，数值线救不了。
+ * 所以池子里没有"攻击 +N / 防御 +N"，六样全是**控场、节奏或保命**。
+ *
+ * 白天的便利（比如扛桶移速）一律不收：白天不杀人，那是在给已经安全的环节加安全。
+ */
+export type RetrofitId =
+  | "fuel-can"
+  | "repellent"
+  | "reinforced-bed"
+  | "fire-ring"
+  | "whetstone"
+  | "med-kit";
+
+export const RETROFIT_IDS: RetrofitId[] = [
+  "fuel-can", "repellent", "reinforced-bed", "fire-ring", "whetstone", "med-kit",
+];
+
+/** 一次抽几个给玩家选。池子不够时给剩下的全部。 */
+export const RETROFIT_DRAW = 3;
+
+/** 备用油罐：单根枯木的燃烧时间。基准 95 秒，见 GameSimulation 添柴那处。 */
+export const RETROFIT_LOG_SECONDS = 130;
+/** 驱兽油：每夜第一波攻营推迟的秒数。 */
+export const RETROFIT_RAID_DELAY = 20;
+/** 加固车厢 / 火圈：减速区半径与倍率。 */
+export const RETROFIT_TRUCK_RADIUS = 8;
+export const RETROFIT_FIRE_RADIUS = 6;
+export const RETROFIT_SLOW_SCALE = 0.7;
+/**
+ * 磨刃石：攻击冷却倍率。
+ *
+ * 原本这一格是"重锤配重（击退 +80%）"，砍掉了 —— knockback 只有弯刀线非零
+ * （0.35/0.50/0.70），剑与初始匕首都是 0，而第一次触发时玩家多半还拿着匕首，
+ * 那会是一张纯白板。冷却对任何武器都生效。
+ *
+ * 选速率而不是伤害：模拟层量过，一阶到三阶的攻防只多买到 1 秒存活，
+ * 因为死因是**被围**。出手频率能提高单位时间的清场量和（弯刀线的）击退频次，
+ * 单刀伤害不能。
+ */
+export const RETROFIT_COOLDOWN_SCALE = 0.82;
+/** 急救包：血首次跌破这个比例时自动回血，一局一次。 */
+export const RETROFIT_MEDKIT_TRIGGER = 0.3;
+export const RETROFIT_MEDKIT_HEAL = 40;
+
 export const BARRIER_STATS: Record<GroundItemKind, { hp: number; armor: number }> = {
   stone: { hp: 1500, armor: 10 },
   wood: { hp: 70, armor: 0 },
@@ -549,6 +602,13 @@ export type GameEvent =
   | { type: "critter-killed"; critterId: number; kind: CritterKind }
   /** 一桶油进了车斗。 */
   | { type: "fuel-loaded"; loaded: number; required: number }
+  /**
+   * 装车触发的改装三选一。`options` 是从未拥有的池子里抽的 3 个（不足 3 个就给几个算几个）。
+   * HUD 收到后开面板并冻结游戏；玩家点选后调 sim.chooseRetrofit(id)。
+   */
+  | { type: "retrofit-offer"; options: RetrofitId[] }
+  /** 玩家选定了一件改装。 */
+  | { type: "retrofit-taken"; id: RetrofitId }
   /** 油加满、玩家上车，卡车开始驶离。之后只剩结算动画。 */
   | { type: "truck-depart" }
   | { type: "player-hit"; amount: number }

@@ -1,6 +1,7 @@
 import { clamp, direction, distance, distanceSquared, dot, TAU } from "./geometry";
 import { isTerrainWalkable } from "../terrain/TerrainModel";
-import { BARRIER_STATS, STONE_COLLIDE_RADIUS, STRUCTURE_SPECS, WOLF_RADIUS } from "./types";
+import { BARRIER_STATS, STONE_COLLIDE_RADIUS, STRUCTURE_SPECS, WOLF_RADIUS, RETROFIT_RAID_DELAY } from "./types";
+import type { RetrofitId } from "./types";
 import type { NavigationGrid } from "./NavigationGrid";
 import type { DifficultyTuning } from "./difficulty";
 import type {
@@ -125,6 +126,10 @@ export interface WolfWorld {
   setCombatTimer(seconds: number): void;
   noteActivity(): void;
   getDefense(): number;
+  /** 这一点上的狼移速倍率。加固车厢 / 火圈的减速区，见 types.ts 的 RETROFIT_*。 */
+  getWolfSpeedScale(x: number, z: number): number;
+  /** 本局是否已装某件改装。见 types.ts 的 RETROFIT_IDS。 */
+  hasRetrofit(id: RetrofitId): boolean;
   getPhaseDuration(): number;
   getPlayerShelter(): CampDefinition | null;
   createDrop(position: Vec2, kind: InventoryItemKind, angleOffset: number, count?: number): void;
@@ -210,8 +215,17 @@ export class WolfDirector {
     const gap = window / waveCount;
     const jitter = (this.ctx.random() - 0.5) * gap * RAID_RELEASE_JITTER * 2;
     const releaseIn = (wave + 0.5) * gap + jitter - nightElapsed;
+    /*
+     * 驱兽油：**只推迟第一波**（wave === 0），后面几波不动。
+     *
+     * 推所有波次等于整体削弱夜袭，那是难度调整不是改装；只推第一波推的是
+     * "入夜后手忙脚乱那 20 秒" —— 玩家正在点火、封门，第一波撞上来的时机最要命。
+     * 后面几波到时玩家已经站稳，推不推没区别。
+     */
+    const delay = wave === 0 && this.ctx.hasRetrofit("repellent") ? RETROFIT_RAID_DELAY : 0;
+    const total = releaseIn + delay;
     // 半秒以内的等待没有意义，直接放行 —— 第一波多半落在这里。
-    return releaseIn > 0.5 ? this.ctx.elapsed + releaseIn : 0;
+    return total > 0.5 ? this.ctx.elapsed + total : 0;
   }
 
   /** 天亮：白天的野狗过两秒开始补员。 */
@@ -556,11 +570,18 @@ export class WolfDirector {
       steered = this.ctx.findSteppableDirection(wolf, steered, collideWithItems) ?? steered;
     }
     wolf.facing = steered;
-    const pace = wolf.mode === "retreating"
+    const basePace = wolf.mode === "retreating"
       ? wolf.speed * 1.45
       : wolf.mode === "chase"
         ? wolf.speed * (wolf.role === "guard" ? 1.7 : 1.2)
         : wolf.speed;
+    /*
+     * 减速区（加固车厢 / 火圈）。**撤退不减速** —— 那两件改装是为了守住一块地方，
+     * 把已经在跑的狼拖住反而让它们在营地里多赖几秒，与设计意图相反。
+     */
+    const pace = wolf.mode === "retreating"
+      ? basePace
+      : basePace * this.ctx.getWolfSpeedScale(wolf.x, wolf.z);
     const beforeX = wolf.x;
     const beforeZ = wolf.z;
     /*

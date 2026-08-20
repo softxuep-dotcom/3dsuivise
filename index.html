@@ -210,6 +210,20 @@
         暂停页兼设置页。合成一页而不是两页：暂停本来就是"停下来调整一下"的时刻，
         而单独开一个设置浮层意味着两条互相排斥的暂停路径要各自维护。
       -->
+      <!--
+        卡车改装三选一。每装一桶油弹一次（装满那桶不弹），冻结游戏直到玩家点一张。
+        没有"跳过"按钮：三选一是纯正向池，跳过没有任何理由，多一个出口只会让
+        一部分人误点然后失去这次成长。
+      -->
+      <div id="retrofit-overlay" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="retrofit-title">
+        <div class="intro-card retrofit-card">
+          <p class="eyebrow" data-i18n="retrofit.eyebrow">Barrel loaded</p>
+          <h2 id="retrofit-title" data-i18n="retrofit.title">Truck retrofit</h2>
+          <p class="retrofit-hint" data-i18n="retrofit.hint">Pick one. It lasts the rest of this run.</p>
+          <div id="retrofit-options" class="retrofit-options" role="group" data-i18n-attr="aria-label:retrofit.title"></div>
+        </div>
+      </div>
+
       <div id="pause-overlay" class="overlay hidden" role="dialog" aria-modal="true">
         <div class="intro-card pause-card">
           <h2 data-i18n="pause.title">Paused</h2>

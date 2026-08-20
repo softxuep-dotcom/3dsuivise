@@ -426,6 +426,7 @@ async function bootstrap(): Promise<void> {
     hud.refreshRecordsLine();
     // 结算页的死因三段也是只写一次的，同 syncSoundLabel 一个道理。
     hud.refreshGameOverText();
+    hud.refreshRetrofitText();
     if (languageSelect) languageSelect.value = getLocale();
   });
 
@@ -463,6 +464,10 @@ async function bootstrap(): Promise<void> {
         // 玩家正被狗围着的时候。
         if (event.type === "game-over" || event.type === "victory") platform.gameplayStop();
         if (event.type === "game-over") offerRevive();
+        // 装车三选一：面板开着期间 isGameplayBlocked() 为真，模拟层不推进。
+        if (event.type === "retrofit-offer") {
+          hud.showRetrofitOffer(event.options, (id) => { simulation.chooseRetrofit(id); });
+        }
       }
       audio.update(
         simulation.player,

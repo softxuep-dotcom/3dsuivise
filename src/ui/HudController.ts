@@ -9,6 +9,7 @@ import { FUEL_REQUIRED, STRUCTURE_SPECS } from "../game/simulation/types";
 import { itemIcon } from "./ItemIcons";
 import type {
   DeathCause,
+  RetrofitId,
   GameEvent,
   InteractionHint,
   InventoryItemKind,
@@ -179,6 +180,56 @@ export class HudController {
   private readonly actionLabel = required<HTMLElement>("action-label");
   private readonly recordsLine = required<HTMLElement>("records-line");
   private readonly toast = required<HTMLElement>("toast");
+  private readonly retrofitOverlay = required<HTMLElement>("retrofit-overlay");
+  private readonly retrofitOptions = required<HTMLElement>("retrofit-options");
+  /** 面板开着时冻结游戏，见 isGameplayBlocked()。 */
+  private retrofitOpen = false;
+  private onRetrofitPick: ((id: RetrofitId) => void) | null = null;
+  /** 当前待选的三件。切语言时要靠它重渲染 —— 卡片文案是命令式填的，没有 data-i18n。 */
+  private retrofitPending: RetrofitId[] = [];
+
+  /**
+   * 弹出改装三选一。玩家点一张之后回调，面板自己关。
+   *
+   * 没有取消路径：池子是纯正向的，跳过没有任何理由，多一个出口只会让一部分人
+   * 误点然后白白丢掉这次成长。ESC 也不关 —— togglePause 在面板开着时不生效。
+   */
+  showRetrofitOffer(options: RetrofitId[], onPick: (id: RetrofitId) => void): void {
+    if (!options.length) return;
+    this.retrofitPending = options;
+    this.onRetrofitPick = onPick;
+    this.retrofitOpen = true;
+    this.renderRetrofitOptions();
+    this.retrofitOverlay.classList.remove("hidden");
+  }
+
+  /** 切语言后重渲染卡片。面板没开就什么也不做。 */
+  refreshRetrofitText(): void {
+    if (this.retrofitOpen) this.renderRetrofitOptions();
+  }
+
+  private renderRetrofitOptions(): void {
+    this.retrofitOptions.replaceChildren(...this.retrofitPending.map((id) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "retrofit-option";
+      const name = document.createElement("b");
+      name.textContent = t(`retrofit.${id}.name`);
+      const blurb = document.createElement("span");
+      blurb.textContent = t(`retrofit.${id}.blurb`);
+      button.append(name, blurb);
+      button.addEventListener("click", () => {
+        const pick = this.onRetrofitPick;
+        this.retrofitOpen = false;
+        this.onRetrofitPick = null;
+        this.retrofitPending = [];
+        this.retrofitOverlay.classList.add("hidden");
+        pick?.(id);
+      });
+      return button;
+    }));
+  }
+
   private readonly deathCause = required<HTMLElement>("death-cause");
   private readonly deathDetail = required<HTMLElement>("death-detail");
   private readonly deathAdvice = required<HTMLElement>("death-advice");
@@ -266,6 +317,10 @@ export class HudController {
   resetRun(simulation: GameSimulation): void {
     this.simulation = simulation;
     this.lastGameOver = null;
+    this.retrofitOpen = false;
+    this.retrofitPending = [];
+    this.onRetrofitPick = null;
+    this.retrofitOverlay.classList.add("hidden");
     this.hideReviveOffer();
     this.gameOver.classList.add("hidden");
     this.victory.classList.add("hidden");
@@ -293,7 +348,7 @@ export class HudController {
   }
 
   isGameplayBlocked(): boolean {
-    return this.inventoryOpen || this.adPlaying || this.paused;
+    return this.inventoryOpen || this.adPlaying || this.paused || this.retrofitOpen;
   }
 
   /**

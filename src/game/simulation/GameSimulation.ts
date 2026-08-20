@@ -44,8 +44,11 @@ import type {
   WolfState,
   WorldDefinition,
   WorldDrop,
+  RetrofitId,
 } from "./types";
-import { PLAYER_RADIUS, STONE_COLLIDE_RADIUS, WOLF_RADIUS, BARRIER_STATS, CRITTER_SPECS, FUEL_REQUIRED, INVENTORY_CAPACITY, INVENTORY_STACK_LIMITS, STRUCTURE_SPECS } from "./types";
+import { PLAYER_RADIUS, STONE_COLLIDE_RADIUS, WOLF_RADIUS, BARRIER_STATS, CRITTER_SPECS, FUEL_REQUIRED, INVENTORY_CAPACITY, INVENTORY_STACK_LIMITS, STRUCTURE_SPECS,
+  RETROFIT_DRAW, RETROFIT_IDS, RETROFIT_LOG_SECONDS, RETROFIT_MEDKIT_HEAL, RETROFIT_MEDKIT_TRIGGER,
+  RETROFIT_SLOW_SCALE, RETROFIT_TRUCK_RADIUS, RETROFIT_FIRE_RADIUS, RETROFIT_COOLDOWN_SCALE } from "./types";
 import type { Difficulty, DifficultyTuning } from "./difficulty";
 import { DEFAULT_DIFFICULTY, tuningFor } from "./difficulty";
 
@@ -86,9 +89,32 @@ function screenBearing(from: Vec2, to: Vec2): number {
  *
  * 这条只缩白天，不动 FIRST_NIGHT_DURATION：第一昼夜因此从 240 秒降到 190 秒，
  * 而开局口粮是按 240 秒配的（见 STARTING_RATION 那段），所以只会更宽松，不会饿死人。
+ *
+ * ---
+ *
+ * **1.0.23：40/150 → 55/120。第一个黎明从 3m10s 提到 2m55s。**
+ *
+ * 1.0.20 通过 Fit Test 之后，瓶颈从"没人见到夜"变成了"没人翻得过第一夜"。
+ * 模拟层扫过第一夜长度（每档同一画像抖动 6 次）：
+ *
+ *   150s（原值）→ 黎明 3m10s → 活到黎明 1/6
+ *   110s        → 黎明 2m30s → 活到黎明 3/6
+ *    90s        → 黎明 2m10s → 活到黎明 5/6
+ *
+ * 取 120 而不是 90：90 秒的夜太短，夜袭是这游戏的全部内容，砍到只剩一波半
+ * 等于把主菜端走。120 落在扫描表 110 与 150 之间，保住压迫感又让黎明够得着。
+ *
+ * 白天 40 → 55 是**配套的另一半**，不能只改夜：
+ *   · 第 1 天原本是全游戏唯一收支倒挂的一天（40 昼 / 150 夜 = 1:3.75，
+ *     而第 2 天起是 180/180 = 1:1），而它恰好是绝大多数玩家唯一经历的一天。
+ *   · 多出的 15 秒正好够多搬一趟油桶（最近的野外桶 32 米，单趟实测 12 秒），
+ *     所以第一昼夜的通关进度从"最多 1 格"变成"能推到 2 格"。
+ *
+ * **上面那张扫描表是把白天钉死在 40 秒扫出来的，加了白天这一版必须重测**，
+ * 不能直接引用——白天变长会同时改变备柴量、体温起点和装备进度。
  */
-const FIRST_DAY_DURATION = 40;
-const FIRST_NIGHT_DURATION = 150;
+const FIRST_DAY_DURATION = 55;
+const FIRST_NIGHT_DURATION = 120;
 const LATER_DAY_DURATION = 180;
 const SECOND_NIGHT_DURATION = 180;
 const LATER_NIGHT_DURATION = 180;
@@ -891,6 +917,8 @@ export class GameSimulation {
       setCombatTimer: (seconds) => { sim.combatTimer = seconds; },
       noteActivity: () => sim.noteActivity(),
       getDefense: () => sim.getDefense(),
+      hasRetrofit: (id) => sim.retrofits.has(id),
+      getWolfSpeedScale: (x, z) => sim.getWolfSpeedScaleAt(x, z),
       getPhaseDuration: () => sim.getPhaseDuration(),
       getPlayerShelter: () => sim.getPlayerShelter(),
       getPlayerArmor: () => ARMOR_STATS[sim.player.armor],
@@ -1023,6 +1051,51 @@ export class GameSimulation {
   /** 本次交互开始前的静止时长；劳力不足导致交互落空时用它还原，见 spendStamina()。 */
   private idleTimeBeforeAction = 0;
 
+  /** 本局已拥有的改装。软重启会新建 GameSimulation，不用手动清。 */
+  readonly retrofits = new Set<RetrofitId>();
+  /** 急救包只触发一次。 */
+  private medKitUsed = false;
+
+  /**
+   * 这一点上的狼移速倍率。加固车厢（卡车 8m）与火圈（点着的篝火 6m）各给一个减速区。
+   *
+   * **算在 GameSimulation 而不是 WolfDirector**：卡车位置和篝火燃料都住在这边，
+   * 狼那头只需要问"我站的地方慢不慢"。两个区重叠时不叠加 —— 取一次 0.7 就够，
+   * 叠成 0.49 会让"把营地扎在卡车边"变成唯一解，把选择压成定式。
+   */
+  getWolfSpeedScaleAt(x: number, z: number): number {
+    if (this.retrofits.has("reinforced-bed")
+      && Math.hypot(x - this.truck.x, z - this.truck.z) <= RETROFIT_TRUCK_RADIUS) return RETROFIT_SLOW_SCALE;
+    if (this.retrofits.has("fire-ring")
+      && this.nearLitFire(x, z, RETROFIT_FIRE_RADIUS)) return RETROFIT_SLOW_SCALE;
+    return 1;
+  }
+
+  hasRetrofit(id: RetrofitId): boolean {
+    return this.retrofits.has(id);
+  }
+
+  /**
+   * 从未拥有的改装里抽 RETROFIT_DRAW 个。池子空了就返回空数组（调用方据此不发面板）。
+   * 用 this.random() 而不是 Math.random()：同一个种子要能复现整局。
+   */
+  private drawRetrofits(): RetrofitId[] {
+    const pool = RETROFIT_IDS.filter((id) => !this.retrofits.has(id));
+    const picked: RetrofitId[] = [];
+    while (picked.length < RETROFIT_DRAW && pool.length > 0) {
+      picked.push(...pool.splice(Math.floor(this.random() * pool.length), 1));
+    }
+    return picked;
+  }
+
+  /** 玩家在面板上点了一件。不在待选列表里的一律忽略，防止 UI 传错。 */
+  chooseRetrofit(id: RetrofitId): boolean {
+    if (this.retrofits.has(id) || !RETROFIT_IDS.includes(id)) return false;
+    this.retrofits.add(id);
+    this.events.push({ type: "retrofit-taken", id });
+    return true;
+  }
+
   private endGame(cause: DeathCause): void {
     this.deathCondition = this.player.condition;
     this.deathKiller = cause === "killed" ? this.healthDamageAttacker : null;
@@ -1139,7 +1212,9 @@ export class GameSimulation {
       const hearth = this.findNearestHearth(FIRE_WARMTH_RADIUS);
       if (hearth && !this.hasNearerTarget(hearth.distance)) {
         this.removeInventory("wood", 1);
-        this.camps[hearth.campId].fuel = clamp(this.camps[hearth.campId].fuel + 95, 0, 300);
+        // 备用油罐把单根柴从 95 秒抬到 130 秒，见 RETROFIT_LOG_SECONDS。
+        const logSeconds = this.retrofits.has("fuel-can") ? RETROFIT_LOG_SECONDS : 95;
+        this.camps[hearth.campId].fuel = clamp(this.camps[hearth.campId].fuel + logSeconds, 0, 300);
         this.events.push({ type: "feed-fire", campId: hearth.campId });
         return;
       }
@@ -1248,6 +1323,12 @@ export class GameSimulation {
       key: this.truck.loaded >= FUEL_REQUIRED ? "msg.fuelFull" : "msg.fuelLoaded",
       params: { loaded: this.truck.loaded, required: FUEL_REQUIRED },
     });
+    // 每装一桶给一次改装三选一。装满那一桶不发 —— 那一刻玩家该上车走人，
+    // 弹面板会打断通关动作，而且拿到的东西也用不上了。
+    if (this.truck.loaded < FUEL_REQUIRED) {
+      const options = this.drawRetrofits();
+      if (options.length > 0) this.events.push({ type: "retrofit-offer", options });
+    }
   }
 
   /**
@@ -1420,7 +1501,9 @@ export class GameSimulation {
      */
     const exhausted = this.player.stamina < stats.stamina;
     if (exhausted) this.events.push({ type: "exhausted" });
-    this.player.attackCooldown = ATTACK_COOLDOWN * this.getConditionCooldownScale();
+    // 磨刃石：冷却 ×0.82，对任何武器都生效。见 types.ts 的 RETROFIT_COOLDOWN_SCALE。
+    this.player.attackCooldown = ATTACK_COOLDOWN * this.getConditionCooldownScale()
+      * (this.retrofits.has("whetstone") ? RETROFIT_COOLDOWN_SCALE : 1);
     this.player.attackFlash = 0.22;
     this.events.push({ type: "attack" });
     let hit = false;
@@ -2033,6 +2116,22 @@ export class GameSimulation {
    * 取暖、烤肉、二阶以上装备合成全部走这一个查询，半径统一为 FIRE_WARMTH_RADIUS ——
    * 只要"待在营地里"就算烤着火，营地事务不必再挤在火堆脚下办。
    */
+  /**
+   * 任意一点附近有没有点着的火。
+   *
+   * 和 findNearestLitFire 分开写：那个是从**玩家**量的，而火圈要问的是
+   * "这只狼站的地方慢不慢"，起点不同。
+   */
+  nearLitFire(x: number, z: number, radius: number): boolean {
+    const limit = radius * radius;
+    for (const camp of this.world.camps) {
+      if (this.camps[camp.id].fuel <= 0) continue;
+      const dx = x - camp.x, dz = z - camp.z;
+      if (dx * dx + dz * dz < limit) return true;
+    }
+    return false;
+  }
+
   findNearestLitFire(maxDistance: number): { x: number; z: number; fuel: number } | null {
     let best: { x: number; z: number; fuel: number } | null = null;
     let bestDistance = maxDistance * maxDistance;
@@ -2401,6 +2500,18 @@ export class GameSimulation {
      * 每秒掉 1 点那类），这条缝会立刻变成"永远死不了"。
      * 同样的闸也加在下面休息回复那条上。
      */
+    /*
+     * 急救包：血首次跌破 30% 时自动回 40，一局一次。
+     *
+     * 放在被动回复**之前**，因为它要在同一帧就把血抬上去 —— 晚一帧的话玩家
+     * 已经看到血条见底了，那一下"差点死但活了"的高光就没了。
+     */
+    if (!this.medKitUsed && this.retrofits.has("med-kit")
+      && this.player.health > 0 && this.player.health < this.player.maxHealth * RETROFIT_MEDKIT_TRIGGER) {
+      this.medKitUsed = true;
+      this.player.health = Math.min(this.player.health + RETROFIT_MEDKIT_HEAL, this.player.maxHealth);
+      this.events.push({ type: "message", key: "retrofit.medkit.fired" });
+    }
     if (this.player.health > 0
       && this.player.hunger > HEALTH_PASSIVE_NEED && this.player.water > HEALTH_PASSIVE_NEED) {
       this.player.health = Math.min(this.player.health + delta * HEALTH_PASSIVE_REGEN, this.player.maxHealth);
