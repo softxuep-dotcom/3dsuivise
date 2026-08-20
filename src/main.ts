@@ -424,6 +424,8 @@ async function bootstrap(): Promise<void> {
     applyStaticText();
     syncSoundLabel();
     hud.refreshRecordsLine();
+    // 结算页的死因三段也是只写一次的，同 syncSoundLabel 一个道理。
+    hud.refreshGameOverText();
     if (languageSelect) languageSelect.value = getLocale();
   });
 

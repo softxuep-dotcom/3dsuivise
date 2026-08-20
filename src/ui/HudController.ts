@@ -265,6 +265,7 @@ export class HudController {
    */
   resetRun(simulation: GameSimulation): void {
     this.simulation = simulation;
+    this.lastGameOver = null;
     this.hideReviveOffer();
     this.gameOver.classList.add("hidden");
     this.victory.classList.add("hidden");
@@ -1017,7 +1018,26 @@ export class HudController {
     this.gameOver.classList.add("hidden");
   }
 
+  /**
+   * 最后一次死亡事件。切语言时要靠它把结算页重新渲染一遍。
+   *
+   * 死因三段（#death-cause / #death-detail / #death-advice）是**命令式**填的，
+   * 身上没有 data-i18n，所以 applyStaticText() 重刷静态文案时碰不到它们 ——
+   * 不留这份快照的话，切语言后那三行会停在旧语言。
+   *
+   * 今天从结算页打不开暂停页（togglePause 在 game-over 期间无效），所以玩家
+   * 实际触发不到；这是给以后留的闸 —— 同一个坑本轮已经踩到第二次
+   * （第一次是声音开关的文字，见 main.ts 的 syncSoundLabel）。
+   */
+  private lastGameOver: Extract<GameEvent, { type: "game-over" }> | null = null;
+
+  /** 切语言后重刷结算页。没死过就什么也不做。 */
+  refreshGameOverText(): void {
+    if (this.lastGameOver) this.showGameOver(this.lastGameOver);
+  }
+
   private showGameOver(event: Extract<GameEvent, { type: "game-over" }>): void {
+    this.lastGameOver = event;
     const wolfCount = this.simulation.wolves.filter((wolf) => wolf.mode !== "dead").length;
     this.deathCause.textContent = t(DEATH_CAUSE_KEYS[event.cause], {
       name: event.killer ? t(`dog.${event.killer}`) : t("death.killer.pack"),
