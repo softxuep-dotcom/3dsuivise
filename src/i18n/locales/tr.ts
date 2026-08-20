@@ -10,6 +10,13 @@
  * **数词后名词不加复数**（"3 köpek" 而不是 "3 köpekler"），所以 _one / _other
  * 里的名词写法相同，区别只在措辞。这条在土耳其语里是硬规则，写错一眼就看出来。
  *
+ * **compass.\* 自带位格后缀**（kuzey**de** / doğu**da**），模板里不要再拼 "de"。
+ * 后缀元音必须跟词尾元音走：kuzey/güney 收前元音 e → -de，doğu/batı 收后元音 u/ı → -da。
+ * 原先模板写死 `{bearing}de`，八个方位错六个（doğude、batıde、kuzeybatıde…）。
+ * 这么放是安全的：compass.\* 只在 sim.7 / sim.fuel* 这五条里当 {bearing} 用，
+ * 没有第二个消费者（见 GameSimulation.bearingKey）。sim.fuelFirst 后面还要接 -ki
+ * 定语（"doğudaki varil"），而 -ki 不参与元音和谐，所以那条写 `{bearing}ki`。
+ *
  * 指令一律用第二人称单数命令式（Sür / Kes / Al），游戏 UI 的惯例。
  * 缺键会逐键回退英文（见 index.ts 的 t()），所以这张表允许不全。
  */
@@ -44,14 +51,14 @@ export const tr: Record<string, string> = {
   "carry.fuel": "Yakıt varili",
   "carry.stake": "Kazık",
   "carry.stone": "Kaya",
-  "compass.e": "doğu",
-  "compass.n": "kuzey",
-  "compass.ne": "kuzeydoğu",
-  "compass.nw": "kuzeybatı",
-  "compass.s": "güney",
-  "compass.se": "güneydoğu",
-  "compass.sw": "güneybatı",
-  "compass.w": "batı",
+  "compass.e": "doğuda",
+  "compass.n": "kuzeyde",
+  "compass.ne": "kuzeydoğuda",
+  "compass.nw": "kuzeybatıda",
+  "compass.s": "güneyde",
+  "compass.se": "güneydoğuda",
+  "compass.sw": "güneybatıda",
+  "compass.w": "batıda",
   "condition.heatstroke": "Sıcak çarpması · hareket −%60 · saldırı hızı −%50",
   "condition.hypothermia": "Hipotermi · hareket −%75 · saldırı hızı −%65",
   "condition.spent": "Bitkin · takatin dolması için hareketsiz dur",
@@ -92,13 +99,13 @@ export const tr: Record<string, string> = {
   "equip.none.blurb": "",
   "equip.none.hud": "Bez giysi · Savunma 2",
   "equip.none.name": "Bez giysi",
-  "equip.saber-1.blurb": "220° savurma · 2 delme · geri iter · vuruşta +3 can",
+  "equip.saber-1.blurb": "220° savurma · düşman savunması −2 · geri iter · vuruşta +3 can",
   "equip.saber-1.hud": "Pala Ⅰ · Saldırı 34 · 220°",
   "equip.saber-1.name": "Pala Ⅰ",
-  "equip.saber-2.blurb": "250° savurma · 5 delme · kritik %12 · vuruşta +5 can",
+  "equip.saber-2.blurb": "250° savurma · düşman savunması −5 · kritik %12 · vuruşta +5 can",
   "equip.saber-2.hud": "Pala Ⅱ · Saldırı 42 · 250°",
   "equip.saber-2.name": "Pala Ⅱ",
-  "equip.saber-3.blurb": "280° savurma · 8 delme · kritik %15 · vuruşta +10 can",
+  "equip.saber-3.blurb": "280° savurma · düşman savunması −8 · kritik %15 · vuruşta +10 can",
   "equip.saber-3.hud": "Pala Ⅲ · Saldırı 50 · 280°",
   "equip.saber-3.name": "Pala Ⅲ",
   "equip.scale-1.blurb": "Savunma 8 · diken %12",
@@ -313,7 +320,7 @@ export const tr: Record<string, string> = {
   "sim.12": "Sıcak çarpması · ateşten uzaklaş ve su iç",
   "sim.13": "Dinleniyorsun · can ve takat birlikte doluyor",
   "sim.14": "Ateşin başındasın · beslemek için eylem tuşuna bas",
-  "sim.17": "Sıcaklık düşük · bir ateşe dön, ya da kuma göm",
+  "sim.17": "Sıcaklık düşük · bir ateşe dön, ya da kuma gömül",
   "sim.18": "Ateş söndü · odun topla, kamp ateşine dön ve eylem tuşuyla at",
   "sim.19": "Ateşin {v0} sn'si kaldı · bir odun daha getir",
   "sim.2": "Sıradaki: {v0} · {v1}",
@@ -340,18 +347,18 @@ export const tr: Record<string, string> = {
   "sim.43": "dinlenmeye başlamak için {v0} sn daha hareketsiz dur",
   "sim.5": "Mevcut bir {v0} çok yakın",
   "sim.6": "Yolda bir şey var",
-  "sim.7": "Kamyonu {required} varille doldur ve çık · {metres} m {bearing}de",
+  "sim.7": "Kamyonu {required} varille doldur ve çık · {metres} m {bearing}",
   "sim.9": "Su bitti · hemen bul; sıfırda ölürsün",
-  "sim.cookAnywhere": "Can azalıyor · çiğ et hiç doldurmaz. Bir ateş yak ve pişir",
+  "sim.cookAnywhere": "Can azalıyor · çiğ et ancak yarısını doldurur. Bir ateş yak ve pişir",
   "sim.cookNearby": "Can azalıyor · çiğ eti {metres} m ötedeki ateşte pişir, her biri +{health}",
   "sim.costJoin": "{left} + {right}",
   "sim.costPart": "{name}×{count}",
   "sim.departing": "Çorak topraktan çıkılıyor…",
-  "sim.fuelCarrying": "Bir varil taşıyorsun · kamyon {metres} m {bearing}de",
-  "sim.fuelFirst": "Kazanmak için kamyonu çıkar · {metres} m {bearing}deki varille başla ({required} tane gerek)",
-  "sim.fuelHunt": "{left} varil eksik · en yakını {metres} m {bearing}de",
+  "sim.fuelCarrying": "Bir varil taşıyorsun · kamyon {metres} m {bearing}",
+  "sim.fuelFirst": "Kazanmak için kamyonu çıkar · {metres} m {bearing}ki varille başla ({required} tane gerek)",
+  "sim.fuelHunt": "{left} varil eksik · en yakını {metres} m {bearing}",
   "sim.fuelNone": "Yakıt {loaded}/{required} · yerde başıboş varil kalmadı",
-  "sim.fuelHuntGuarded": "{left} varil eksik · en yakını {metres} m {bearing}de, korunuyor",
+  "sim.fuelHuntGuarded": "{left} varil eksik · en yakını {metres} m {bearing}, korunuyor",
   "sim.fuelReady": "Depo dolu · {metres} m ötedeki kamyona git ve kullan tuşuna bas",
   "sim.lineChoice": "{a} ya da {b}",
   "sim.lineChoiceOne": "{a}",

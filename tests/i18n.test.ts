@@ -5,19 +5,25 @@ import { de } from "../src/i18n/locales/de";
 import { fr } from "../src/i18n/locales/fr";
 import { it as itIT } from "../src/i18n/locales/it";
 import { ptBR } from "../src/i18n/locales/pt-BR";
+import { es } from "../src/i18n/locales/es";
+import { tr } from "../src/i18n/locales/tr";
+import { ja } from "../src/i18n/locales/ja";
 
 /*
  * 文案的三种坏法，肉眼都很难看出来，而且都是"改一处忘六处"造成的：
  *
  *   1. 某种语言少了一个键 —— 静默回退英文，只有那个语种的玩家会看到夹生页面
  *   2. 占位符对不上 —— 少一个 {metres} 就丢信息，多一个就露出花括号
- *   3. 数值和别的语言不一致 —— 平衡改了只更了 en，其余五种还在说旧数字
+ *   3. 数值和别的语言不一致 —— 平衡改了只更了 en，其余八种还在说旧数字
  *
  * 第 3 条最阴：装备文案里写死了攻击力、防御、闪避%、反伤%、扫角，
- * 一共几十个数字散在六种语言里。数字是语言无关的，所以可以互相校验。
+ * 一共几十个数字散在九种语言里。数字是语言无关的，所以可以互相校验。
+ *
+ * **新增语言必须同时加进 LOCALES**，否则这三条测试对它等于不存在 ——
+ * es / tr / ja 就这么漏了一整轮。
  */
 
-const LOCALES: Record<string, Record<string, string>> = { zh, fr, de, it: itIT, "pt-BR": ptBR };
+const LOCALES: Record<string, Record<string, string>> = { zh, fr, de, it: itIT, "pt-BR": ptBR, es, tr, ja };
 const enKeys = Object.keys(en).sort();
 
 describe("多语言 · 结构对齐", () => {
