@@ -142,7 +142,7 @@
       <div id="intro" class="overlay">
         <div class="intro-card loading-card">
           <h1 data-i18n="intro.title">Last Truck Out</h1>
-          <p class="tagline" data-i18n="intro.tagline">Find five fuel barrels. Drive out.</p>
+          <p class="tagline" data-i18n="intro.tagline">Find six fuel barrels. Drive out.</p>
           <div class="verb-row" data-i18n-attr="aria-label:intro.verbs.aria">
             <span><b data-i18n="intro.phase.day">Day</b><i data-i18n="intro.verb1">Find water and fuel</i></span>
             <span><b data-i18n="intro.phase.night">Night</b><i data-i18n="intro.verb2">Feed the fire. Hold off the dogs.</i></span>
@@ -235,8 +235,8 @@
             放在这里既省掉状态栏一行，也和难度凑成一个完整的设置区。
           -->
           <!--
-            语言用原生 select 而不是难度那种按钮组：现在 6 种，还要补西班牙语、
-            土耳其语、日韩俄，按钮排不下；原生 select 在手机上还会拉起系统选择器。
+            语言用原生 select 而不是难度那种按钮组：现在已有 12 种，按钮排不下；
+            原生 select 在手机上还会拉起系统选择器。
             选项文字永远用该语言自己的写法（English / 中文 / Deutsch），不翻译 ——
             找自己母语的人不认识 "German"。
           -->
@@ -257,6 +257,17 @@
         <div class="intro-card game-over-card">
           <p class="eyebrow" data-i18n="over.eyebrow">The sands remember your tracks</p>
           <h2 data-i18n="over.title">Buried by the sand</h2>
+          <div class="death-report" role="group" data-i18n-attr="aria-label:death.report">
+            <div class="death-report-cause">
+              <span class="death-report-label" data-i18n="death.report">Cause of death</span>
+              <strong id="death-cause"></strong>
+              <small id="death-detail"></small>
+            </div>
+            <div class="death-report-advice">
+              <span class="death-report-label" data-i18n="death.next">Next run</span>
+              <strong id="death-advice"></strong>
+            </div>
+          </div>
           <p id="result-copy"></p>
           <!-- 只有平台支持激励视频、且这局还有次数时才显示（HudController 控制）。 -->
           <button id="revive-button" class="primary-button revive-button hidden" type="button"></button>
@@ -302,22 +313,22 @@
           if (!tag) return null;
           var base = String(tag).trim().toLowerCase().replace("_", "-").split("-")[0];
           if (base === "pt") return "pt-BR";
-          return ["zh", "en", "fr", "de", "it"].indexOf(base) >= 0 ? base : null;
+          return ["zh", "en", "fr", "de", "it", "es", "tr", "ja", "ru", "ko", "vi"].indexOf(base) >= 0 ? base : null;
         }
         var initialLocale = matchInitialLocale(new URLSearchParams(location.search).get("lang"));
-        var preferredLanguages = navigator.languages || [navigator.language];
-        for (var languageIndex = 0; !initialLocale && languageIndex < preferredLanguages.length; languageIndex += 1) {
-          initialLocale = matchInitialLocale(preferredLanguages[languageIndex]);
-        }
         if (!initialLocale) {
           try { initialLocale = matchInitialLocale(localStorage.getItem("desert-survivor.locale")); }
           catch (error) { /* 隐私模式下读不到就走英文兜底 */ }
+        }
+        var preferredLanguages = navigator.languages || [navigator.language];
+        for (var languageIndex = 0; !initialLocale && languageIndex < preferredLanguages.length; languageIndex += 1) {
+          initialLocale = matchInitialLocale(preferredLanguages[languageIndex]);
         }
         initialLocale = initialLocale || "en";
         var initialCopy = {
           en: {
             "intro.title": "Last Truck Out",
-            "intro.tagline": "Find five fuel barrels. Drive out.",
+            "intro.tagline": "Find six fuel barrels. Drive out.",
             "intro.phase.day": "Day",
             "intro.verb1": "Find water and fuel",
             "intro.phase.night": "Night",
@@ -328,7 +339,7 @@
           },
           zh: {
             "intro.title": "最后一辆车",
-            "intro.tagline": "找齐 5 桶汽油，开车离开沙漠。",
+            "intro.tagline": "找齐 6 桶汽油，开车离开沙漠。",
             "intro.phase.day": "白天",
             "intro.verb1": "找水、找汽油",
             "intro.phase.night": "夜晚",
@@ -339,7 +350,7 @@
           },
           fr: {
             "intro.title": "Le dernier camion",
-            "intro.tagline": "Trouvez cinq barils d'essence. Quittez le désert.",
+            "intro.tagline": "Trouvez six barils d'essence. Quittez le désert.",
             "intro.phase.day": "Jour",
             "intro.verb1": "Trouver de l'eau et de l'essence",
             "intro.phase.night": "Nuit",
@@ -350,7 +361,7 @@
           },
           de: {
             "intro.title": "Der letzte Truck",
-            "intro.tagline": "Finde fünf Benzinfässer. Entkomme der Wüste.",
+            "intro.tagline": "Finde sechs Benzinfässer. Entkomme der Wüste.",
             "intro.phase.day": "Tag",
             "intro.verb1": "Wasser und Benzin finden",
             "intro.phase.night": "Nacht",
@@ -361,7 +372,7 @@
           },
           it: {
             "intro.title": "L'ultimo camion",
-            "intro.tagline": "Trova cinque barili di benzina. Fuggi dal deserto.",
+            "intro.tagline": "Trova sei barili di benzina. Fuggi dal deserto.",
             "intro.phase.day": "Giorno",
             "intro.verb1": "Trova acqua e benzina",
             "intro.phase.night": "Notte",
@@ -372,7 +383,7 @@
           },
           "pt-BR": {
             "intro.title": "O último caminhão",
-            "intro.tagline": "Encontre cinco barris de gasolina. Saia do deserto.",
+            "intro.tagline": "Encontre seis barris de gasolina. Saia do deserto.",
             "intro.phase.day": "Dia",
             "intro.verb1": "Encontre água e gasolina",
             "intro.phase.night": "Noite",
@@ -380,6 +391,72 @@
             "intro.verbs.aria": "Objetivos de dia e de noite",
             "boot.landscapeHint": "Recomendamos jogar na horizontal",
             boot: "Carregando o jogo…",
+          },
+          es: {
+            "intro.title": "Last Truck Out",
+            "intro.tagline": "Encuentra seis bidones de combustible. Sal de aquí.",
+            "intro.phase.day": "Día",
+            "intro.verb1": "Busca agua y combustible",
+            "intro.phase.night": "Noche",
+            "intro.verb2": "Alimenta el fuego. Aguanta a los perros.",
+            "intro.verbs.aria": "Objetivos de día y de noche",
+            "boot.landscapeHint": "Mejor en horizontal",
+            boot: "Cargando el juego…",
+          },
+          tr: {
+            "intro.title": "Last Truck Out",
+            "intro.tagline": "Altı yakıt varili bul. Buradan çık.",
+            "intro.phase.day": "Gündüz",
+            "intro.verb1": "Su ve yakıt bul",
+            "intro.phase.night": "Gece",
+            "intro.verb2": "Ateşi besle. Köpekleri uzak tut.",
+            "intro.verbs.aria": "Gündüz ve gece hedefleri",
+            "boot.landscapeHint": "Yatay modda daha iyi",
+            boot: "Oyun yükleniyor…",
+          },
+          ja: {
+            "intro.title": "Last Truck Out",
+            "intro.tagline": "燃料ドラム缶を六つ集めろ。そして走り去れ。",
+            "intro.phase.day": "昼",
+            "intro.verb1": "水と燃料を探す",
+            "intro.phase.night": "夜",
+            "intro.verb2": "火を絶やすな。犬を寄せつけるな。",
+            "intro.verbs.aria": "昼と夜の目標",
+            "boot.landscapeHint": "横画面推奨",
+            boot: "ゲームを読み込み中…",
+          },
+          ru: {
+            "intro.title": "Последний грузовик",
+            "intro.tagline": "Найдите шесть бочек топлива. Уезжайте.",
+            "intro.phase.day": "День",
+            "intro.verb1": "Ищите воду и топливо",
+            "intro.phase.night": "Ночь",
+            "intro.verb2": "Поддерживайте огонь. Отбивайтесь от собак.",
+            "intro.verbs.aria": "Цели днём и ночью",
+            "boot.landscapeHint": "Лучше играть в альбомной ориентации",
+            boot: "Загрузка игры…",
+          },
+          ko: {
+            "intro.title": "마지막 탈출 트럭",
+            "intro.tagline": "연료통 여섯 개를 찾아 트럭으로 탈출하세요.",
+            "intro.phase.day": "낮",
+            "intro.verb1": "물과 연료 찾기",
+            "intro.phase.night": "밤",
+            "intro.verb2": "불을 지키고 들개를 막기",
+            "intro.verbs.aria": "낮과 밤의 목표",
+            "boot.landscapeHint": "가로 화면에 최적화되어 있습니다",
+            boot: "게임 불러오는 중…",
+          },
+          vi: {
+            "intro.title": "Chuyến Xe Cuối",
+            "intro.tagline": "Tìm sáu thùng nhiên liệu. Lái xe thoát đi.",
+            "intro.phase.day": "Ngày",
+            "intro.verb1": "Tìm nước và nhiên liệu",
+            "intro.phase.night": "Đêm",
+            "intro.verb2": "Giữ lửa. Chống lại bầy chó.",
+            "intro.verbs.aria": "Mục tiêu ngày và đêm",
+            "boot.landscapeHint": "Trải nghiệm tốt nhất ở chế độ ngang",
+            boot: "Đang tải trò chơi…",
           },
         };
         var activeInitialCopy = initialCopy[initialLocale];

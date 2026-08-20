@@ -40,6 +40,7 @@ import type {
   PlayerState,
   SurvivalCondition,
   Vec2,
+  WolfKind,
   WolfState,
   WorldDefinition,
   WorldDrop,
@@ -731,6 +732,11 @@ export class GameSimulation {
   private departTimer = 0;
   // 死因记录，供 UI 显示游戏结束文案
   deathCause: DeathCause | null = null;
+  /** 真正补上致命一击的狼种；只有 deathCause === "killed" 时有值。 */
+  deathKiller: WolfKind | null = null;
+  /** 本帧最后一次体力伤害的来源。代谢先跑、狼攻击后跑，所以最后写入者就是致命来源。 */
+  private healthDamageCause: "killed" | "exhausted" = "exhausted";
+  private healthDamageAttacker: WolfKind | null = null;
   won = false;
 
   /** 本局的难度倍率。构造时定死，中途不重读 —— 见 difficulty.ts。 */
@@ -876,6 +882,12 @@ export class GameSimulation {
       get reviveGrace() { return sim.reviveGrace; },
       random: () => sim.random(),
       emit: (event) => { sim.events.push(event); },
+      damagePlayer: (amount, attacker) => {
+        if (amount <= 0) return;
+        sim.player.health -= amount;
+        sim.healthDamageCause = "killed";
+        sim.healthDamageAttacker = attacker.kind;
+      },
       setCombatTimer: (seconds) => { sim.combatTimer = seconds; },
       noteActivity: () => sim.noteActivity(),
       getDefense: () => sim.getDefense(),
@@ -995,10 +1007,10 @@ export class GameSimulation {
         this.endGame("starved");
       } else if (this.player.health <= 0) {
         this.player.health = 0;
-        // 血归零有两条完全不同的路：被狼咬死，或者体力恒定流失把你耗干
-        // （0.24/s，417 秒不吃不休就见底，全程可以一只狼都没碰到）。
-        // 混成一个"被狼撕碎"会让玩家完全学不到自己其实是没吃饭死的。
-        this.endGame(this.combatTimer > 0 ? "killed" : "exhausted");
+        // 血归零有两条完全不同的路：被狼咬死，或者体力恒定流失把你耗干。
+        // 不能拿 combatTimer 猜 —— 它会在挨咬后继续亮 6 秒，这期间若被自然流失
+        // 补掉最后一点血，旧逻辑仍会误报“被狼咬死”。伤害入口现在逐次记最后来源。
+        this.endGame(this.healthDamageCause);
       }
     }
   }
@@ -1013,11 +1025,17 @@ export class GameSimulation {
 
   private endGame(cause: DeathCause): void {
     this.deathCondition = this.player.condition;
+    this.deathKiller = cause === "killed" ? this.healthDamageAttacker : null;
     this.setResting(false);
     this.running = false;
     this.gameOverSent = true;
     this.deathCause = cause;
-    this.events.push({ type: "game-over" });
+    this.events.push({
+      type: "game-over",
+      cause,
+      condition: this.deathCondition,
+      killer: this.deathKiller,
+    });
   }
 
   /**
@@ -1038,7 +1056,10 @@ export class GameSimulation {
     if (this.running || this.victorySent || !this.gameOverSent) return false;
     this.gameOverSent = false;
     this.deathCause = null;
+    this.deathKiller = null;
     this.deathCondition = "normal";
+    this.healthDamageCause = "exhausted";
+    this.healthDamageAttacker = null;
     this.running = true;
     this.player.health = Math.max(this.player.health, 45);
     this.player.water = Math.max(this.player.water, 45);
@@ -2364,6 +2385,10 @@ export class GameSimulation {
 
     // --- 体力恒定流失：把"吃饭"从可拖延的提示变成硬心跳（基准 -0.7/600HP）---
     this.player.health -= delta * HEALTH_DECAY;
+    // updateNeeds 先于狼 AI。若同一帧随后被狼咬，damagePlayer 会把来源覆盖成 killed；
+    // 没被咬则保留 exhausted，正好对应真正补掉最后一点体力的来源。
+    this.healthDamageCause = "exhausted";
+    this.healthDamageAttacker = null;
     /*
      * 吃饱喝足时把流失抵掉（净 +0.06/s，回不了血）—— 见 HEALTH_PASSIVE_REGEN。
      *

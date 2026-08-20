@@ -29,10 +29,16 @@ describe("死亡判定", () => {
     const sim = started();
     sim.player.health = 0;
     sim.update(STEP, { x: 0, z: 0 });
+    const events = sim.drainEvents();
     expect(
-      sim.drainEvents().map((e) => e.type),
+      events.map((e) => e.type),
       "血 = 0 却没发 game-over：多半是又有哪条回复排在了死亡判定前面",
     ).toContain("game-over");
+    expect(events.find((event) => event.type === "game-over")).toMatchObject({
+      cause: "exhausted",
+      condition: "normal",
+      killer: null,
+    });
     expect(sim.running).toBe(false);
     expect(sim.player.health).toBe(0);
   });
@@ -70,6 +76,19 @@ describe("死亡判定", () => {
     expect(sim.deathCause).toBe(cause);
   });
 
+  it("旧战斗锁还亮着时，自然流失补掉最后一点体力仍报 exhausted", () => {
+    const sim = started();
+    // combatTimer 只是“多久不能休息”，不是伤害来源。旧实现拿它猜死因，会误报 killed。
+    (sim as unknown as { combatTimer: number }).combatTimer = 6;
+    sim.player.health = 0;
+    sim.player.condition = "heatstroke";
+    sim.player.warmth = 100;
+    sim.update(STEP, { x: 0, z: 0 });
+    const event = sim.drainEvents().find((candidate) => candidate.type === "game-over");
+    expect(event).toMatchObject({ cause: "exhausted", condition: "heatstroke", killer: null });
+    expect(sim.deathCause).toBe("exhausted");
+  });
+
   /**
    * 真实路径：不碰任何内部状态，让狗把人咬死。
    *
@@ -89,6 +108,7 @@ describe("死亡判定", () => {
     }
     expect(died, `跑满 ${seconds.toFixed(0)} 秒还没死，血 ${sim.player.health.toFixed(1)}`).toBe(true);
     expect(sim.deathCause).toBe("killed");
+    expect(["small", "large", "elite"]).toContain(sim.deathKiller);
     expect(sim.running).toBe(false);
   }, 60000);
 });

@@ -716,6 +716,10 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
   text-align: center;
 }
 
+/* 韩文与越南文的音节/单词本身已经有清晰分隔，不再叠加标题页的大字距。 */
+html[lang="ko"] .pause-card h2,
+html[lang="vi"] .pause-card h2 { letter-spacing: .04em; }
+
 /* 看广告续命：和"再来一局"区分开 —— 它是主动作，用暖色。 */
 .revive-button {
   margin-bottom: 10px;
@@ -942,6 +946,66 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
 
 .game-over-card .eyebrow,
 .victory-card .eyebrow { font-size: 12px; }
+
+.death-report {
+  display: grid;
+  grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
+  gap: 10px;
+  margin: 12px 0 10px;
+  text-align: left;
+}
+
+.objective-progress.fuel-loaded {
+  animation: fuel-progress-pop .58s cubic-bezier(.2, .78, .28, 1);
+}
+
+@keyframes fuel-progress-pop {
+  0% { color: #fff3d2; transform: scale(1); text-shadow: 0 0 0 rgba(255, 157, 67, 0); }
+  35% { color: #ffbe72; transform: scale(1.2); text-shadow: 0 0 14px rgba(255, 157, 67, .72); }
+  100% { color: #d6c3a2; transform: scale(1); text-shadow: 0 0 0 rgba(255, 157, 67, 0); }
+}
+
+.death-report > div {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, .11);
+  border-radius: 10px;
+  background: rgba(5, 12, 17, .48);
+}
+
+.death-report-cause { border-left: 3px solid #d76650 !important; }
+.death-report-advice { border-left: 3px solid var(--ember) !important; }
+
+.death-report-label {
+  display: block;
+  margin-bottom: 4px;
+  color: #91a9b2;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+}
+
+.death-report strong {
+  display: block;
+  color: #fff0e5;
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.death-report-advice strong { color: #ffe0b8; font-size: 13px; }
+
+.death-report small {
+  display: block;
+  margin-top: 3px;
+  color: #aebfc5;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+@media (max-width: 560px) {
+  .death-report { grid-template-columns: 1fr; }
+}
 
 .game-over-card p:not(.eyebrow) { margin: 12px 0 16px; color: #c3d3d8; line-height: 1.5; font-size: 15px; }
 
@@ -1488,10 +1552,31 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
   .victory-card h2 { font-size: 26px; }
   .game-over-card,
   .victory-card { padding: 14px 24px 12px; }
+  .death-report { gap: 7px; margin: 8px 0 6px; }
+  .death-report > div { padding: 7px 9px; }
+  .death-report strong { font-size: 13px; }
+  .death-report-advice strong,
+  .death-report small { font-size: 10px; line-height: 1.3; }
   .game-over-card p:not(.eyebrow),
   .victory-card p:not(.eyebrow) { margin: 8px 0 12px; line-height: 1.4; font-size: 14px; }
   .tagline { margin: 7px 0 10px; }
   .verb-row { margin: 10px 0 14px; }
+  /*
+   * 暂停页也是设置页，底部“继续”必须始终可触达。长语言在 800×360 下会把
+   * 默认 58px 标题和三张难度说明一起顶出视口，因此矮屏单独收紧密度。
+   */
+  #pause-overlay { padding: 6px; }
+  .pause-card { max-height: calc(100vh - 12px); padding: 10px 24px 9px; overflow-y: auto; }
+  .pause-card h2 { font-size: 32px; line-height: 1.05; letter-spacing: .06em; }
+  .pause-card .difficulty-picker { gap: 3px; }
+  .pause-card .difficulty-options { gap: 5px; }
+  .pause-card .difficulty-option { gap: 2px; padding: 4px 5px; }
+  .pause-card .difficulty-option b { font-size: 11px; }
+  .pause-card .difficulty-option span { font-size: 8px; line-height: 1.15; }
+  .pause-card .settings-select { padding: 4px 8px; font-size: 13px; }
+  .pause-card .secondary-button { padding: 6px 14px; font-size: 12px; }
+  .pause-card > p { margin: 7px 0; font-size: 13px; line-height: 1.2; }
+  .pause-card .primary-button { padding: 9px 20px; font-size: 14px; }
   .backpack-card {
     max-height: calc(100vh - 12px);
     padding: 12px 16px;
@@ -1511,7 +1596,7 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
+  *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
 }
 
 /*

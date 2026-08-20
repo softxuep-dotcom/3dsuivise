@@ -8,11 +8,26 @@ import { DEFAULT_DIFFICULTY, DIFFICULTIES } from "../game/simulation/difficulty"
 import { FUEL_REQUIRED, STRUCTURE_SPECS } from "../game/simulation/types";
 import { itemIcon } from "./ItemIcons";
 import type {
+  DeathCause,
   GameEvent,
   InteractionHint,
   InventoryItemKind,
   StructureKind,
 } from "../game/simulation/types";
+
+const DEATH_CAUSE_KEYS: Record<DeathCause, string> = {
+  dehydrated: "death.cause.dehydrated",
+  starved: "death.cause.starved",
+  killed: "death.cause.killed",
+  exhausted: "death.cause.exhausted",
+};
+
+const DEATH_ADVICE_KEYS: Record<DeathCause, string> = {
+  dehydrated: "death.advice.dehydrated",
+  starved: "death.advice.starved",
+  killed: "death.advice.killed",
+  exhausted: "death.advice.exhausted",
+};
 
 const required = <T extends HTMLElement>(id: string): T => {
   const element = document.getElementById(id);
@@ -164,6 +179,9 @@ export class HudController {
   private readonly actionLabel = required<HTMLElement>("action-label");
   private readonly recordsLine = required<HTMLElement>("records-line");
   private readonly toast = required<HTMLElement>("toast");
+  private readonly deathCause = required<HTMLElement>("death-cause");
+  private readonly deathDetail = required<HTMLElement>("death-detail");
+  private readonly deathAdvice = required<HTMLElement>("death-advice");
   private readonly resultCopy = required<HTMLElement>("result-copy");
   private readonly victoryCopy = required<HTMLElement>("victory-copy");
   private readonly handsStatus = required<HTMLElement>("hands-status");
@@ -255,6 +273,7 @@ export class HudController {
     this.toast.classList.add("hidden");
     this.toastTimer = 0;
     this.objectiveChip.classList.remove("muted");
+    this.huntProgress.classList.remove("fuel-loaded");
     // 两个搏动提示本来就是"每局第一次"的口径（见字段上的注释，它们不写 localStorage）,
     // 所以新的一局要放回来。
     this.attackHintUsed = false;
@@ -657,7 +676,12 @@ export class HudController {
       this.showToast(t(event.kind === "oryx" ? "toast.huntBig" : "toast.hunt", { name: label }), 1.8);
     }
     if (event.type === "fuel-loaded") {
-      this.showToast(t("toast.fuelLoaded", { loaded: event.loaded, required: event.required }), 2.6);
+      // 模拟层紧接着还会发详细 message；再发一条同义 toast 会在同一帧互相覆盖。
+      // 这里专门让常驻进度跳一格，详细说明继续交给 message。
+      this.updateHuntProgress();
+      this.huntProgress.classList.remove("fuel-loaded");
+      void this.huntProgress.offsetWidth;
+      this.huntProgress.classList.add("fuel-loaded");
     }
     if (event.type === "truck-depart") {
       this.closeInventory();
@@ -669,7 +693,7 @@ export class HudController {
     }
     if (event.type === "game-over") {
       this.closeInventory();
-      this.showGameOver();
+      this.showGameOver(event);
     }
   }
 
@@ -993,22 +1017,21 @@ export class HudController {
     this.gameOver.classList.add("hidden");
   }
 
-  private showGameOver(): void {
+  private showGameOver(event: Extract<GameEvent, { type: "game-over" }>): void {
     const wolfCount = this.simulation.wolves.filter((wolf) => wolf.mode !== "dead").length;
-    const cause = this.simulation.deathCause;
-    const causeText = t(`death.${cause ?? "killed"}`);
+    this.deathCause.textContent = t(DEATH_CAUSE_KEYS[event.cause], {
+      name: event.killer ? t(`dog.${event.killer}`) : t("death.killer.pack"),
+    });
+    this.deathDetail.textContent = t(`death.${event.cause}`);
     // 体温越界本身不致死，但 -60%/-75% 的减速经常才是真凶。
-    // 不点出来的话，玩家只会记住"被狼咬死了"，学不到该去烤火或降温。
-    const condition = this.simulation.deathCondition;
-    const conditionText = condition === "heatstroke"
+    // 下一局建议优先解释这个促成因素；体温正常时再针对直接死因给一条做法。
+    this.deathAdvice.textContent = event.condition === "heatstroke"
       ? t("death.note.heatstroke")
-      : condition === "hypothermia"
+      : event.condition === "hypothermia"
         ? t("death.note.hypothermia")
-        : "";
+        : t(DEATH_ADVICE_KEYS[event.cause]);
     this.resultCopy.textContent = [
       t("over.summary", { day: this.simulation.day, count: this.simulation.player.kills }),
-      causeText,
-      conditionText,
       t("over.remaining", { count: wolfCount }),
       this.submitAndDescribe(false),
     ].filter(Boolean).join(" ");

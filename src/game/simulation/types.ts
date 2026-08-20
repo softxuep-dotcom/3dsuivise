@@ -560,7 +560,8 @@ export type GameEvent =
   | { type: "victory" }
   /** 看完激励视频后原地复活。 */
   | { type: "revive" }
-  | { type: "game-over" };
+  /** 死亡瞬间的不可变快照；HUD 不再从可能被复活流程改写的 simulation 字段反查。 */
+  | { type: "game-over"; cause: DeathCause; condition: SurvivalCondition; killer: WolfKind | null };
 
 export interface InteractionHint {
   action: "pickup" | "drop" | "ignite" | "feed" | "cactus" | "mine" | "chop" | "well" | "load" | "board" | "none";

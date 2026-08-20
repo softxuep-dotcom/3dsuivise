@@ -37,6 +37,7 @@ describe("教学桶", () => {
     const target = sim.world.barrels[sim.world.barrels.length - 1];
     const STEP = 1 / 20;
     let loadedAt = -1;
+    let loadEvent: { type: "fuel-loaded"; loaded: number; required: number } | undefined;
 
     for (let step = 0; step < 20 * 40 && loadedAt < 0; step += 1) {
       const aim = sim.player.carrying ? sim.truck : target;
@@ -47,10 +48,14 @@ describe("教学桶", () => {
       // 拾取半径 2.6、装车半径 4.5，机器人都留一点余量。
       if (!sim.player.carrying && dist <= 2.4) sim.requestInteraction();
       else if (sim.player.carrying && dist <= 4.2) sim.requestInteraction();
+      loadEvent = sim.drainEvents().find((event) => event.type === "fuel-loaded") as typeof loadEvent;
       if (sim.truck.loaded > 0) loadedAt = step * STEP;
     }
 
     expect(loadedAt).toBeGreaterThan(0);
     expect(loadedAt).toBeLessThan(20);
+    expect(loadEvent).toEqual({ type: "fuel-loaded", loaded: 1, required: FUEL_REQUIRED });
+    expect(sim.barrels[sim.barrels.length - 1].placement).toBe("loaded");
+    expect(sim.player.carrying).toBeNull();
   });
 });

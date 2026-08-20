@@ -331,6 +331,9 @@ export class GameRenderer {
   private truckRing: THREE.Mesh | null = null;
   /** 车斗上那一排已装的油桶，按 loaded 逐个点亮。 */
   private readonly truckLoadViews: THREE.Object3D[] = [];
+  /** 新装油桶的落位反馈；只属于渲染层，不参与装车判定。 */
+  private fuelLoadFeedbackTime = 0;
+  private fuelLoadFeedbackIndex = -1;
   private readonly barrelViews = new Map<number, THREE.Object3D>();
   private readonly weaponMount: THREE.Group;
   private readonly blades: Map<WeaponKind, THREE.Group>;
@@ -553,7 +556,7 @@ export class GameRenderer {
     this.time += delta;
     this.syncPlayer(delta);
     this.syncItems(delta);
-    this.syncBarrels();
+    this.syncBarrels(delta);
     this.syncCacti();
     this.syncIronNodes();
     this.syncTrees();
@@ -642,6 +645,20 @@ export class GameRenderer {
     this.cameraShake = Math.max(this.cameraShake, strength);
   }
 
+  /**
+   * 一桶油进入车斗后的短反馈：新桶从槽位上方落下，停车环亮一下，镜头轻震。
+   * 不用 focusOn() —— 那是 1.35 秒的教学推镜，会抢走玩家视线和镜头控制。
+   */
+  fuelLoaded(loaded: number): void {
+    this.fuelLoadFeedbackIndex = clamp(Math.round(loaded) - 1, 0, this.truckLoadViews.length - 1);
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      this.fuelLoadFeedbackTime = 0;
+      return;
+    }
+    this.fuelLoadFeedbackTime = 0.52;
+    this.impact(0.065);
+  }
+
   private readonly resize = (): void => {
     const width = window.innerWidth;
     const height = window.innerHeight;
@@ -695,6 +712,8 @@ export class GameRenderer {
     this.tutorialFocus = null;
     this.tutorialLight = 0;
     this.cameraShake = 0;
+    this.fuelLoadFeedbackTime = 0;
+    this.fuelLoadFeedbackIndex = -1;
     const player = simulation.player;
     this.previousPlayerPosition.set(player.x, player.z);
     this.cameraFocus.set(player.x, this.worldHeight(player.x, player.z), player.z);
@@ -1206,7 +1225,7 @@ export class GameRenderer {
       }
     }
 
-    // 车斗里五个油桶位，装一桶亮一个。
+    // 车斗里六个油桶位，装一桶亮一个。
     for (let index = 0; index < FUEL_REQUIRED; index += 1) {
       const slot = createBarrelView();
       slot.position.set(-2.45 + (index % 3) * 1.15, 1.5, index < 3 ? -0.6 : 0.62);
@@ -1259,7 +1278,7 @@ export class GameRenderer {
   }
 
   /** 地上的油桶跟着地形贴地；被扛走或装了车的那些直接隐藏。 */
-  private syncBarrels(): void {
+  private syncBarrels(delta: number): void {
     for (const barrel of this.simulation.barrels) {
       const view = this.barrelViews.get(barrel.id);
       if (!view) continue;
@@ -1271,8 +1290,29 @@ export class GameRenderer {
     const truck = this.simulation.truck;
     this.truckGroup.position.set(truck.x, this.worldHeight(truck.x, truck.z), truck.z);
     this.truckGroup.rotation.y = -truck.rotation;
+    const feedbackDuration = 0.52;
+    const feedbackActive = this.fuelLoadFeedbackTime > 0;
+    const feedbackProgress = feedbackActive
+      ? clamp(1 - this.fuelLoadFeedbackTime / feedbackDuration, 0, 1)
+      : 1;
     this.truckLoadViews.forEach((slot, index) => {
       slot.visible = index < truck.loaded;
+      slot.position.y = 1.5;
+      slot.rotation.x = 0;
+      slot.rotation.z = 0;
+      slot.scale.setScalar(0.82);
+      if (!slot.visible || !feedbackActive || index !== this.fuelLoadFeedbackIndex) return;
+
+      // 前 72% 快速落下，后 28% 只做很小的压缩回弹；重量感来自“快落、短停”，
+      // 不是让油桶像果冻一样弹很久。
+      const fallProgress = clamp(feedbackProgress / 0.72, 0, 1);
+      const fall = 1 - (1 - fallProgress) ** 3;
+      const settleProgress = clamp((feedbackProgress - 0.62) / 0.38, 0, 1);
+      const settle = Math.sin(settleProgress * Math.PI);
+      slot.position.y += (1 - fall) * 0.78 - settle * 0.055;
+      slot.rotation.x = (1 - fall) * -0.18;
+      slot.rotation.z = (1 - fall) * 0.24;
+      slot.scale.set(0.82 * (1 + settle * 0.08), 0.82 * (1 - settle * 0.07), 0.82 * (1 + settle * 0.08));
     });
     /*
      * 标记随进度收敛：油装得越满，光柱越淡 —— 它的职责是"把人引过来"，
@@ -1285,9 +1325,12 @@ export class GameRenderer {
     if (this.truckRing) {
       const material = this.truckRing.material as THREE.MeshBasicMaterial;
       const full = fuel.loaded >= fuel.required;
-      material.opacity = full ? 0.5 : 0.22 + 0.16 * pulse;
+      const loadFlash = feedbackActive ? this.fuelLoadFeedbackTime / feedbackDuration : 0;
+      material.opacity = Math.min(0.62, (full ? 0.5 : 0.22 + 0.16 * pulse) + loadFlash * 0.24);
+      this.truckRing.scale.setScalar(1 + loadFlash * 0.12);
       this.truckRing.visible = !this.simulation.isDeparting();
     }
+    this.fuelLoadFeedbackTime = Math.max(0, this.fuelLoadFeedbackTime - delta);
     // 驶离时玩家在车里。模拟层把人的坐标锁在车心，所以直接把人藏掉 ——
     // 否则最后 5 秒会看到一个人站在车斗中央被拖出地图。
     this.playerGroup.visible = !this.simulation.isDeparting();

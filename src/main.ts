@@ -451,6 +451,7 @@ async function bootstrap(): Promise<void> {
         nightIntro.handle(event);
         if (event.type === "player-hit") renderer.impact(0.22);
         if (event.type === "wolf-hit") renderer.impact(0.09);
+        if (event.type === "fuel-loaded") renderer.fuelLoaded(event.loaded);
         if (event.type === "barrier-hit") {
           renderer.impact(0.035);
           renderer.barrierHit(event.itemId);

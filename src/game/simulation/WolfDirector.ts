@@ -120,6 +120,8 @@ export interface WolfWorld {
   readonly reviveGrace: number;
   random(): number;
   emit(event: GameEvent): void;
+  /** 统一记录玩家受到的狼伤害，供结算页精确区分“被咬死”和自然耗尽。 */
+  damagePlayer(amount: number, attacker: WolfState): void;
   setCombatTimer(seconds: number): void;
   noteActivity(): void;
   getDefense(): number;
@@ -443,7 +445,7 @@ export class WolfDirector {
         // 复活后的无敌窗口：伤害整个免掉，但受击特效照常 ——
         // 玩家要看得见"它咬到我了、只是没扣血"，否则会以为狗卡住了。
         const damage = this.ctx.reviveGrace > 0 ? 0 : Math.max(1, wolf.attack - this.ctx.getDefense());
-        this.ctx.player.health -= damage;
+        this.ctx.damagePlayer(damage, wolf);
         this.ctx.player.hurtFlash = 0.3;
         this.ctx.emit({ type: "player-hit", amount: damage });
         // 反伤按狼**未经防御削减**的原始攻击力算 —— 它咬的是一身铁，
