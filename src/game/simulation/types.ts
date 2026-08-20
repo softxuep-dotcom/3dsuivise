@@ -104,6 +104,8 @@ export interface CritterState extends Vec2 {
   id: number;
   kind: CritterKind;
   facing: Vec2;
+  /** 远处降频更新时攒下的时间，见 GameSimulation.CRITTER_LOD_*。 */
+  lodAccum: number;
   health: number;
   maxHealth: number;
   mode: CritterMode;
@@ -461,6 +463,11 @@ export interface WolfState extends Vec2 {
   speed: number;
   attackCooldown: number;
   lostTimer: number;
+  /**
+   * 远处降频更新时攒下的时间，见 WolfDirector.LOD_*。
+   * 轮到这只狼时一次性把攒的量交给 updateWolf，所以冷却、计时器全都不会走慢。
+   */
+  lodAccum: number;
   /**
    * Absolute simulation time when this raider commits to the assault; 0 once it has.
    * Raiders wait near the den until then so a night arrives in waves, not one clump.

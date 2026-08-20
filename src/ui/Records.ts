@@ -26,6 +26,7 @@
 import { t } from "../i18n";
 import type { Difficulty } from "../game/simulation/difficulty";
 import { DIFFICULTIES } from "../game/simulation/difficulty";
+import { FUEL_REQUIRED } from "../game/simulation/types";
 
 // v1 存的是 bestDay/bestKills，两项在新目标下都没有意义了，
 // 换 key 而不是迁移：旧值翻译不成新值，硬迁只会显示一个假记录。
@@ -151,7 +152,7 @@ export function describeRecords(records: Records): string | null {
     if (records.victories > 1) parts.push(t("records.victories", { count: records.victories }));
   } else {
     // 还没赢过：只说进度，一个字都不提"你还没通关"。
-    parts.push(t("records.bestFuel", { fuel: records.bestFuel }));
+    parts.push(t("records.bestFuel", { fuel: records.bestFuel, required: FUEL_REQUIRED }));
     parts.push(t("records.runs", { count: records.runs }));
   }
   return parts.join(" · ");

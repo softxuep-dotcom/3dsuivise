@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { en } from "../src/i18n/locales/en";
 import { zh } from "../src/i18n/locales/zh";
-import { de, fr, it as itIT, ptBR } from "../src/i18n/locales/western";
+import { de } from "../src/i18n/locales/de";
+import { fr } from "../src/i18n/locales/fr";
+import { it as itIT } from "../src/i18n/locales/it";
+import { ptBR } from "../src/i18n/locales/pt-BR";
 
 /*
  * 文案的三种坏法，肉眼都很难看出来，而且都是"改一处忘六处"造成的：

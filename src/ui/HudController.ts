@@ -5,7 +5,7 @@ import { clamp } from "../game/simulation/geometry";
 import { describeRecords, formatDuration, loadRecords, submitRun } from "./Records";
 import type { Difficulty } from "../game/simulation/difficulty";
 import { DEFAULT_DIFFICULTY, DIFFICULTIES } from "../game/simulation/difficulty";
-import { STRUCTURE_SPECS } from "../game/simulation/types";
+import { FUEL_REQUIRED, STRUCTURE_SPECS } from "../game/simulation/types";
 import { itemIcon } from "./ItemIcons";
 import type {
   GameEvent,
@@ -154,7 +154,7 @@ export class HudController {
     this.thermalButton.disabled = false;
   }
   private readonly objective = required<HTMLElement>("objective");
-  private readonly dayLabel = required<HTMLElement>("day-label");
+  private readonly objectiveChip = required<HTMLElement>("objective-chip");
   private readonly phaseLabel = required<HTMLElement>("phase-label");
   private readonly timeLabel = required<HTMLElement>("time-label");
   private readonly clock = required<HTMLElement>("clock");
@@ -254,6 +254,7 @@ export class HudController {
     this.setPaused(false);
     this.toast.classList.add("hidden");
     this.toastTimer = 0;
+    this.objectiveChip.classList.remove("muted");
     // 两个搏动提示本来就是"每局第一次"的口径（见字段上的注释，它们不写 localStorage）,
     // 所以新的一局要放回来。
     this.attackHintUsed = false;
@@ -503,7 +504,10 @@ export class HudController {
     }
     if (this.toastTimer > 0) {
       this.toastTimer -= deltaSeconds;
-      if (this.toastTimer <= 0) this.toast.classList.add("hidden");
+      if (this.toastTimer <= 0) {
+        this.toast.classList.add("hidden");
+        this.objectiveChip.classList.remove("muted");
+      }
     }
     this.lastHudUpdate += deltaSeconds;
     if (this.lastHudUpdate < 0.08) return;
@@ -541,12 +545,6 @@ export class HudController {
     this.syncThermalButton(player.warmth);
     this.bagUsage.textContent = `${player.inventory.filter(Boolean).length}/8`;
     this.objective.textContent = tx(this.simulation.getObjective());
-    const dogCount = this.simulation.wolves.filter((wolf) => wolf.mode !== "dead").length;
-    this.dayLabel.textContent = t("hud.dayLine", {
-      day: this.simulation.day,
-      place: tx(this.simulation.getCurrentLocationLabel()),
-      count: dogCount,
-    });
     this.phaseLabel.textContent = t(this.simulation.phase === "day" ? "phase.day" : "phase.night");
     this.clock.classList.toggle("night", this.simulation.phase === "night");
     const seconds = Math.max(0, Math.ceil(this.simulation.phaseTime));
@@ -675,9 +673,19 @@ export class HudController {
     }
   }
 
+  /**
+   * 中央 toast。**显示期间把左上角的目标条压暗。**
+   *
+   * 原先两处会同时下指令：目标条说"去捡一根枯木回营地添柴"，toast 说
+   * "侦察野狗正在逼近 · 面向它攻击" —— 同一瞬间到达、而且 toast 正好盖在它上面。
+   * 玩家没有"两个都做"的选项，只会愣一下。
+   *
+   * 压暗而不是隐藏：目标条要保持在原位不跳，玩家的眼睛才知道回哪儿找它。
+   */
   showToast(text: string, seconds = 2.3): void {
     this.toast.textContent = text;
     this.toast.classList.remove("hidden");
+    this.objectiveChip.classList.add("muted");
     this.toastTimer = seconds;
   }
 
@@ -923,14 +931,14 @@ export class HudController {
     if (brokeEscape) {
       return t("records.escapeNew", { time: formatDuration(records.bestEscapeSeconds), day: records.bestEscapeDay });
     }
-    if (brokeFuel) return t("records.fuelNew", { fuel: records.bestFuel });
+    if (brokeFuel) return t("records.fuelNew", { fuel: records.bestFuel, required: FUEL_REQUIRED });
     if (records.bestEscapeSeconds > 0) {
       return t("records.bestEscapeLong", {
         time: formatDuration(records.bestEscapeSeconds),
         day: records.bestEscapeDay,
       });
     }
-    return t("records.bestFuelLong", { fuel: records.bestFuel });
+    return t("records.bestFuelLong", { fuel: records.bestFuel, required: FUEL_REQUIRED });
   }
 
   /**

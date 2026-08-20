@@ -47,6 +47,29 @@ const RAID_RELEASE_WINDOW = 0.6;
 /** 同一波内的错身抖动（占一波间隔的比例）：一起来，但不要像列队一样整齐。 */
 const RAID_RELEASE_JITTER = 0.16;
 
+/**
+ * 远处的狼降频更新。
+ *
+ * 实测（夜里 40 狼 + 52 猎物，台式 CPU）：`sim.update` 每帧 2.05 ms，其中
+ * `updateWolves` 占 1.38 ms = 67.6%。而渲染层整条 CPU 路径才 0.87 ms ——
+ * **模拟层比渲染贵 2.3 倍**，且台式机上的 2.9 ms 换到低端安卓（单线程慢 10~20 倍）
+ * 就是 29~58 ms，而 25 fps 的帧预算只有 40 ms。Poki 的 MEDIAN FPS 被便宜安卓拖着，
+ * 所以真正该省的是主线程 JS，不是 GPU。
+ *
+ * 钱花在哪：`updateWolf` 里的 findBlockingItem **对每只狼遍历全部 ~97 件地物**，
+ * 40 只狼就是每帧近 4000 次检查 —— 而其中 92% 的狼在 45 米外，根本没画出来。
+ *
+ * 50 米这个半径：渲染层的剔除线是 45 米，这里留 5 米余量，
+ * **保证凡是画得出来的狼都是满帧更新的**，降频只发生在看不见的地方。
+ *
+ * 攒时间而不是直接乘 N：帧长本来就抖，`lodAccum` 把跳过的那几帧原样攒起来，
+ * 轮到它时一次交清。狼走的距离、冷却、计时器因此和满帧完全一致，
+ * 只是位置更新变成一跳一跳的 —— 反正没人看得见。
+ */
+const LOD_DISTANCE = 50;
+/** 远处狼每几帧更新一次。按 id 错开，避免每 N 帧集中爆一次。 */
+const LOD_STRIDE = 4;
+
 const REST_COMBAT_LOCK = 6;
 
 /** 小狼与大狼的数值封顶在第几夜。到这一夜为止照常成长，之后不再变强。 */
@@ -133,6 +156,8 @@ export class WolfDirector {
   private wolfId = 0;
   private spawnCountdown = 3;
   private spawnedThisNight = 0;
+  /** LOD 错峰用的帧计数，见 LOD_STRIDE。 */
+  private lodFrame = 0;
   private raidersSpawnedThisNight = 0;
   private wildRespawnCountdown = 0;
   private largeWolfAnnounced = false;
@@ -299,10 +324,19 @@ export class WolfDirector {
       }
     }
 
+    // 放狼/撤退这两道闸每帧都查：它们只是和 elapsed 比大小，便宜，
+    // 而且晚一帧放狼会让整波节奏漂掉。贵的是 updateWolf，只有它降频。
+    this.lodFrame += 1;
+    const lodCutoff = LOD_DISTANCE * LOD_DISTANCE;
     for (const wolf of this.wolves) {
       if (wolf.raidAt > 0 && this.ctx.elapsed >= wolf.raidAt) this.releaseRaider(wolf);
       if (wolf.retreatAt > 0 && this.ctx.elapsed >= wolf.retreatAt) this.beginRetreat(wolf);
-      this.updateWolf(wolf, delta);
+      if (distanceSquared(wolf, this.ctx.player) > lodCutoff) {
+        wolf.lodAccum += delta;
+        if ((wolf.id + this.lodFrame) % LOD_STRIDE !== 0) continue;
+      }
+      this.updateWolf(wolf, wolf.lodAccum > 0 ? wolf.lodAccum + delta : delta);
+      wolf.lodAccum = 0;
     }
     for (let index = this.wolves.length - 1; index >= 0; index -= 1) {
       const wolf = this.wolves[index];
@@ -890,6 +924,7 @@ export class WolfDirector {
       speed,
       attackCooldown: this.ctx.random(),
       lostTimer: 0,
+      lodAccum: 0,
       raidAt,
       retreatAt: 0,
       retreatStuckTimer: 0,

@@ -111,7 +111,24 @@ button { font: inherit; }
   transform: translateX(-50%);
 }
 
+/*
+ * toast 说话时目标条让位。见 HudController.showToast。
+ * 0.42 而不是更低：还要看得见它在哪，只是不再抢"现在做什么"这件事。
+ */
+.settings-select {
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: rgba(10, 17, 23, .85);
+  color: #e8eef1;
+  font: inherit;
+  font-size: 15px;
+}
+
+.objective-chip.muted { opacity: .42; }
+
 .objective-chip {
+  transition: opacity .18s ease;
   padding: 11px 16px 13px;
   border: 1px solid var(--line);
   border-left: 3px solid var(--ember);
@@ -882,11 +899,55 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
   font-weight: 800;
   letter-spacing: .06em;
 }
-.game-over-card p:not(.eyebrow) { margin: 18px 0 24px; color: #c3d3d8; line-height: 1.7; }
+/*
+ * 结算页（死亡 / 通关）自成一档，不跟标题页共用排版。
+ *
+ * `.intro-card h1, .intro-card h2` 那条是给**标题页**写的：58px、900 字重、
+ * 字间距 .12em。标题页一局只看一次，铺满是对的；结算页不是 —— 平台录像显示
+ * 玩家一次会话要重开 5、6 次，也就是**这张卡他要看五六遍**。它该是"扫一眼、
+ * 手指已经在按钮上"的东西，不是开屏。
+ *
+ * 原先它有多大：iPhone 横屏 852×393 下标题 58px（占屏高 20%）、卡片 340px
+ * （占屏高 87%）。而"Buried by the sand"单行要 674px，卡片一窄就折两行，
+ * 折了之后标题吃掉近 30% 屏高。
+ *
+ * 还有一个漏洞：样式表里本来有矮屏保护 `@media (max-height: 520px)`，
+ * 但那条只写了 `.intro-card h1` —— 而结算页用的是 `h2`，整条保护对它无效。
+ * 见文件末尾那段，已经一起补上。
+ *
+ * 现在：字号 clamp 到 40px 封顶、字间距 .12em → .06em，单行需要的宽度
+ * 从 674px 降到约 400px，手机横屏上不再折行；内边距与行高一起收紧。
+ */
+.game-over-card,
+.victory-card {
+  /*
+   * 宽度保持 660 —— 别收窄。两颗按钮（"看广告续命" + "再来一局"）加起来约 571px，
+   * 收到 560 会让它们换行，而换行多吃 57px 竖直空间，比收窄省下的还多。
+   * 结算页缺的是**高度**，不是宽度。
+   */
+  width: min(660px, 94vw);
+  padding: 22px 30px 20px;
+}
+
+/* 并排时的横向间隙；窄到放不下时按钮自然换行，margin-bottom 接管。 */
+.game-over-card .revive-button,
+.victory-card .revive-button { margin-right: 10px; }
+
+.game-over-card h2,
+.victory-card h2 {
+  font-size: clamp(26px, 4.2vw, 40px);
+  letter-spacing: .06em;
+  line-height: 1.12;
+}
+
+.game-over-card .eyebrow,
+.victory-card .eyebrow { font-size: 12px; }
+
+.game-over-card p:not(.eyebrow) { margin: 12px 0 16px; color: #c3d3d8; line-height: 1.5; font-size: 15px; }
 
 .victory-card .eyebrow { color: #ffd479; }
 .victory-card h2 { color: #fff4d8; }
-.victory-card p:not(.eyebrow) { margin: 18px 0 24px; color: #d9d0bb; line-height: 1.7; }
+.victory-card p:not(.eyebrow) { margin: 12px 0 16px; color: #d9d0bb; line-height: 1.5; font-size: 15px; }
 
 .inventory-overlay {
   z-index: 35;
@@ -1418,7 +1479,17 @@ html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
 
 @media (max-height: 520px) {
   .intro-card { padding-top: 18px; padding-bottom: 16px; }
+  /*
+   * h2 是后补的。原先只写了 h1，而死亡页和通关页用的是 h2 ——
+   * 于是矮屏保护对"玩家看得最多的那两张卡"完全不生效。
+   */
   .intro-card h1 { font-size: 38px; }
+  .game-over-card h2,
+  .victory-card h2 { font-size: 26px; }
+  .game-over-card,
+  .victory-card { padding: 14px 24px 12px; }
+  .game-over-card p:not(.eyebrow),
+  .victory-card p:not(.eyebrow) { margin: 8px 0 12px; line-height: 1.4; font-size: 14px; }
   .tagline { margin: 7px 0 10px; }
   .verb-row { margin: 10px 0 14px; }
   .backpack-card {

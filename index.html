@@ -14,8 +14,13 @@
 
       <div id="hud" class="hidden" aria-live="polite">
         <div class="left-stack">
-          <section class="objective-chip">
-            <span class="eyebrow" id="day-label"></span>
+          <!--
+            这里原来还有一行 `第 N 天 · 地名 · 野狗 N`（hud.dayLine）。删了：
+            天数时钟已经在报、跨天还有 toast；地名从头到尾不变是纯装饰；
+            狼数玩家看到也做不了什么。三样都不值得占一行常驻，
+            而窄屏上它还会折成两行，把整块顶成三行。
+          -->
+          <section class="objective-chip" id="objective-chip">
             <strong id="objective"></strong>
             <!-- 通关进度贴着目标走：它就是"我为什么在打狼"的答案。 -->
             <span class="objective-progress" id="hunt-progress"></span>
@@ -229,6 +234,16 @@
             **没有任何一条要求游戏自带可见的声音开关**，更没规定它要摆在主界面上。
             放在这里既省掉状态栏一行，也和难度凑成一个完整的设置区。
           -->
+          <!--
+            语言用原生 select 而不是难度那种按钮组：现在 6 种，还要补西班牙语、
+            土耳其语、日韩俄，按钮排不下；原生 select 在手机上还会拉起系统选择器。
+            选项文字永远用该语言自己的写法（English / 中文 / Deutsch），不翻译 ——
+            找自己母语的人不认识 "German"。
+          -->
+          <div class="settings-row">
+            <span class="settings-label" data-i18n="settings.language">Language</span>
+            <select id="language-select" class="settings-select" data-i18n-attr="aria-label:settings.language"></select>
+          </div>
           <div class="settings-row">
             <span class="settings-label" data-i18n="hud.sound.label">Sound</span>
             <button id="sound-button" class="secondary-button" type="button" data-i18n-attr="aria-label:hud.sound.aria" aria-pressed="true"><b id="sound-state" data-i18n="sound.on">On</b></button>

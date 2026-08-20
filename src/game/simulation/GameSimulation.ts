@@ -107,6 +107,10 @@ const MOVE_STEP_FALLBACKS = [1, 0.5, 0.25];
  */
 const REST_IDLE_SECONDS = 3;
 
+/** 猎物降频更新的距离与步长，和狼一套口径，见 WolfDirector 的 LOD_DISTANCE。 */
+const CRITTER_LOD_DISTANCE = 50;
+const CRITTER_LOD_STRIDE = 4;
+
 /**
  * 一阶装备。
  *
@@ -2360,8 +2364,20 @@ export class GameSimulation {
 
     // --- 体力恒定流失：把"吃饭"从可拖延的提示变成硬心跳（基准 -0.7/600HP）---
     this.player.health -= delta * HEALTH_DECAY;
-    // 吃饱喝足时把流失抵掉（净 +0.06/s，回不了血）—— 见 HEALTH_PASSIVE_REGEN。
-    if (this.player.hunger > HEALTH_PASSIVE_NEED && this.player.water > HEALTH_PASSIVE_NEED) {
+    /*
+     * 吃饱喝足时把流失抵掉（净 +0.06/s，回不了血）—— 见 HEALTH_PASSIVE_REGEN。
+     *
+     * `health > 0` 这道闸是后加的，它挡的是一条很窄但真实存在的缝：
+     * 这段回复跑在 update 末尾的死亡判定**之前**，所以血正好落在 0 的那一帧
+     * 会被抬到 +0.018，`health <= 0` 于是不成立，玩家顶着 0 血继续玩。
+     *
+     * 实战里够不着（狼一口 18~20，血只会越过 0 掉到负数），但"回复能把人从
+     * 死亡线上拽回来"本身就是错的顺序 —— 一旦以后有小额伤害（毒、灼烧、
+     * 每秒掉 1 点那类），这条缝会立刻变成"永远死不了"。
+     * 同样的闸也加在下面休息回复那条上。
+     */
+    if (this.player.health > 0
+      && this.player.hunger > HEALTH_PASSIVE_NEED && this.player.water > HEALTH_PASSIVE_NEED) {
       this.player.health = Math.min(this.player.health + delta * HEALTH_PASSIVE_REGEN, this.player.maxHealth);
     }
 
@@ -2540,7 +2556,10 @@ export class GameSimulation {
     // 38 秒仍然是一段要主动付出的时间，但在手机上不再长到让人宁可继续跑。
     // 饥渴档没跟着提：吃饱喝足才回得快，这条差距是"先去吃饭"的动力所在。
     const healingRate = (this.player.hunger < 40 || this.player.water < 40 ? 1.1 : 2.6) + HEALTH_DECAY;
-    if (this.player.resting) this.player.health = clamp(this.player.health + delta * healingRate, 0, this.player.maxHealth);
+    // health > 0：跟被动回复同一道闸，血已经归零就不许再被拽回来。见 updateNeeds。
+    if (this.player.resting && this.player.health > 0) {
+      this.player.health = clamp(this.player.health + delta * healingRate, 0, this.player.maxHealth);
+    }
   }
 
   private setResting(active: boolean): void {
@@ -2652,13 +2671,30 @@ export class GameSimulation {
   // 代价是你自己的劳力和体温（奔跑产热 +0.9/s，白天很容易把自己追到中暑）。
   // ==========================================================================
 
+  /** LOD 错峰用的帧计数。 */
+  private critterLodFrame = 0;
+
   private updateCritters(delta: number): void {
     this.critterRespawnCountdown -= delta;
     if (this.critterRespawnCountdown <= 0) {
       this.critterRespawnCountdown = 6;
       this.replenishCritters();
     }
-    for (const critter of this.critters) this.updateCritter(critter, delta);
+    /*
+     * 和狼同一套降频，理由见 WolfDirector 的 LOD_DISTANCE。
+     * 猎物比狼更该降：它们不追人、不攻击，远处那几十只纯粹在自己溜达。
+     * 半径同样取 50 米，压过渲染层 45 米的剔除线。
+     */
+    this.critterLodFrame += 1;
+    const lodCutoff = CRITTER_LOD_DISTANCE * CRITTER_LOD_DISTANCE;
+    for (const critter of this.critters) {
+      if (distanceSquared(critter, this.player) > lodCutoff) {
+        critter.lodAccum += delta;
+        if ((critter.id + this.critterLodFrame) % CRITTER_LOD_STRIDE !== 0) continue;
+      }
+      this.updateCritter(critter, critter.lodAccum > 0 ? critter.lodAccum + delta : delta);
+      critter.lodAccum = 0;
+    }
     for (let index = this.critters.length - 1; index >= 0; index -= 1) {
       const critter = this.critters[index];
       if (critter.mode === "dead" && critter.deathTimer <= 0) this.critters.splice(index, 1);
@@ -2776,6 +2812,7 @@ export class GameSimulation {
       // 出来的根本不是单位向量（实测长度 0.68）。渲染只看 atan2(z, x) 所以一直没露馅，
       // 直到朝向开始参与转向限速的插值：非单位向量会让第一步的转角算错。
       facing: { x: Math.cos(facingAngle), z: Math.sin(facingAngle) },
+      lodAccum: 0,
       health: spec.maxHealth,
       maxHealth: spec.maxHealth,
       mode: "graze",

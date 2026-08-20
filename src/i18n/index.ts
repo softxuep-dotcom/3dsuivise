@@ -1,7 +1,5 @@
 import type { LocalizedText } from "../game/simulation/types";
 import { en } from "./locales/en";
-import { de, fr, it, ptBR } from "./locales/western";
-import { zh } from "./locales/zh";
 
 /**
  * 多语言内核。
@@ -12,54 +10,96 @@ import { zh } from "./locales/zh";
  *
  * 键名一律用**语义**而不是英文原文 —— 拿原文当键的话，改一次文案就等于改一次键，
  * 所有语言文件跟着失效。
+ *
+ * ## 为什么除英文外都是动态 import
+ *
+ * 原先六种语言全是静态 import，于是**西班牙玩家要下载德语、意语、葡语、中文的
+ * 全部文案**。实测语言表占整包 gzip 的 11%（37 KB / 336 KB），再补西/土/日/韩/俄
+ * 会翻倍到 ~70 KB —— 而任何一个玩家用得上的只有其中一份。
+ *
+ * 改成 `() => import()` 之后 Vite 会把每种语言切成独立 chunk，按需取。
+ * **英文是唯一的例外，必须常驻主包** —— 它是逐键回退表（见 t()），
+ * 任何语言缺一个键都要立刻拿它顶上，不能是个 Promise。
  */
 
-export type Locale = "en" | "zh" | "fr" | "de" | "it" | "pt-BR";
+/**
+ * 语言注册表。**加一种语言只需要在这里加一行 + 放一个 locales/xx.ts**。
+ *
+ * 之前 Locale 类型、SUPPORTED_LOCALES、LOCALE_NAMES、TABLES 是四份手工同步的
+ * 平行结构，加语言要同时改四处、漏一处就是运行时崩。现在类型从这个数组推导出来，
+ * 漏了编译不过。
+ *
+ * `htmlLang` 单独存是因为它和 code 不总是一致（zh → zh-CN），
+ * 而它影响浏览器断词、默认字体和屏幕朗读。
+ * `label` 永远用该语言自己的写法，不翻译 —— 找自己母语的人不认识 "German"。
+ */
+export const SUPPORTED_LOCALES = [
+  { code: "en", htmlLang: "en", label: "English" },
+  { code: "zh", htmlLang: "zh-CN", label: "中文" },
+  { code: "fr", htmlLang: "fr", label: "Français" },
+  { code: "de", htmlLang: "de", label: "Deutsch" },
+  { code: "it", htmlLang: "it", label: "Italiano" },
+  { code: "pt-BR", htmlLang: "pt-BR", label: "Português (Brasil)" },
+  { code: "es", htmlLang: "es", label: "Español" },
+  { code: "tr", htmlLang: "tr", label: "Türkçe" },
+  { code: "ja", htmlLang: "ja", label: "日本語" },
+] as const;
 
-export const SUPPORTED_LOCALES: Locale[] = ["en", "zh", "fr", "de", "it", "pt-BR"];
+export type Locale = (typeof SUPPORTED_LOCALES)[number]["code"];
+export type LocaleMeta = (typeof SUPPORTED_LOCALES)[number];
 
-/** 语言自选菜单用的原生名称（永远用该语言自己的写法，不翻译）。 */
-export const LOCALE_NAMES: Record<Locale, string> = {
-  en: "English",
-  zh: "中文",
-  fr: "Français",
-  de: "Deutsch",
-  it: "Italiano",
-  "pt-BR": "Português (Brasil)",
+type Table = Record<string, string>;
+
+/** 每种语言怎么取。英文直接给现成的表，其余按需下载。 */
+const LOADERS: Record<Locale, () => Promise<Table>> = {
+  en: () => Promise.resolve(en),
+  zh: () => import("./locales/zh").then((m) => m.zh),
+  fr: () => import("./locales/fr").then((m) => m.fr),
+  de: () => import("./locales/de").then((m) => m.de),
+  it: () => import("./locales/it").then((m) => m.it),
+  "pt-BR": () => import("./locales/pt-BR").then((m) => m.ptBR),
+  es: () => import("./locales/es").then((m) => m.es),
+  tr: () => import("./locales/tr").then((m) => m.tr),
+  ja: () => import("./locales/ja").then((m) => m.ja),
 };
 
 const FALLBACK: Locale = "en";
 const STORAGE_KEY = "desert-survivor.locale";
 
-const TABLES: Record<Locale, Record<string, string>> = { en, zh, fr, de, it, "pt-BR": ptBR };
+/** 下过的语言留着，来回切不重复下载。 */
+const loaded = new Map<Locale, Table>([["en", en]]);
+const listeners = new Set<(locale: Locale) => void>();
 
 let current: Locale = FALLBACK;
+let table: Table = en;
 let pluralRules = new Intl.PluralRules("en");
 
+function metaOf(locale: Locale): LocaleMeta {
+  return SUPPORTED_LOCALES.find((entry) => entry.code === locale) ?? SUPPORTED_LOCALES[0];
+}
+
 /**
- * 检测顺序：`?lang=` > 浏览器 > 旧版 localStorage > 英文。
+ * 检测顺序：`?lang=` > **玩家在设置里选过的** > 浏览器 > 英文。
  *
- * URL 参数排第一是为了能直接分享/测试某一门语言，不用改浏览器设置；
- * 当前版本没有语言选择器，旧版本留下的 localStorage 不能压过浏览器语言 ——
- * 否则中文浏览器会被一次过期的英语选择永久锁成英文。
+ * 存储那一档从最后挪到了第二 —— 以前没有语言选择器，存储里只可能是旧版本留下的
+ * 陈年选择，让它压过浏览器语言会把中文浏览器永久锁成英文。现在设置里有了选择器，
+ * 存的是玩家刚刚做的明确决定，**它就该赢过浏览器的猜测**。
  */
 export function detectLocale(): Locale {
-  const fromQuery = new URLSearchParams(window.location.search).get("lang");
-  const queryMatch = matchLocale(fromQuery);
-  if (queryMatch) return queryMatch;
+  const fromQuery = matchLocale(new URLSearchParams(window.location.search).get("lang"));
+  if (fromQuery) return fromQuery;
 
-  // navigator.languages 是按偏好排序的，逐个规范化后取第一个我们支持的。
-  for (const tag of navigator.languages ?? [navigator.language]) {
-    const match = matchLocale(tag);
-    if (match) return match;
-  }
-
-  // 只在浏览器没有任何受支持语言时兼容旧版手动选择。
   try {
     const stored = matchLocale(window.localStorage.getItem(STORAGE_KEY));
     if (stored) return stored;
   } catch {
     // 隐私模式 / 跨域 iframe 下 localStorage 会直接抛，静默降级。
+  }
+
+  // navigator.languages 是按偏好排序的，逐个规范化后取第一个我们支持的。
+  for (const tag of navigator.languages ?? [navigator.language]) {
+    const match = matchLocale(tag);
+    if (match) return match;
   }
   return FALLBACK;
 }
@@ -70,23 +110,50 @@ function matchLocale(tag: string | null | undefined): Locale | null {
   const normalized = tag.trim().toLowerCase().replace("_", "-");
   const base = normalized.split("-")[0];
   if (base === "pt") return "pt-BR";
-  return SUPPORTED_LOCALES.find((locale) => locale.toLowerCase() === base) ?? null;
+  return SUPPORTED_LOCALES.find((entry) => entry.code.toLowerCase() === base)?.code ?? null;
 }
 
 export function getLocale(): Locale {
   return current;
 }
 
-export function setLocale(locale: Locale, remember = false): void {
-  current = SUPPORTED_LOCALES.includes(locale) ? locale : FALLBACK;
-  pluralRules = new Intl.PluralRules(current);
-  // 影响浏览器的断词、默认字体与屏幕朗读，必须跟着走。
-  document.documentElement.lang = current === "zh" ? "zh-CN" : current;
+/** 给设置里的语言下拉用。 */
+export function getSupportedLocales(): readonly LocaleMeta[] {
+  return SUPPORTED_LOCALES;
+}
+
+/**
+ * 切语言。**异步**，因为语言表是按需下载的。
+ *
+ * 下载失败（离线、chunk 404）时保持原语言不动并返回 false ——
+ * 半途把 current 改掉但表没到，界面会整片回退成英文，比不切更糟。
+ */
+export async function setLocale(locale: Locale, remember = false): Promise<boolean> {
+  const target = SUPPORTED_LOCALES.some((entry) => entry.code === locale) ? locale : FALLBACK;
+  if (!loaded.has(target)) {
+    try {
+      loaded.set(target, await LOADERS[target]());
+    } catch {
+      return false;
+    }
+  }
+  current = target;
+  table = loaded.get(target) ?? en;
+  pluralRules = new Intl.PluralRules(target);
+  document.documentElement.lang = metaOf(target).htmlLang;
   if (remember) {
     try {
-      window.localStorage.setItem(STORAGE_KEY, current);
+      window.localStorage.setItem(STORAGE_KEY, target);
     } catch { /* 存不下就算了，不影响本局 */ }
   }
+  for (const listener of listeners) listener(target);
+  return true;
+}
+
+/** 语言变化时重刷界面用。返回退订函数。 */
+export function onLocaleChange(listener: (locale: Locale) => void): () => void {
+  listeners.add(listener);
+  return () => { listeners.delete(listener); };
 }
 
 /**
@@ -99,7 +166,6 @@ export function setLocale(locale: Locale, remember = false): void {
  *   界面上出现 `msg.foo.bar` 很丑，但比空白好定位。
  */
 export function t(key: string, params?: LocalizedText["params"]): string {
-  const table = TABLES[current];
   let template: string | undefined;
 
   if (params && typeof params.count === "number") {
