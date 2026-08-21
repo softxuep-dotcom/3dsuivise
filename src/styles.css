@@ -2005,6 +2005,30 @@ html[lang="vi"] .pause-card h2 { letter-spacing: .04em; }
   .bottom-right button { pointer-events: auto; }
 
   /*
+   * 行动提示要让开这条键位条。
+   *
+   * 四颗键摊平之后 .bottom-right 是一条**贴底边的整宽行**（left 和 right 都设了、
+   * chip 高 30px、bottom 18px），占掉视口底部 18~48px 这一带；而 .prompt 的基础规则
+   * 是居中 + bottom 34px —— 两者在画面中下部叠成一团。
+   *
+   * 只在宽度 ≥760px 时才看得见：再窄一点 `(pointer: coarse), (max-width: 760px)`
+   * 那一块会把提示改成右对齐、抬到 112px，反而躲开了。所以这条只补 fine 档，
+   * 而且要把那一块的右对齐一起收回来 —— 键位条已经是整宽的了，提示居中在它上方
+   * 才对得齐，右对齐会正好压在最右那颗 chip 头上。
+   *
+   * +42：chip 行顶边在 bottom+30，再留 12px 间隙。
+   */
+  .prompt {
+    left: 50%;
+    right: auto;
+    bottom: calc(max(18px, env(safe-area-inset-bottom)) + 42px);
+    max-width: min(80vw, 560px);
+    padding: 9px 14px;
+    transform: translateX(-50%);
+    font-size: 12px;
+  }
+
+  /*
    * .utility-buttons / .action-buttons 是 display: contents，包装层不存在，
    * 四颗键直接是 .bottom-right 的 flex 子项 —— 所以顺序写在按钮自己身上。
    * DOM 顺序是 Q B Space E，读起来该是 Space E B Q。
