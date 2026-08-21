@@ -92,6 +92,52 @@ const createStoneItemGeometry = (): THREE.BufferGeometry => {
 };
 
 const WOOD_ITEM_GEOMETRY = createWoodItemGeometry();
+
+/*
+ * 共享几何与材质：**参数是常量的，就不该每个实例现造一份。**
+ *
+ * 起因是真机读数：白天 geo 215，35 秒后的夜里 geo 414 —— 几何体数量翻了一倍。
+ * renderer.info.memory.geometries **只在 dispose() 时才减**，而这份代码里
+ * 一处几何体的 dispose 都没有（除了 createWoodItemGeometry 末尾那次合并清理）。
+ *
+ * 最大的漏点是掉落物：createDropView 每次都新建 CircleGeometry /
+ * DodecahedronGeometry / CylinderGeometry，而它们三个的参数全是常量；
+ * 掉落视图过期时只从场景里移除、材质和几何都不回收。按注释自己的说法
+ * 「夜里一场仗能掉几十份肉皮牙」，一局下来就是几百个泄漏的 GPU 缓冲。
+ *
+ * 修法不是补 dispose，是**共享** —— 共享的东西本来就不该被回收，
+ * 顺带把 draw call 之外的另一项（缓冲数量与显存）也压下去。
+ * 仙人掌的刺与矿脉的棱柱同理：形状逐个都一样，只是摆放不同。
+ *
+ * 只提**参数恒定**的那些。仙人掌的主干和手臂长度是每株随机的，留在原地。
+ */
+const DROP_HIDE_GEOMETRY = new THREE.CircleGeometry(0.62, 5);
+const DROP_MEAT_GEOMETRY = new THREE.DodecahedronGeometry(0.42, 0);
+const DROP_BONE_GEOMETRY = new THREE.CylinderGeometry(0.07, 0.07, 0.82, 6);
+const CACTUS_SPINE_GEOMETRY = new THREE.ConeGeometry(0.04, 0.2, 4);
+const CACTUS_ELBOW_GEOMETRY = new THREE.CapsuleGeometry(0.18, 0.34, 3, 6);
+const CACTUS_FLOWER_GEOMETRY = new THREE.IcosahedronGeometry(0.16, 0);
+
+/**
+ * 矿脉的四根棱柱。
+ *
+ * 高度四根各不相同（参差是"矿脉"读感的全部来源），但这四个高度对**每一个**
+ * 矿脉都一样 —— 原先写在循环里，14 个矿脉造出 56 份几何，实际只需要 4 份。
+ * 表和几何一起提上来，摆放参数留在原地。
+ *
+ * [绕 Y 的方位, 离心距, 高度, 外倾角]
+ */
+const IRON_SHARDS: ReadonlyArray<readonly [number, number, number, number]> = [
+  [0.0, 0.0, 2.05, 0.0],
+  [1.9, 0.46, 1.42, 0.26],
+  [3.6, 0.52, 1.68, 0.19],
+  [5.2, 0.40, 1.15, 0.31],
+];
+/** 上细下粗的五棱柱：顶端收到 0.05，剪影是尖的。 */
+const IRON_SHARD_GEOMETRIES = IRON_SHARDS.map(
+  ([, , height]) => new THREE.CylinderGeometry(0.05, 0.3, height, 5),
+);
+const IRON_ORE_GEOMETRY = new THREE.OctahedronGeometry(0.34, 0);
 const STONE_ITEM_GEOMETRY = createStoneItemGeometry();
 
 /** 长角羚的沙褐主色。 */
@@ -434,6 +480,15 @@ export class GameRenderer {
   private shadowDirty = true;
   /** 距离上次重画过了几帧。到 SHADOW_MAX_STALE_FRAMES 强制重画，兜住漏挂的钩子。 */
   private shadowStaleFrames = 0;
+  /*
+   * 掉落物的三份共享材质。做成字段而不是模块常量，是因为 makeMaterial 返回的是
+   * MeshStandardMaterial，而模块级常量会跨 GameRenderer 实例存活 ——
+   * 软重开虽然复用同一个渲染器，但测试里会反复新建，跨实例共享材质容易踩到
+   * 一个实例 dispose 之后另一个还在用。
+   */
+  private readonly dropHideMaterial = makeMaterial(0x7a4931, 1);
+  private readonly dropMeatMaterial = makeMaterial(0x9e3f3d, 0.9);
+  private readonly dropBoneMaterial = makeMaterial(0xd7c8ad, 1);
   /** 角色贴地阴影。只在低功耗档存在；PC 用真阴影，那边不卡。 */
   private readonly blobShadows: THREE.InstancedMesh | null;
   /** 本帧已经写了几片。每帧从 0 重新累计，写完直接设 count，不留隐藏实例。 */
@@ -1692,19 +1747,8 @@ export class GameRenderer {
 
       // 四根高矮不一的尖棱柱，向外倾斜 —— 参差和倾角是"矿脉"读感的全部来源，
       // 四根一样高一样直的话就变成一座塔了。
-      const shards: Array<[number, number, number, number]> = [
-        // [绕 Y 的方位, 离心距, 高度, 外倾角]
-        [0.0, 0.0, 2.05, 0.0],
-        [1.9, 0.46, 1.42, 0.26],
-        [3.6, 0.52, 1.68, 0.19],
-        [5.2, 0.40, 1.15, 0.31],
-      ];
-      for (const [angle, radius, height, tilt] of shards) {
-        const shard = new THREE.Mesh(
-          // 上细下粗的五棱柱：顶端收到 0.05，剪影是尖的。
-          new THREE.CylinderGeometry(0.05, 0.3, height, 5),
-          rockMaterial,
-        );
+      for (const [index, [angle, radius, height, tilt]] of IRON_SHARDS.entries()) {
+        const shard = new THREE.Mesh(IRON_SHARD_GEOMETRIES[index], rockMaterial);
         shard.position.set(Math.cos(angle) * radius, 0.3 + height / 2, Math.sin(angle) * radius);
         shard.rotation.z = Math.cos(angle) * tilt;
         shard.rotation.x = -Math.sin(angle) * tilt;
@@ -1715,7 +1759,7 @@ export class GameRenderer {
       // 矿脉：贴在棱柱根部朝外的一圈，三颗，比原先大四成、自发光更强。
       for (let index = 0; index < 3; index += 1) {
         const angle = 0.7 + index * 2.1;
-        const ore = new THREE.Mesh(new THREE.OctahedronGeometry(0.34, 0), oreMaterial);
+        const ore = new THREE.Mesh(IRON_ORE_GEOMETRY, oreMaterial);
         ore.position.set(Math.cos(angle) * 0.52, 0.5 + (index % 2) * 0.42, Math.sin(angle) * 0.52);
         ore.rotation.set(index * 0.7, index * 1.1, index * 0.4);
         group.add(ore);
@@ -1925,16 +1969,16 @@ export class GameRenderer {
         arm.position.set(dir * 0.42, 0.75 + side * 0.42 + armHeight / 2, 0);
         arm.castShadow = true;
         group.add(arm);
-        const elbow = new THREE.Mesh(new THREE.CapsuleGeometry(0.18, 0.34, 3, 6), fleshMaterial);
+        const elbow = new THREE.Mesh(CACTUS_ELBOW_GEOMETRY, fleshMaterial);
         elbow.rotation.z = Math.PI / 2;
         elbow.position.set(dir * 0.24, 0.75 + side * 0.42, 0);
         group.add(elbow);
       }
-      const flower = new THREE.Mesh(new THREE.IcosahedronGeometry(0.16, 0), flowerMaterial);
+      const flower = new THREE.Mesh(CACTUS_FLOWER_GEOMETRY, flowerMaterial);
       flower.position.y = trunkHeight + 0.42;
       group.add(flower);
       for (let index = 0; index < 3; index += 1) {
-        const spine = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.2, 4), spineMaterial);
+        const spine = new THREE.Mesh(CACTUS_SPINE_GEOMETRY, spineMaterial);
         const angle = (index / 3) * Math.PI * 2;
         spine.position.set(Math.cos(angle) * 0.31, 0.6 + index * 0.42, Math.sin(angle) * 0.31);
         spine.rotation.z = -Math.cos(angle) * 1.2;
@@ -2875,7 +2919,7 @@ export class GameRenderer {
 
   private createDropView(drop: WorldDrop): THREE.Object3D {
     if (drop.kind === "hide") {
-      const hide = new THREE.Mesh(new THREE.CircleGeometry(0.62, 5), makeMaterial(0x7a4931, 1));
+      const hide = new THREE.Mesh(DROP_HIDE_GEOMETRY, this.dropHideMaterial);
       hide.rotation.x = -Math.PI / 2;
       hide.scale.set(1.25, 0.82, 1);
       // 兽皮是一张贴地的圆片，影子和它自己基本重合 —— 低功耗档不投影，看不出来。
@@ -2883,12 +2927,12 @@ export class GameRenderer {
       return hide;
     }
     const group = new THREE.Group();
-    const meat = new THREE.Mesh(new THREE.DodecahedronGeometry(0.42, 0), makeMaterial(0x9e3f3d, 0.9));
+    const meat = new THREE.Mesh(DROP_MEAT_GEOMETRY, this.dropMeatMaterial);
     meat.scale.set(1.25, 0.65, 0.9);
     // 夜里一场仗能掉几十份肉皮牙，全在玩家脚边 —— 正好落在阴影相机里。
     meat.castShadow = !this.lowPower;
     group.add(meat);
-    const bone = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.82, 6), makeMaterial(0xd7c8ad, 1));
+    const bone = new THREE.Mesh(DROP_BONE_GEOMETRY, this.dropBoneMaterial);
     bone.rotation.z = Math.PI / 2;
     bone.position.y = 0.08;
     group.add(bone);
