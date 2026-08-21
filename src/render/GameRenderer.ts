@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { GameSimulation } from "../game/simulation/GameSimulation";
 import { clamp, lerp, mulberry32 } from "../game/simulation/geometry";
 import type { CampDefinition, CritterState, GroundItem, Vec2, WeaponKind, WolfState, WorldDefinition, WorldDrop } from "../game/simulation/types";
@@ -12,6 +13,17 @@ import { createCritterMesh } from "./CritterModels";
 interface CampView {
   flame: THREE.Group;
   glow: THREE.Mesh<THREE.CircleGeometry, THREE.MeshBasicMaterial>;
+}
+
+interface ItemRenderState {
+  kind: GroundItem["kind"];
+  active: boolean;
+  placed: boolean;
+  x: number;
+  z: number;
+  hp: number;
+  rotation: number;
+  flash: number;
 }
 
 interface WolfView {
@@ -52,6 +64,34 @@ const LANDSCAPE_CAMERA_SCALE = 0.64;
 const STONE_COLOR = 0x748084;
 const WOOD_COLOR = 0x65432d;
 const BARRIER_DAMAGE_TINT = new THREE.Color(0x47231c);
+const ITEM_UP = new THREE.Vector3(0, 1, 0);
+const HIDDEN_ITEM_MATRIX = new THREE.Matrix4().makeScale(0, 0, 0);
+
+/**
+ * 地上的一捆枯木原来是两个独立 Mesh，也就是每捆两次 draw call。
+ * 合并的只是渲染几何，碰撞和拾取仍然完全由 GroundItem 决定。
+ */
+const createWoodItemGeometry = (): THREE.BufferGeometry => {
+  const logs = [-0.19, 0.19].map((z) => {
+    const geometry = new THREE.CylinderGeometry(0.22, 0.26, 1.65, 7);
+    geometry.rotateZ(Math.PI / 2);
+    geometry.translate(0, 0, z);
+    return geometry;
+  });
+  const merged = mergeGeometries(logs);
+  for (const geometry of logs) geometry.dispose();
+  return merged;
+};
+
+/** 石头原来的非均匀缩放烘进共享几何，实例矩阵只负责世界位置、朝向和耐久缩放。 */
+const createStoneItemGeometry = (): THREE.BufferGeometry => {
+  const geometry = new THREE.DodecahedronGeometry(0.7, 0);
+  geometry.scale(2.15, 1.32, 1.7);
+  return geometry;
+};
+
+const WOOD_ITEM_GEOMETRY = createWoodItemGeometry();
+const STONE_ITEM_GEOMETRY = createStoneItemGeometry();
 
 /** 长角羚的沙褐主色。 */
 const ORYX_COAT = 0xc19a63;
@@ -90,6 +130,49 @@ function createFallbackDog(color: number): { mesh: THREE.Object3D; material: THR
 const wolfBarScale = (wolf: WolfState): number => (
   wolf.kind === "elite" ? 1.6 : wolf.kind === "large" ? 1.15 : 0.9
 );
+
+/**
+ * 角色的贴地阴影（blob shadow）。
+ *
+ * 低功耗档不再让玩家、狼、猎物投真阴影，改成脚下贴一片圆形暗斑。
+ *
+ * 换掉的理由是**这档阴影本来就读不出形状**：阴影图 512²、阴影相机覆盖 ±32
+ * 世界单位，也就是每米 8 texel；一只狼身长 1.5 米，落在阴影图上只有 12 texel。
+ * 为这 12 个像素，深度 pass 要把 13 个骨骼网格（45 米剔除后的数量）**再蒙皮一遍** ——
+ * 主 pass 一遍、阴影 pass 一遍。拿一坨读不出形状的斑点换一坨故意画的斑点，
+ * 视觉上几乎不损失，省下的是整个动态深度 pass。
+ *
+ * 用 DataTexture 而不是 CanvasTexture，理由同 createGroundTexture：
+ * 移动端 Chrome 会在后台回收游离 canvas 的后备存储，回前台重传就是一片全黑。
+ */
+const BLOB_SHADOW_TEXTURE_SIZE = 64;
+/** 同屏最多画几片。玩家 1 + 45 米内的狼与猎物，实测远不到这个数。 */
+const BLOB_SHADOW_CAPACITY = 48;
+/** 抬离地面多少，避免与地面 z-fighting。 */
+const BLOB_SHADOW_LIFT = 0.04;
+/** 估地形法线时左右各采样多远。 */
+const BLOB_SHADOW_NORMAL_STEP = 0.5;
+const BLOB_SHADOW_UP = new THREE.Vector3(0, 1, 0);
+const BLOB_SHADOW_NORMAL = new THREE.Vector3();
+
+const createBlobShadowTexture = (): THREE.DataTexture => {
+  const size = BLOB_SHADOW_TEXTURE_SIZE;
+  const data = new Uint8Array(size * size * 4);
+  const centre = (size - 1) / 2;
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const index = (y * size + x) * 4;
+      const spread = Math.hypot(x - centre, y - centre) / centre;
+      // (1 - r²)^1.6：中心实、边缘平滑归零。指数比 1 大是为了让边缘收得比线性快，
+      // 免得斑点看起来像一块糊在地上的圆形污渍。
+      const alpha = spread >= 1 ? 0 : Math.pow(1 - spread * spread, 1.6);
+      data[index + 3] = Math.round(alpha * 255);
+    }
+  }
+  const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+  texture.needsUpdate = true;
+  return texture;
+};
 
 /** 头顶血条：受伤后显示多久。够看清掉了多少，又不至于夜里几十条一直挂着。 */
 const WOLF_BAR_SECONDS = 2.6;
@@ -310,9 +393,19 @@ export class GameRenderer {
    */
   private static readonly LOW_POWER_DRAW_DISTANCE = 45;
 
-  /** 触屏 / 窄屏走低功耗档：无 AA、pixelRatio 1、无实时阴影、远处实体剔除。 */
+  /** 触屏 / 窄屏走低功耗档：pixelRatio 1、512² 隔帧阴影、贴地装饰不收影、远处实体剔除。 */
   private readonly lowPower: boolean;
   private readonly renderer: THREE.WebGLRenderer;
+  /** 移动端只在偶数帧重画阴影图；PC 仍由 three.js 每帧自动更新。 */
+  private shadowFrameParity = 0;
+  /** 角色贴地阴影。只在低功耗档存在；PC 用真阴影，那边不卡。 */
+  private readonly blobShadows: THREE.InstancedMesh | null;
+  /** 本帧已经写了几片。每帧从 0 重新累计，写完直接设 count，不留隐藏实例。 */
+  private blobShadowCount = 0;
+  private readonly blobShadowMatrix = new THREE.Matrix4();
+  private readonly blobShadowPosition = new THREE.Vector3();
+  private readonly blobShadowRotation = new THREE.Quaternion();
+  private readonly blobShadowScale = new THREE.Vector3(1, 1, 1);
   /** 上下文丢失期间跳过绘制，否则每帧都会刷一串 GL 错误。 */
   private contextLost = false;
   private readonly raycaster = new THREE.Raycaster();
@@ -347,7 +440,17 @@ export class GameRenderer {
   private currentPlayerAction: THREE.AnimationAction | null = null;
   private currentPlayerAnimation = "";
   private readonly campViews = new Map<number, CampView>();
+  /** 天然枯木和石头各自合成一个 draw call；玩家放下的可破坏路障仍用 itemViews。 */
+  private readonly staticWoodItems: THREE.InstancedMesh;
+  private readonly staticStoneItems: THREE.InstancedMesh;
+  private readonly itemInstanceCapacity: number;
   private readonly itemViews = new Map<number, THREE.Object3D>();
+  private readonly itemRenderStates = new Map<number, ItemRenderState>();
+  private readonly liveItemIds = new Set<number>();
+  private readonly itemMatrix = new THREE.Matrix4();
+  private readonly itemRotation = new THREE.Quaternion();
+  private readonly itemPosition = new THREE.Vector3();
+  private readonly itemScale = new THREE.Vector3(1, 1, 1);
   private treeTrunks: THREE.InstancedMesh | null = null;
   private treeBranches: THREE.InstancedMesh | null = null;
   /** 已经变成树桩的树。只记 id，用来避免每帧重写矩阵。 */
@@ -364,6 +467,10 @@ export class GameRenderer {
   private readonly wolfViews = new Map<number, WolfView>();
   private readonly critterViews = new Map<number, CritterView>();
   private readonly dropViews = new Map<number, THREE.Object3D>();
+  /** 三条每帧清空复用，避免 60 FPS 下持续制造短命 Set。 */
+  private readonly liveWolfIds = new Set<number>();
+  private readonly liveCritterIds = new Set<number>();
+  private readonly liveDropIds = new Set<number>();
   private readonly hemisphere: THREE.HemisphereLight;
   private readonly sun: THREE.DirectionalLight;
   private readonly fireLight = new THREE.PointLight(0xff8b38, 0, 22, 2);
@@ -402,6 +509,8 @@ export class GameRenderer {
   private readonly warmthMotes: THREE.Points;
   private warmthAmount = 0;
   private time = 0;
+  /** 昼夜插值颜色每帧都会写，但对象本身不需要每帧重建。 */
+  private readonly dayNightSky = new THREE.Color();
   private readonly onAssetProgress?: (loaded: number, total: number) => void;
   private readonly playerAssetReady: Promise<void>;
   /** Quaternius 的狼与鹿；它们在游戏画面出现后才开始下载。 */
@@ -460,6 +569,11 @@ export class GameRenderer {
      * 配上 512² 会直接暴露成阶梯。省错地方了。
      */
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    /*
+     * PC 保持原来的每帧实时阴影。移动端只把 shadow pass 降到隔帧一次；主画面、
+     * 光照颜色和 PCF 采样仍逐帧更新。这样保留动态阴影，只让它最多落后一个画面帧。
+     */
+    this.renderer.shadowMap.autoUpdate = !this.lowPower;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
@@ -504,6 +618,12 @@ export class GameRenderer {
     this.buildTrees();
     this.buildGroundCover();
     this.buildLandmarks();
+    this.itemInstanceCapacity = simulation.items.reduce((capacity, item) => Math.max(capacity, item.id + 1), 1);
+    this.staticWoodItems = this.createStaticItemInstances(WOOD_ITEM_GEOMETRY, WOOD_COLOR);
+    this.staticStoneItems = this.createStaticItemInstances(STONE_ITEM_GEOMETRY, STONE_COLOR);
+    this.scene.add(this.staticWoodItems, this.staticStoneItems);
+    this.blobShadows = this.lowPower ? this.createBlobShadows() : null;
+    if (this.blobShadows) this.scene.add(this.blobShadows);
     this.buildDens();
     this.buildCamps();
     this.buildCacti();
@@ -554,6 +674,8 @@ export class GameRenderer {
     if (this.contextLost) return;
     const delta = Math.min(deltaSeconds, 0.05);
     this.time += delta;
+    // 贴地阴影每帧重新累计：写完直接设 count，不需要隐藏用不到的实例。
+    this.blobShadowCount = 0;
     this.syncPlayer(delta);
     this.syncItems(delta);
     this.syncBarrels(delta);
@@ -572,6 +694,11 @@ export class GameRenderer {
     this.updateCamera(delta);
     this.updateSand(delta);
     this.updateWarmthAura(delta);
+    if (this.blobShadows) {
+      this.blobShadows.count = this.blobShadowCount;
+      this.blobShadows.instanceMatrix.needsUpdate = true;
+    }
+    this.scheduleShadowUpdate();
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -685,10 +812,8 @@ export class GameRenderer {
    * barrels 7/10、truck 和 startCampId 不同，树、仙人掌、矿脉、井、地标逐字节相同。
    * 地形更是完全一致。
    *
-   * 而绝大多数视图**每帧都从 simulation 重新摆**（syncBarrels 连卡车带油桶一起摆，
-   * syncItems 发现 kind 对不上会自己重建，狼/猎物/掉落各有清理循环），所以换掉引用
-   * 它们下一帧就归位。真正需要手动收拾的只有下面这几样 —— 它们的共同点是
-   * **只在事件发生的那一刻写一次，之后不再同步**。
+   * 动态实体仍会从 simulation 同步；地面物品现在有渲染状态缓存和实例槽，所以换局时
+   * 明确清一次缓存，让下一帧把新世界完整写进批次。玩法状态仍只存在 simulation 中。
    */
   resetRun(world: WorldDefinition, simulation: GameSimulation): void {
     // 砍成树桩的树要长回来。felledTrees 只在砍倒那一刻写实例矩阵，不还原就一直是树桩。
@@ -704,6 +829,17 @@ export class GameRenderer {
     for (const view of this.structureViews.values()) this.scene.remove(view);
     this.structureViews.clear();
     this.barrierFlash.clear();
+    for (const id of this.itemViews.keys()) this.removeItemView(id);
+    this.itemRenderStates.clear();
+    for (let index = 0; index < this.itemInstanceCapacity; index += 1) {
+      this.staticWoodItems.setMatrixAt(index, HIDDEN_ITEM_MATRIX);
+      this.staticStoneItems.setMatrixAt(index, HIDDEN_ITEM_MATRIX);
+    }
+    this.staticWoodItems.instanceMatrix.needsUpdate = true;
+    this.staticStoneItems.instanceMatrix.needsUpdate = true;
+    // 下一帧必须重画阴影，避免软重开后沿用上一局的动态投影。
+    this.shadowFrameParity = 0;
+    if (this.lowPower) this.renderer.shadowMap.needsUpdate = true;
 
     // 相机与过场回到开局：上一局若死在推镜或教学聚光灯里，这些值会留着。
     this.cameraPanTarget = null;
@@ -862,8 +998,91 @@ export class GameRenderer {
       this.contextLost = false;
       // 尺寸在丢失期间可能变过（转屏），恢复后重新对齐一次。
       this.resize();
+      // autoUpdate 在移动端关闭，恢复后的第一帧需要显式重建阴影图。
+      this.shadowFrameParity = 0;
+      if (this.lowPower) this.renderer.shadowMap.needsUpdate = true;
       console.info("WebGL 上下文已恢复");
     });
+  }
+
+  /** 移动端隔帧更新一次真实阴影；桌面端沿用 WebGLShadowMap.autoUpdate。 */
+  /**
+   * 角色贴地阴影的实例批次。整批一次 draw call，零蒙皮、不进深度 pass。
+   *
+   * frustumCulled 关掉：这批的包围盒每帧都在变（实例矩阵改了 three 也不会自动重算），
+   * 开着剔除会在角色跑到画面边缘时整批消失。它只有一次 draw call，不值得为它算剔除。
+   */
+  private createBlobShadows(): THREE.InstancedMesh {
+    const geometry = new THREE.PlaneGeometry(1, 1);
+    // PlaneGeometry 默认立在 XY 平面上，转成贴地的 XZ 平面。
+    geometry.rotateX(-Math.PI / 2);
+    const material = new THREE.MeshBasicMaterial({
+      map: createBlobShadowTexture(),
+      transparent: true,
+      // 不写深度：几十片半透明圆斑互相之间不该有遮挡关系，写了反而会互相裁。
+      depthWrite: false,
+      opacity: 0.4,
+      color: 0x000000,
+    });
+    const mesh = new THREE.InstancedMesh(geometry, material, BLOB_SHADOW_CAPACITY);
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    mesh.frustumCulled = false;
+    // 排在贴地装饰之后、角色之前。
+    mesh.renderOrder = 2;
+    mesh.count = 0;
+    return mesh;
+  }
+
+  /**
+   * 记一片贴地阴影。由 syncPlayer / syncWolves / syncCritters 在**已经通过
+   * 45 米剔除之后**调用 —— 剔除逻辑只写一份，这里不重复判距离。
+   */
+  /**
+   * 角色投影策略。
+   *
+   * 狼、鹿、程序化猎物的 castShadow 是在**共享源材质/源网格**上设的
+   * （AnimalModels.loadAnimal 和 CritterModels），clone 出来的每一只都继承 true。
+   * 那两个模块不知道画质档的存在，所以在视图创建处统一覆盖一次 ——
+   * 低功耗档一律不投真影，改走 pushBlobShadow 的贴地圆斑。
+   */
+  private applyCharacterShadowPolicy(root: THREE.Object3D): void {
+    if (!this.lowPower) return;
+    root.traverse((object) => {
+      if (object instanceof THREE.Mesh) object.castShadow = false;
+    });
+  }
+
+  private pushBlobShadow(x: number, z: number, radius: number): void {
+    const mesh = this.blobShadows;
+    if (!mesh || this.blobShadowCount >= BLOB_SHADOW_CAPACITY) return;
+    /*
+     * **必须贴着坡面躺，不能一律水平。**
+     *
+     * 地形可走坡度上限是 0.78（mapBlueprint）。一片水平的圆斑半宽 0.75 米
+     * （精英狼那一档），落在 0.5 的坡上，上坡那半边要抬 0.37 米 —— 整个埋进地里，
+     * 剩下半个月牙。抬高解决不了：抬够了不埋，下坡那边就浮在半空。
+     *
+     * 所以按地形法线转一次。法线用左右各 0.5 米的高度差估，两次额外的
+     * terrainHeightAt —— 那是纯函数采样，和已经在做的每帧一次同一个量级。
+     * 边缘 alpha 本来就衰减到 0，法线估得糙一点看不出来。
+     */
+    const height = this.worldHeight(x, z);
+    const step = BLOB_SHADOW_NORMAL_STEP;
+    const slopeX = (this.worldHeight(x + step, z) - this.worldHeight(x - step, z)) / (2 * step);
+    const slopeZ = (this.worldHeight(x, z + step) - this.worldHeight(x, z - step)) / (2 * step);
+    BLOB_SHADOW_NORMAL.set(-slopeX, 1, -slopeZ).normalize();
+    this.blobShadowPosition.set(x, height + BLOB_SHADOW_LIFT, z);
+    this.blobShadowRotation.setFromUnitVectors(BLOB_SHADOW_UP, BLOB_SHADOW_NORMAL);
+    this.blobShadowScale.set(radius * 2, 1, radius * 2);
+    this.blobShadowMatrix.compose(this.blobShadowPosition, this.blobShadowRotation, this.blobShadowScale);
+    mesh.setMatrixAt(this.blobShadowCount, this.blobShadowMatrix);
+    this.blobShadowCount += 1;
+  }
+
+  private scheduleShadowUpdate(): void {
+    if (!this.lowPower) return;
+    this.renderer.shadowMap.needsUpdate = this.shadowFrameParity === 0;
+    this.shadowFrameParity = 1 - this.shadowFrameParity;
   }
 
   private createGrassTuftGeometry(): THREE.BufferGeometry {
@@ -1035,7 +1254,8 @@ export class GameRenderer {
         matrix.compose(position, quaternion, scale);
         mesh.setMatrixAt(index, matrix);
       });
-      mesh.receiveShadow = true;
+      // 贴地装饰下方仍是会收影的地面；移动端让它们自己再采一次 PCF 没有视觉收益。
+      mesh.receiveShadow = !this.lowPower;
       this.scene.add(mesh);
     };
     place(grass, grassPoints, 0.02, 1.12);
@@ -1785,7 +2005,8 @@ export class GameRenderer {
     }
 
     group.traverse((object) => {
-      if (object instanceof THREE.Mesh) object.castShadow = true;
+      // 低功耗档改用贴地圆斑，见 createBlobShadowTexture 那段。
+      if (object instanceof THREE.Mesh) object.castShadow = !this.lowPower;
     });
     return group;
   }
@@ -1895,7 +2116,8 @@ export class GameRenderer {
 
       model.traverse((object) => {
         if (!(object instanceof THREE.Mesh)) return;
-        object.castShadow = true;
+        // 低功耗档改用贴地圆斑，见 createBlobShadowTexture 那段。
+        object.castShadow = !this.lowPower;
         object.frustumCulled = false;
         const sourceMaterials = Array.isArray(object.material) ? object.material : [object.material];
         const clonedMaterials = sourceMaterials.map((material) => material.clone());
@@ -2023,6 +2245,8 @@ export class GameRenderer {
     const restingHeight = player.resting ? (this.playerModel ? -0.12 : -0.5) : 0;
     const idleBob = this.playerModel ? 0 : player.resting ? Math.sin(this.time * 2) * 0.012 : Math.sin(this.time * 9) * 0.025;
     this.playerGroup.position.set(player.x, this.worldHeight(player.x, player.z) + restingHeight + idleBob, player.z);
+    // 贴地阴影按脚下位置画，不跟着休息下沉和呼吸浮动走。
+    this.pushBlobShadow(player.x, player.z, 0.42);
     const angle = -Math.atan2(player.facing.z, player.facing.x);
     this.playerGroup.rotation.y = angle;
     const attackProgress = player.attackFlash > 0 ? 1 - player.attackFlash / 0.22 : 0;
@@ -2067,17 +2291,119 @@ export class GameRenderer {
     if (itemId >= 0) this.barrierFlash.set(itemId, 0.22);
   }
 
+  private createStaticItemInstances(geometry: THREE.BufferGeometry, color: number): THREE.InstancedMesh {
+    const mesh = new THREE.InstancedMesh(geometry, makeMaterial(color, 1), this.itemInstanceCapacity);
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    mesh.castShadow = !this.lowPower;
+    // InstancedMesh 的初始矩阵是单位矩阵。第一帧同步前先全部压成零，避免未来调整
+    // 启动顺序时在世界原点短暂堆出一百件物品。
+    for (let index = 0; index < this.itemInstanceCapacity; index += 1) {
+      mesh.setMatrixAt(index, HIDDEN_ITEM_MATRIX);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    return mesh;
+  }
+
+  /**
+   * 天然物品写进实例批次。玩家放下的路障不走这里，因为它需要独立耐久色和受击发光。
+   * 返回 false 只可能发生在运行时追加了超出初始容量的新物品；那种情况退回独立 Mesh。
+   */
+  private writeStaticItemInstance(item: GroundItem, visible: boolean): boolean {
+    if (item.id < 0 || item.id >= this.itemInstanceCapacity) return false;
+    this.staticWoodItems.setMatrixAt(item.id, HIDDEN_ITEM_MATRIX);
+    this.staticStoneItems.setMatrixAt(item.id, HIDDEN_ITEM_MATRIX);
+    if (!visible) return true;
+
+    this.itemPosition.set(
+      item.x,
+      this.worldHeight(item.x, item.z) + (item.kind === "wood" ? 0.35 : 0.48),
+      item.z,
+    );
+    this.itemRotation.setFromAxisAngle(ITEM_UP, item.rotation);
+    this.itemScale.set(1, 1, 1);
+    this.itemMatrix.compose(this.itemPosition, this.itemRotation, this.itemScale);
+    const target = item.kind === "wood" ? this.staticWoodItems : this.staticStoneItems;
+    target.setMatrixAt(item.id, this.itemMatrix);
+    return true;
+  }
+
+  private removeItemView(id: number): void {
+    const view = this.itemViews.get(id);
+    if (!view) return;
+    this.scene.remove(view);
+    view.traverse((child) => {
+      if (!(child instanceof THREE.Mesh)) return;
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      for (const material of materials) material.dispose();
+    });
+    this.itemViews.delete(id);
+  }
+
   private syncItems(delta: number): void {
     for (const [id, remaining] of this.barrierFlash) {
       const next = remaining - delta;
       if (next <= 0) this.barrierFlash.delete(id);
       else this.barrierFlash.set(id, next);
     }
+    this.liveItemIds.clear();
+    let woodInstancesChanged = false;
+    let stoneInstancesChanged = false;
     for (const item of this.simulation.items) {
+      this.liveItemIds.add(item.id);
+      const flash = this.barrierFlash.get(item.id) ?? 0;
+      let state = this.itemRenderStates.get(item.id);
+      const changed = !state
+        || state.kind !== item.kind
+        || state.active !== item.active
+        || state.placed !== item.placed
+        || state.x !== item.x
+        || state.z !== item.z
+        || state.hp !== item.hp
+        || state.rotation !== item.rotation
+        || state.flash !== flash;
+      if (!changed) continue;
+
+      if (!state) {
+        state = {
+          kind: item.kind,
+          active: item.active,
+          placed: item.placed,
+          x: item.x,
+          z: item.z,
+          hp: item.hp,
+          rotation: item.rotation,
+          flash,
+        };
+        this.itemRenderStates.set(item.id, state);
+      } else {
+        state.kind = item.kind;
+        state.active = item.active;
+        state.placed = item.placed;
+        state.x = item.x;
+        state.z = item.z;
+        state.hp = item.hp;
+        state.rotation = item.rotation;
+        state.flash = flash;
+      }
+
+      const instanced = !item.placed && item.id < this.itemInstanceCapacity;
+      if (instanced) {
+        this.removeItemView(item.id);
+        this.writeStaticItemInstance(item, item.active);
+        woodInstancesChanged = true;
+        stoneInstancesChanged = true;
+        continue;
+      }
+
+      // 独立 Mesh 与两个实例批次互斥。容量外的新物品也会安全地落到这条后备路径。
+      if (item.id < this.itemInstanceCapacity) {
+        this.writeStaticItemInstance(item, false);
+        woodInstancesChanged = true;
+        stoneInstancesChanged = true;
+      }
       let view = this.itemViews.get(item.id);
       if (view && view.userData.kind !== item.kind) {
-        this.scene.remove(view);
-        this.itemViews.delete(item.id);
+        this.removeItemView(item.id);
         view = undefined;
       }
       if (!view) {
@@ -2097,7 +2423,6 @@ export class GameRenderer {
       // 缩放在小屏上读不出来（看着像透视），颜色才是能读的信号：
       // 越残破越暗越发红，挨打的瞬间还会亮一下。
       if (isBarrier) {
-        const flash = this.barrierFlash.get(item.id) ?? 0;
         const base = view.userData.baseColor as number;
         view.traverse((child) => {
           const material = (child as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
@@ -2115,32 +2440,36 @@ export class GameRenderer {
         });
       }
     }
+
+    // 正常游戏里物品槽只会停用和复用，不会删除；这段为软重启和未来内容变更兜底。
+    for (const id of this.itemRenderStates.keys()) {
+      if (this.liveItemIds.has(id)) continue;
+      if (id < this.itemInstanceCapacity) {
+        this.staticWoodItems.setMatrixAt(id, HIDDEN_ITEM_MATRIX);
+        this.staticStoneItems.setMatrixAt(id, HIDDEN_ITEM_MATRIX);
+        woodInstancesChanged = true;
+        stoneInstancesChanged = true;
+      }
+      this.removeItemView(id);
+      this.itemRenderStates.delete(id);
+    }
+    if (woodInstancesChanged) {
+      this.staticWoodItems.instanceMatrix.needsUpdate = true;
+      this.staticWoodItems.computeBoundingSphere();
+    }
+    if (stoneInstancesChanged) {
+      this.staticStoneItems.instanceMatrix.needsUpdate = true;
+      this.staticStoneItems.computeBoundingSphere();
+    }
   }
 
   private createItemView(item: GroundItem): THREE.Object3D {
-    let view: THREE.Object3D;
-    if (item.kind === "wood") {
-      const group = new THREE.Group();
-      const material = makeMaterial(WOOD_COLOR, 1);
-      for (let index = 0; index < 2; index += 1) {
-        const log = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 1.65, 7), material);
-        log.rotation.z = Math.PI / 2;
-        log.position.z = (index - 0.5) * 0.38;
-        log.castShadow = !this.lowPower;
-        group.add(log);
-      }
-      view = group;
-    } else {
-      const group = new THREE.Group();
-      const mesh = new THREE.Mesh(new THREE.DodecahedronGeometry(0.7, 0), makeMaterial(STONE_COLOR, 1));
-      mesh.scale.set(2.15, 1.32, 1.7);
-      // 低功耗档：地上的枯木与石头不投影。它们贴地、影子只有一小片，
-      // 但场上有 97 件 —— 阴影相机 ±32 米内常驻十几二十个，每个都是深度 pass
-      // 里的一次 draw call。这是"看不见的开销"里最容易砍的一笔。
-      mesh.castShadow = !this.lowPower;
-      group.add(mesh);
-      view = group;
-    }
+    const geometry = item.kind === "wood" ? WOOD_ITEM_GEOMETRY : STONE_ITEM_GEOMETRY;
+    const color = item.kind === "wood" ? WOOD_COLOR : STONE_COLOR;
+    const view = new THREE.Mesh(geometry, makeMaterial(color, 1));
+    // 低功耗档：地上的枯木与石头不投影。它们贴地、影子只有一小片；
+    // 天然物品已经批成实例，玩家放下的少量独立路障也沿用同一画质规则。
+    view.castShadow = !this.lowPower;
     view.userData.kind = item.kind;
     // 记下本色，破损染色要从它出发插值（见 syncItems）。
     view.userData.baseColor = item.kind === "wood" ? WOOD_COLOR : STONE_COLOR;
@@ -2216,7 +2545,8 @@ export class GameRenderer {
   }
 
   private syncCritters(delta: number): void {
-    const liveIds = new Set<number>();
+    const liveIds = this.liveCritterIds;
+    liveIds.clear();
     for (const critter of this.simulation.critters) {
       liveIds.add(critter.id);
       let view = this.critterViews.get(critter.id);
@@ -2235,6 +2565,8 @@ export class GameRenderer {
       const terrainY = this.worldHeight(critter.x, critter.z);
       view.animal?.mixer.update(delta);
       view.group.position.set(critter.x, terrainY, critter.z);
+      // 剑羚是唯一大到能看清的猎物，影子也给得大一档；其余七种半米上下。
+      if (critter.mode !== "dead") this.pushBlobShadow(critter.x, critter.z, critter.kind === "oryx" ? 0.5 : 0.22);
       // 朝向走**最短弧**插值，不能直接赋值也不能对角度做朴素 lerp：
       // 后者在 ±π 交界处会绕远路转一整圈，正好发生在猎物调头的那一刻。
       // 模拟层已经限了转向速率（CritterSpec.turnRate），这里是第二层保险，
@@ -2294,15 +2626,18 @@ export class GameRenderer {
       if (main) main.color.setHex(ORYX_COAT);
       if (light) light.color.setHex(0xefe3cd);
       if (dark) dark.color.setHex(0x2e2620);
+      this.applyCharacterShadowPolicy(group);
       return { group, bodyMaterial: main ?? makeMaterial(ORYX_COAT, 0.95), animal, baseColor: ORYX_COAT };
     }
     const { mesh, material } = createCritterMesh(critter.kind);
     group.add(mesh);
+    this.applyCharacterShadowPolicy(group);
     return { group, bodyMaterial: material, animal: null, baseColor: 0xffffff };
   }
 
   private syncWolves(delta: number): void {
-    const liveIds = new Set<number>();
+    const liveIds = this.liveWolfIds;
+    liveIds.clear();
     for (const wolf of this.simulation.wolves) {
       liveIds.add(wolf.id);
       let view = this.wolfViews.get(wolf.id);
@@ -2343,6 +2678,8 @@ export class GameRenderer {
       view.moveAmount = lerp(view.moveAmount, targetMoveAmount, movementBlend);
       view.lastPosition.set(wolf.x, wolf.z);
       view.group.position.set(wolf.x, this.worldHeight(wolf.x, wolf.z) + (wolf.mode === "dead" ? 0.2 : 0), wolf.z);
+      // 尸体不画影子：它平躺在地上，圆斑压在身下只会看着脏。
+      if (wolf.mode !== "dead") this.pushBlobShadow(wolf.x, wolf.z, 0.46 * wolfBarScale(wolf));
       view.group.rotation.y = view.visualHeading;
       view.group.scale.setScalar(wolfScale(wolf));
       view.animal?.mixer.update(delta);
@@ -2410,7 +2747,8 @@ export class GameRenderer {
   }
 
   private syncDrops(): void {
-    const liveIds = new Set<number>();
+    const liveIds = this.liveDropIds;
+    liveIds.clear();
     for (const drop of this.simulation.drops) {
       if (!drop.active) continue;
       liveIds.add(drop.id);
@@ -2487,6 +2825,7 @@ export class GameRenderer {
       group.add(fallback.mesh);
       tinted.push(fallback.material);
     }
+    this.applyCharacterShadowPolicy(group);
     const { bar, fill } = createWolfBar(wolf);
     return {
       group,
@@ -2591,7 +2930,7 @@ export class GameRenderer {
      *
      * 半球光砍掉的亮度由太阳补回去（3.2 → 4.1），整体曝光不变，变的只有**对比**。
      */
-    const sky = new THREE.Color().lerpColors(NIGHT_SKY, DAY_SKY, daylight);
+    const sky = this.dayNightSky.lerpColors(NIGHT_SKY, DAY_SKY, daylight);
     this.scene.background = sky;
     if (this.scene.fog) this.scene.fog.color.copy(sky);
     this.hemisphere.color.lerpColors(NIGHT_HEMI_SKY, DAY_HEMI_SKY, daylight);
