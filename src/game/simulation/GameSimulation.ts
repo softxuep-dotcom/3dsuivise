@@ -3107,9 +3107,24 @@ export class GameSimulation {
       return;
     }
     const logs = Math.ceil((night - fuel) / 95);
+    /*
+     * **背包里的柴要算进去。**
+     *
+     * 这段原本只看营地火塘的燃料，于是不管玩家背上有几根柴，喊的都是"去囤枯木"。
+     * 开局白送 3 根（STARTING_RATION）、营地火塘边又摆了 10 根之后，
+     * 这句话在绝大多数情况下都是错的指令 —— 玩家不缺柴，缺的是"把柴添进火里"
+     * 这一个动作。指错方向比不说话更糟：他会跑去捡本来就够的东西。
+     */
+    const carried = this.getInventoryCount("wood");
+    if (carried >= logs) {
+      this.events.push({ type: "message", key: "msg.duskCarryEnough", params: { logs } });
+      return;
+    }
+    // 还差几根**要去捡的**，不是总共要几根。
+    const missing = logs - carried;
     this.events.push(fuel <= 0
-      ? { type: "message", key: "msg.duskNoFire", params: { night, logs } }
-      : { type: "message", key: "msg.duskLowFire", params: { fuel: Math.round(fuel), night, logs } });
+      ? { type: "message", key: "msg.duskNoFire", params: { night, logs: missing } }
+      : { type: "message", key: "msg.duskLowFire", params: { fuel: Math.round(fuel), night, logs: missing } });
   }
 
   private updateObjectives(): void {
@@ -3117,15 +3132,13 @@ export class GameSimulation {
     if (!this.duskWarningSent && this.phase === "day" && this.phaseTime <= 30) {
       this.duskWarningSent = true;
       this.warnDuskFuel();
-      if (this.day === 1) {
-        this.events.push({ type: "message", key: "msg.45" });
-      }
     }
     // 枯木改为进背包之后，这一阶不能再只看 carrying —— 否则捡了柴也不算数，
     // 玩家会永远卡在"拿起身边的枯木"。
     if (this.objectiveStage === 0 && (this.player.carrying || this.getInventoryCount("wood") > 0)) {
+      // 这一阶原本弹 msg.46（"枯木能烧火；门口巨石挡路"）。删掉了：
+      // 一句塞两个话题，而两个话题在头 10 秒里各自已经被 msg.1 和 msg.47 说过。
       this.objectiveStage = 1;
-      this.events.push({ type: "message", key: "msg.46" });
     } else if (this.objectiveStage === 1 && this.camps.some((camp) => camp.fuel > 90)) {
       this.objectiveStage = 2;
       this.events.push({ type: "message", key: "msg.47" });

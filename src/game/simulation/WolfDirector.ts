@@ -161,7 +161,6 @@ export class WolfDirector {
   private lodFrame = 0;
   private raidersSpawnedThisNight = 0;
   private wildRespawnCountdown = 0;
-  private largeWolfAnnounced = false;
   /** 今晚计划放出的攻营犬总数，见 getRaidQuota。 */
   private raidQuotaThisNight = 1;
 
@@ -950,10 +949,11 @@ export class WolfDirector {
       dropsCreated: false,
     });
     if (tutorialWolf) this.ctx.emit({ type: "message", key: "msg.41" });
-    if (kind === "large" && role === "raider" && !this.largeWolfAnnounced) {
-      this.largeWolfAnnounced = true;
-      this.ctx.emit({ type: "message", key: "msg.42" });
-    }
+    /*
+     * 大狼首次登场原本弹 msg.42（"壮犬 · 更多血、更多防御、更多伤害"）。删掉了：
+     * 那是一张**数值说明书**，不是指令。它落在第 50 秒 —— 那一刻玩家需要知道
+     * 的是往哪跑，不是读规格表。而"这只更硬"本来就靠体型和血条读得出来。
+     */
   }
 
   /**
