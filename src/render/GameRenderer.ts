@@ -145,6 +145,34 @@ const wolfBarScale = (wolf: WolfState): number => (
  * 用 DataTexture 而不是 CanvasTexture，理由同 createGroundTexture：
  * 移动端 Chrome 会在后台回收游离 canvas 的后备存储，回前台重传就是一片全黑。
  */
+/**
+ * 低功耗档的阴影缓存。
+ *
+ * 角色改用贴地圆斑之后（见 createBlobShadowTexture），阴影图里**只剩静态几何** ——
+ * 墙、树、地形、营地、卡车。静态的东西不需要每帧重画，只需要在阴影相机
+ * 移出覆盖余量时重画一次。
+ *
+ * 三个数是配套的，不能单独改：
+ *
+ *   覆盖 ±44（原 ±32）—— 买出余量。原值是照着可视地面纵深约 60 单位定的，
+ *     几乎没有富余；锚点一旦滞后就会在画面里出现一条"影子到此为止"的硬线。
+ *     ±44 配 10 米的漂移余量，最坏情况下逆行方向仍覆盖 34 单位 > 30。
+ *   768²（原 512²）—— 覆盖变大后维持精度。88 单位 / 768 = 每米 8.7 texel，
+ *     比原来的 64/512 = 8 还略高。
+ *   漂移余量 10 米 —— 玩家 8.2 米/秒，约 1.2 秒重锚一次（26fps 下约 32 帧）。
+ *
+ * 净账：原来每 2 帧光栅化 26 万 texel（13 万/帧摊销），现在每约 30 帧
+ * 光栅化 59 万（约 2 万/帧摊销）—— **少 6 倍多，而且精度还高了一点**。
+ *
+ * 30 帧的强制上限是**兜底**：树被砍倒、结构物落地、卡车启动这些改变投影体的
+ * 事件我都挂了钩子，但漏一个就会留下一片不该存在的影子。30 帧把任何漏网之鱼的
+ * 存活时间压到 1 秒出头，而它对摊销成本几乎没有影响。
+ */
+const SHADOW_ANCHOR_MARGIN = 10;
+const SHADOW_MAX_STALE_FRAMES = 30;
+const LOW_POWER_SHADOW_EXTENT = 44;
+const LOW_POWER_SHADOW_MAP = 768;
+
 const BLOB_SHADOW_TEXTURE_SIZE = 64;
 /** 同屏最多画几片。玩家 1 + 45 米内的狼与猎物，实测远不到这个数。 */
 const BLOB_SHADOW_CAPACITY = 48;
@@ -396,8 +424,15 @@ export class GameRenderer {
   /** 触屏 / 窄屏走低功耗档：pixelRatio 1、512² 隔帧阴影、贴地装饰不收影、远处实体剔除。 */
   private readonly lowPower: boolean;
   private readonly renderer: THREE.WebGLRenderer;
-  /** 移动端只在偶数帧重画阴影图；PC 仍由 three.js 每帧自动更新。 */
-  private shadowFrameParity = 0;
+  /**
+   * 阴影相机当前锚在哪。移动端不再每帧跟着相机走，只在漂移超过余量时重锚。
+   * 初值是 NaN，保证第一帧必定重锚一次。
+   */
+  private readonly shadowAnchor = new THREE.Vector3(NaN, 0, 0);
+  /** 有投影体发生变化，下一帧必须重画。 */
+  private shadowDirty = true;
+  /** 距离上次重画过了几帧。到 SHADOW_MAX_STALE_FRAMES 强制重画，兜住漏挂的钩子。 */
+  private shadowStaleFrames = 0;
   /** 角色贴地阴影。只在低功耗档存在；PC 用真阴影，那边不卡。 */
   private readonly blobShadows: THREE.InstancedMesh | null;
   /** 本帧已经写了几片。每帧从 0 重新累计，写完直接设 count，不留隐藏实例。 */
@@ -604,11 +639,14 @@ export class GameRenderer {
      * far 从 130 收到 110：太阳架在焦点上方 (−35,+55,+25)、距离约 70，
      * 130 给了 60 单位的富余，用不着那么多。收紧只赚深度精度，不损画面。
      */
-    this.sun.shadow.mapSize.set(this.lowPower ? 512 : 1024, this.lowPower ? 512 : 1024);
-    this.sun.shadow.camera.left = -32;
-    this.sun.shadow.camera.right = 32;
-    this.sun.shadow.camera.top = 32;
-    this.sun.shadow.camera.bottom = -32;
+    const shadowMap = this.lowPower ? LOW_POWER_SHADOW_MAP : 1024;
+    this.sun.shadow.mapSize.set(shadowMap, shadowMap);
+    // 低功耗档覆盖放大到 ±44 是为了给锚点漂移买余量，见 SHADOW_ANCHOR_MARGIN 那段。
+    const extent = this.lowPower ? LOW_POWER_SHADOW_EXTENT : 32;
+    this.sun.shadow.camera.left = -extent;
+    this.sun.shadow.camera.right = extent;
+    this.sun.shadow.camera.top = extent;
+    this.sun.shadow.camera.bottom = -extent;
     this.sun.shadow.camera.near = 1;
     this.sun.shadow.camera.far = this.lowPower ? 110 : 130;
     this.scene.add(this.sun, this.fireLight);
@@ -837,9 +875,9 @@ export class GameRenderer {
     }
     this.staticWoodItems.instanceMatrix.needsUpdate = true;
     this.staticStoneItems.instanceMatrix.needsUpdate = true;
-    // 下一帧必须重画阴影，避免软重开后沿用上一局的动态投影。
-    this.shadowFrameParity = 0;
-    if (this.lowPower) this.renderer.shadowMap.needsUpdate = true;
+    // 软重开换了世界：投影体全变了，下一帧必须重画并重锚。
+    this.markShadowDirty();
+    this.shadowAnchor.set(NaN, 0, 0);
 
     // 相机与过场回到开局：上一局若死在推镜或教学聚光灯里，这些值会留着。
     this.cameraPanTarget = null;
@@ -998,9 +1036,8 @@ export class GameRenderer {
       this.contextLost = false;
       // 尺寸在丢失期间可能变过（转屏），恢复后重新对齐一次。
       this.resize();
-      // autoUpdate 在移动端关闭，恢复后的第一帧需要显式重建阴影图。
-      this.shadowFrameParity = 0;
-      if (this.lowPower) this.renderer.shadowMap.needsUpdate = true;
+      // autoUpdate 在移动端关闭，上下文恢复后阴影图是空的，必须显式重建。
+      this.markShadowDirty();
       console.info("WebGL 上下文已恢复");
     });
   }
@@ -1038,14 +1075,19 @@ export class GameRenderer {
    * 45 米剔除之后**调用 —— 剔除逻辑只写一份，这里不重复判距离。
    */
   /**
-   * 角色投影策略。
+   * 低功耗档的"这东西不投影"开关。
    *
-   * 狼、鹿、程序化猎物的 castShadow 是在**共享源材质/源网格**上设的
-   * （AnimalModels.loadAnimal 和 CritterModels），clone 出来的每一只都继承 true。
-   * 那两个模块不知道画质档的存在，所以在视图创建处统一覆盖一次 ——
-   * 低功耗档一律不投真影，改走 pushBlobShadow 的贴地圆斑。
+   * 两类东西走这里：
+   *
+   * **角色**（玩家、狼、鹿、程序化猎物）—— 改用 pushBlobShadow 的贴地圆斑。
+   * 它们的 castShadow 是设在共享源网格上的（AnimalModels.loadAnimal 与
+   * CritterModels），clone 全部继承 true，而那两个模块不知道画质档存在。
+   *
+   * **会移动的小件**（油桶、树桩）—— 阴影图每米 8.7 texel，1.18 米的油桶只有
+   * 10 个 texel、树桩更是不到 2 个，本来就看不出形状；而它们一动就让缓存的
+   * 阴影图作废。关掉之后阴影图里只剩真正静态的几何，缓存才立得住。
    */
-  private applyCharacterShadowPolicy(root: THREE.Object3D): void {
+  private applyLowPowerShadowPolicy(root: THREE.Object3D): void {
     if (!this.lowPower) return;
     root.traverse((object) => {
       if (object instanceof THREE.Mesh) object.castShadow = false;
@@ -1079,10 +1121,43 @@ export class GameRenderer {
     this.blobShadowCount += 1;
   }
 
+  /**
+   * 决定这一帧要不要重画阴影图，以及要不要把阴影相机挪个窝。
+   *
+   * 桌面端直接返回：那边 autoUpdate 开着，three.js 每帧自己重画，本来就不卡。
+   *
+   * 移动端**太阳只在重锚那一帧移动**。这一点是必须的：three.js 在
+   * needsUpdate 为 false 时会跳过 shadow.updateMatrices，采样矩阵停在上次重画的
+   * 状态；如果这期间还每帧挪灯，灯和贴图就对不上了。反过来说，灯不挪也不影响
+   * 光照方向 —— 位置是焦点加固定偏移 (−35,+55,+25)，方向恒定。
+   */
   private scheduleShadowUpdate(): void {
     if (!this.lowPower) return;
-    this.renderer.shadowMap.needsUpdate = this.shadowFrameParity === 0;
-    this.shadowFrameParity = 1 - this.shadowFrameParity;
+    this.shadowStaleFrames += 1;
+    const focus = this.cameraFocus;
+    const drift = Math.hypot(focus.x - this.shadowAnchor.x, focus.z - this.shadowAnchor.z);
+    // 取反写法：首帧 shadowAnchor 是 NaN，drift 也是 NaN，NaN <= margin 为 false。
+    const needsRedraw = this.shadowDirty
+      || this.shadowStaleFrames >= SHADOW_MAX_STALE_FRAMES
+      // 卡车是静态投影体里唯一会自己跑的：驶离那十几秒退回逐帧。
+      || this.simulation.isDeparting()
+      || !(drift <= SHADOW_ANCHOR_MARGIN);
+    if (!needsRedraw) {
+      this.renderer.shadowMap.needsUpdate = false;
+      return;
+    }
+    this.shadowAnchor.set(focus.x, focus.y, focus.z);
+    this.sun.position.set(focus.x - 35, focus.y + 55, focus.z + 25);
+    this.sun.target.position.set(focus.x, focus.y, focus.z);
+    this.sun.target.updateMatrixWorld();
+    this.renderer.shadowMap.needsUpdate = true;
+    this.shadowDirty = false;
+    this.shadowStaleFrames = 0;
+  }
+
+  /** 投影体变了（砍树、造结构、卡车启动），下一帧必须重画阴影图。 */
+  private markShadowDirty(): void {
+    this.shadowDirty = true;
   }
 
   private createGrassTuftGeometry(): THREE.BufferGeometry {
@@ -1190,6 +1265,8 @@ export class GameRenderer {
       if (felled) this.felledTrees.add(tree.id);
       else this.felledTrees.delete(tree.id);
       this.placeTree(tree.id, felled ? 0 : 1);
+      // 树是阴影图里最大的一块，砍倒/长回必须立刻重画，等不到 30 帧兜底。
+      this.markShadowDirty();
     }
   }
 
@@ -1448,6 +1525,7 @@ export class GameRenderer {
     // 车斗里六个油桶位，装一桶亮一个。
     for (let index = 0; index < FUEL_REQUIRED; index += 1) {
       const slot = createBarrelView();
+      this.applyLowPowerShadowPolicy(slot);
       slot.position.set(-2.45 + (index % 3) * 1.15, 1.5, index < 3 ? -0.6 : 0.62);
       slot.scale.setScalar(0.82);
       slot.visible = false;
@@ -1491,6 +1569,7 @@ export class GameRenderer {
   private buildBarrels(): void {
     for (const barrel of this.simulation.barrels) {
       const view = createBarrelView();
+      this.applyLowPowerShadowPolicy(view);
       view.rotation.y = barrel.rotation;
       this.scene.add(view);
       this.barrelViews.set(barrel.id, view);
@@ -1935,6 +2014,7 @@ export class GameRenderer {
     carriedStake.visible = false;
     group.add(carriedStake);
     const carriedFuel = createBarrelView();
+    this.applyLowPowerShadowPolicy(carriedFuel);
     carriedFuel.position.set(-0.1, 1.5, 0.8);
     carriedFuel.scale.setScalar(0.85);
     carriedFuel.visible = false;
@@ -2515,6 +2595,7 @@ export class GameRenderer {
       let view = this.structureViews.get(structure.id);
       if (!view) {
         view = this.createStakeView();
+        this.applyLowPowerShadowPolicy(view);
         this.scene.add(view);
         this.structureViews.set(structure.id, view);
       }
@@ -2626,12 +2707,12 @@ export class GameRenderer {
       if (main) main.color.setHex(ORYX_COAT);
       if (light) light.color.setHex(0xefe3cd);
       if (dark) dark.color.setHex(0x2e2620);
-      this.applyCharacterShadowPolicy(group);
+      this.applyLowPowerShadowPolicy(group);
       return { group, bodyMaterial: main ?? makeMaterial(ORYX_COAT, 0.95), animal, baseColor: ORYX_COAT };
     }
     const { mesh, material } = createCritterMesh(critter.kind);
     group.add(mesh);
-    this.applyCharacterShadowPolicy(group);
+    this.applyLowPowerShadowPolicy(group);
     return { group, bodyMaterial: material, animal: null, baseColor: 0xffffff };
   }
 
@@ -2825,7 +2906,7 @@ export class GameRenderer {
       group.add(fallback.mesh);
       tinted.push(fallback.material);
     }
-    this.applyCharacterShadowPolicy(group);
+    this.applyLowPowerShadowPolicy(group);
     const { bar, fill } = createWolfBar(wolf);
     return {
       group,
@@ -3003,9 +3084,15 @@ export class GameRenderer {
     );
     this.camera.lookAt(this.cameraFocus.x, this.cameraFocus.y + 0.8, this.cameraFocus.z);
     this.cameraShake = Math.max(0, this.cameraShake - delta * 0.8);
-    this.sun.position.set(this.cameraFocus.x - 35, this.cameraFocus.y + 55, this.cameraFocus.z + 25);
-    this.sun.target.position.set(this.cameraFocus.x, this.cameraFocus.y, this.cameraFocus.z);
-    this.sun.target.updateMatrixWorld();
+    /*
+     * 低功耗档的太阳交给 scheduleShadowUpdate 管：那边只在重锚那一帧挪，
+     * 挪灯必须和重画阴影图同一帧发生，否则灯和贴图对不上。
+     */
+    if (!this.lowPower) {
+      this.sun.position.set(this.cameraFocus.x - 35, this.cameraFocus.y + 55, this.cameraFocus.z + 25);
+      this.sun.target.position.set(this.cameraFocus.x, this.cameraFocus.y, this.cameraFocus.z);
+      this.sun.target.updateMatrixWorld();
+    }
   }
 
   /**
