@@ -48,7 +48,7 @@ const enKeys = Object.keys(en).sort();
  * 主包下载前，index.html 会先用一小份内联文案画开场页。它必须和完整语言表一致，
  * 否则慢网络下会先显示一种说法，语言 chunk 到达后再突然跳成另一种。
  */
-const initialCopySource = html.match(/var initialCopy = (\{[\s\S]*?\n\s*\});\n\s*var activeInitialCopy/);
+const initialCopySource = html.match(/var initialCopy = (\{[\s\S]*?\r?\n\s*\});\r?\n\s*var activeInitialCopy/);
 if (!initialCopySource) throw new Error("index.html 里找不到 initialCopy");
 const initialCopy = Function(`"use strict"; return (${initialCopySource[1]});`)() as Record<
   string,

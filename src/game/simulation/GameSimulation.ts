@@ -2380,11 +2380,11 @@ export class GameSimulation {
 
   private updateNeeds(delta: number): void {
     // --- 代谢：水分与饥饿独立衰减，任一归零立即死亡 ---
-    this.player.water = clamp(this.player.water - delta * WATER_DECAY, 0, 100);
-    this.player.hunger = clamp(this.player.hunger - delta * HUNGER_DECAY, 0, 100);
+    this.player.water = clamp(this.player.water - delta * WATER_DECAY * this.tuning.waterDecay, 0, 100);
+    this.player.hunger = clamp(this.player.hunger - delta * HUNGER_DECAY * this.tuning.hungerDecay, 0, 100);
 
     // --- 体力恒定流失：把"吃饭"从可拖延的提示变成硬心跳（基准 -0.7/600HP）---
-    this.player.health -= delta * HEALTH_DECAY;
+    this.player.health -= delta * HEALTH_DECAY * this.tuning.healthDecay;
     // updateNeeds 先于狼 AI。若同一帧随后被狼咬，damagePlayer 会把来源覆盖成 killed；
     // 没被咬则保留 exhausted，正好对应真正补掉最后一点体力的来源。
     this.healthDamageCause = "exhausted";
@@ -2413,7 +2413,9 @@ export class GameSimulation {
       ? STAMINA_REST_REGEN
       : this.player.idleTime > 0.4
         ? STAMINA_IDLE_REGEN
-        : STAMINA_ACTIVE_REGEN) * ARMOR_STATS[this.player.armor].staminaScale;
+        : STAMINA_ACTIVE_REGEN)
+      * ARMOR_STATS[this.player.armor].staminaScale
+      * this.tuning.staminaRegen;
     this.player.stamina = clamp(this.player.stamina + delta * staminaRegen, 0, this.player.maxStamina);
 
     // --- 连击窗口：手停下来层数就掉 ---
@@ -2442,8 +2444,8 @@ export class GameSimulation {
     const nearFire = this.findNearestLitFire(FIRE_WARMTH_RADIUS) !== null;
     let warmthDelta = 0;
     if (nearFire) warmthDelta += WARMTH_FIRE_GAIN;
-    if (this.phase === "day") warmthDelta += WARMTH_DAY_BASE;
-    else warmthDelta -= WARMTH_NIGHT_LOSS;
+    if (this.phase === "day") warmthDelta += WARMTH_DAY_BASE * this.tuning.thermalPressure;
+    else warmthDelta -= WARMTH_NIGHT_LOSS * this.tuning.thermalPressure;
     let warmth = this.player.warmth + delta * warmthDelta;
 
     // 昼夜反向夹逼：白天有地板、夜晚有天花板。
@@ -2580,7 +2582,8 @@ export class GameSimulation {
     // 回得太慢的话"休息"只是名义上的选择：满血 66 秒 → 53 秒 → 38 秒。
     // 38 秒仍然是一段要主动付出的时间，但在手机上不再长到让人宁可继续跑。
     // 饥渴档没跟着提：吃饱喝足才回得快，这条差距是"先去吃饭"的动力所在。
-    const healingRate = (this.player.hunger < 40 || this.player.water < 40 ? 1.1 : 2.6) + HEALTH_DECAY;
+    const healingRate = (this.player.hunger < 40 || this.player.water < 40 ? 1.1 : 2.6)
+      + HEALTH_DECAY * this.tuning.healthDecay;
     // health > 0：跟被动回复同一道闸，血已经归零就不许再被拽回来。见 updateNeeds。
     if (this.player.resting && this.player.health > 0) {
       this.player.health = clamp(this.player.health + delta * healingRate, 0, this.player.maxHealth);

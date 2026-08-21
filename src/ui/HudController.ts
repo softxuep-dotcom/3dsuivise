@@ -225,9 +225,12 @@ export class HudController {
   private lastBlocked = false;
   private blockedListener: ((blocked: boolean) => void) | null = null;
 
-  /** 本局实际在跑的难度 —— 记录只和同难度比。 */
-  private readonly difficulty: Difficulty;
-  private readonly victoryDifficultyHint = required<HTMLElement>("victory-difficulty-hint");
+  /** 本局实际在跑的难度 —— 软重开选档时会与 simulation 一起更新。 */
+  private difficulty: Difficulty;
+  private readonly victoryProgressionCopy = required<HTMLElement>("victory-progression-copy");
+  private readonly victoryChoices = [
+    ...document.querySelectorAll<HTMLButtonElement>("[data-victory-difficulty]"),
+  ];
   /** 设置面板里当前高亮的那一档，可能已经和 difficulty 不同（选了但还没重开）。 */
   private difficultySelection: Difficulty;
 
@@ -268,8 +271,10 @@ export class HudController {
    * 绑了固定监听，每重开一次就会再叠一层。换引用是安全的：那些闭包读的都是
    * `this.simulation`。
    */
-  resetRun(simulation: GameSimulation): void {
+  resetRun(simulation: GameSimulation, difficulty: Difficulty = this.difficulty): void {
     this.simulation = simulation;
+    this.difficulty = difficulty;
+    this.setDifficultySelection(difficulty);
     this.lastGameOver = null;
     this.hideReviveOffer();
     this.gameOver.classList.add("hidden");
@@ -1089,28 +1094,30 @@ export class HudController {
       t("win.summary", { day: this.simulation.day, count: player.kills }),
       this.submitAndDescribe(true),
     ].filter(Boolean).join(" ");
-    this.showNextDifficultyHint();
+    this.showVictoryProgression();
     this.victory.classList.remove("hidden");
   }
 
   /**
-   * 通关页上的"下一步"：告诉玩家还有更高的难度，以及去哪儿调。
-   *
-   * 只在**还有更高档**时出现 —— 默认是简单档，所以绝大多数第一次通关的人都会看到；
-   * 而已经打穿令人发狂的人不该被劝"再难一点"，那一行对他只是噪音，整行隐藏。
-   *
-   * 放在通关的那一刻，是因为这是玩家唯一一个"我做到了、还有什么"的时刻：
-   * 死亡页说这句话像是在嘲讽，开场页说则没人在意。
+   * 通关页直接给下一局入口，不再把玩家赶去设置里找开关。
+   * 当前档显示“再玩一遍”，另外两档显示“挑战…”。推荐色落在下一档；
+   * 已打穿困难时则落回当前档，重点变成刷新纪录。
    */
-  private showNextDifficultyHint(): void {
+  private showVictoryProgression(): void {
+    this.victoryProgressionCopy.textContent = t(`win.progress.${this.difficulty}`);
     const index = DIFFICULTIES.indexOf(this.difficulty);
-    const next = index >= 0 ? DIFFICULTIES[index + 1] : undefined;
-    this.victoryDifficultyHint.classList.toggle("hidden", !next);
-    if (!next) return;
-    this.victoryDifficultyHint.textContent = t("win.tryHarder", {
-      current: t(`difficulty.${this.difficulty}`),
-      next: t(`difficulty.${next}`),
-      blurb: t(`difficulty.${next}.blurb`),
-    });
+    const recommended = DIFFICULTIES[index + 1] ?? this.difficulty;
+    for (const button of this.victoryChoices) {
+      const target = button.dataset.victoryDifficulty as Difficulty;
+      const replay = target === this.difficulty;
+      button.textContent = replay
+        ? t("win.replay")
+        : t("win.challenge", { difficulty: t(`difficulty.${target}`) });
+      button.title = t(`difficulty.${target}.blurb`);
+      button.classList.toggle("recommended", target === recommended);
+      button.classList.toggle("replay", replay);
+      if (replay) button.setAttribute("aria-current", "true");
+      else button.removeAttribute("aria-current");
+    }
   }
 }

@@ -98,9 +98,9 @@ export class NightIntro {
   private camp: CampDefinition | null = null;
 
   constructor(private readonly deps: NightIntroDeps) {
-    const { simulation } = deps;
-
-    const hasWood = (): boolean => simulation.getInventoryCount("wood") > 0;
+    // simulation 是 getter：软重启会换掉实例，所有拍子都必须在执行时重新读取。
+    // 这里若解构成局部变量，闭包会永久盯着第一局的玩家、背包与篝火。
+    const hasWood = (): boolean => this.deps.simulation.getInventoryCount("wood") > 0;
 
     this.beats = [
       {
@@ -126,7 +126,7 @@ export class NightIntro {
         // 这一拍指的那颗键上写的得是"点燃"，不能是通用的"行动" ——
         // 教学正指着它，而它此刻还没写上答案。见 HudController.actionOverride。
         actionLabel: "ignite",
-        done: () => simulation.getNearestLitCamp() !== null,
+        done: () => this.deps.simulation.getNearestLitCamp() !== null,
         minSeconds: 0.9,
         // 有柴：给足 14 秒走过去按一下。没柴：这一拍**做不到**，说完那句
         // "白天要先捡枯木"就该放人走 —— 让他对着一颗按不出结果的键干等
@@ -137,7 +137,7 @@ export class NightIntro {
         line: "night.warm",
         sub: () => "night.warm.sub",
         // 这一拍照的是玩家自己：要看的是他脚下那圈取暖光环亮起来。
-        spot: () => simulation.player,
+        spot: () => this.deps.simulation.player,
         lit: () => ["warmth-meter"],
         focus: () => null,
         // **放开时钟**：体温要真的往回涨，这一拍才有东西可看。
@@ -147,7 +147,7 @@ export class NightIntro {
         timeoutSeconds: () => 16,
         // 上一拍没能把火点起来（没柴）的话，这一拍要教的东西根本不存在 ——
         // 对着一堆冷灰说"待在火边"是句假话，不如闭嘴把屏幕还给玩家。
-        skip: () => simulation.getNearestLitCamp() === null,
+        skip: () => this.deps.simulation.getNearestLitCamp() === null,
       },
     ];
   }

@@ -280,9 +280,12 @@
           <p class="eyebrow" data-i18n="win.eyebrow">The engine caught</p>
           <h2 data-i18n="win.title">Out of the sands</h2>
           <p id="victory-copy"></p>
-          <!-- 只在还有更高档位时显示；已经是最高档就整行隐藏（HudController.showVictory）。 -->
-          <p id="victory-difficulty-hint" class="victory-hint hidden"></p>
-          <button id="victory-restart-button" class="primary-button" type="button" data-i18n="win.restart">Run it again</button>
+          <p id="victory-progression-copy" class="victory-progression-copy"></p>
+          <div class="victory-actions" role="group" data-i18n-attr="aria-label:win.chooseDifficulty">
+            <button class="victory-choice" type="button" data-victory-difficulty="easy">Play again</button>
+            <button class="victory-choice" type="button" data-victory-difficulty="normal">Challenge Normal</button>
+            <button class="victory-choice" type="button" data-victory-difficulty="insane">Challenge Hard</button>
+          </div>
         </div>
       </div>
 
