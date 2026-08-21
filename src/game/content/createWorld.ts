@@ -71,9 +71,18 @@ const TRUCK_RADIUS = 2.4;
 /** 巢边那一组油桶离巢心多远。巢的土垄半径 8，12 米刚好落在垄外的平地上。 */
 const DEN_BARREL_RADIUS = 12;
 const DEN_BARREL_COUNT = 3;
+/**
+ * 井离任何营地出生点的最小距离。见井那段注释。
+ *
+ * 6 米：WELL_REACH 是 3.2，教学桶在 2.2 米 —— 6 米刚好让井既不在出生点的取水
+ * 判定圈里，也不会和桶挤在同一片地上，而井本身仍然留在营地边上。
+ * 这条只做"推开一点"，不做"换个地方"，原因见下面 nudgeOffSpawn。
+ */
+const WELL_SPAWN_CLEARANCE = 6;
+
 /** 教学桶离出生点多远、朝卡车偏多少弧度。见 placeBarrels 末尾那段。 */
-const TUTORIAL_BARREL_RADIUS = 8.5;
-const TUTORIAL_BARREL_SPREAD = 0.95;
+const TUTORIAL_BARREL_RADIUS = 2.2;
+const TUTORIAL_BARREL_SPREAD = 2.20;
 
 /**
  * 卡车停在**出生营地大门外**：出门就看得见它，它就是"我在为什么忙活"的实体答案。
@@ -302,12 +311,28 @@ function placeBarrels(
    * "往车里装 6 桶油"在整个第一昼夜（190 秒）里进度一格都不会动：最近的野外桶
    * 32 米，目标行又在玩家一迈步就跳去讲捡柴，于是"这游戏要我做什么"从头到尾没有答案。
    *
-   * 这一桶是唯一的答案：出生点朝卡车偏 0.95 弧度、8.5 米，正好落在开场那一帧里。
-   * 玩家走两步 → 扛起来（移速 ×0.54、不能攻击，扛运的代价当场就懂）→ 走到车边 →
-   * 装车 → 「汽油 1/6」跳格。**十秒钟里他把通关循环整个跑了一遍。**
+   * 这一桶是唯一的答案：扛起来（移速 ×0.54、不能攻击，扛运的代价当场就懂）→
+   * 走到车边 → 装车 → 「汽油 1/6」跳格。**十秒钟里他把通关循环整个跑了一遍。**
    *
-   * 偏角取负值是为了和教学枯木岔开：那一根在 spawnFacing **+1.15**、6.5 米
-   * （GameSimulation.addTutorialWood），两件教学道具分居左右，开场那一帧里不会叠在一起。
+   * ---
+   *
+   * **1.0.24：8.5 米 → 2.2 米，偏角 0.95 → 2.20。**
+   *
+   * 8.5 米那一版有个没算到的后果：FUEL_PICKUP_REACH 只有 2.6，所以开局够不着这桶，
+   * 而行动键的提示走 getInteractionHint 的优先级表 —— 首局出生点 2.89 米外正好有
+   * 一口井（WELL_REACH = 3.2），于是第一帧目标行说"去搬那桶油"、行动键却写着
+   * "打水（8 劳力）"。玩家按下去花掉劳力、用光那口井仅有的一次蓄水，而通关进度
+   * 一格没动。把桶收进 2.6 米之内，findNearestBarrel 在优先级表里排在井前面，
+   * 冲突自动消失，开场第一下按键就是"扛桶"。
+   *
+   * 偏角同时从 0.95 加到 2.20，是因为**桶不能掉进装车判定圈**：2.2 米配 0.95 弧度时
+   * 桶离车最近只有 4.09 米（camp 3），比 TRUCK_LOAD_REACH 还近，等于把"扛"这一步
+   * 教没了。2.20 弧度下五个营地的桶→车最小 6.50 米，留得住那一段路。
+   *
+   * 相机是固定朝向的等距视角（GameRenderer 的 focus + (19,24,19)·scale，不跟人转），
+   * 横屏可见 43~54 米、竖屏 15.6 米 —— 2.2 米的桶放哪个方向都在画面里，所以偏角
+   * 只需要照顾"离车够远"，不再需要照顾"看不看得见"。教学枯木在 spawnFacing +1.15、
+   * 6.5 米（GameSimulation.addTutorialWood），半径差着 4 米，不可能叠在一起。
    *
    * 摆在这里而不是 GameSimulation 里，是因为它得和别的桶一样进 world 定义 ——
    * 渲染层、寻路网格、getFuelProgress 全都读 world.barrels，特判一个"第十桶"
@@ -578,15 +603,56 @@ export function createWorld(seed = 71291, startCampId = BLUEPRINT.startCampId): 
     });
   }
 
-  // 干枯的井：每座营地配一口，落在营地外 22~34 米的可走地面上。
-  // 距离是刻意的 —— 井必须在"营地视野之外但一趟能来回"的圈上，
-  // 取水才会变成一次需要规划的外出，而不是站在火边顺手就办了。
+  /*
+   * 干枯的井：每座营地配一口，落在营地外 22~34 米的可走地面上。
+   * 距离是刻意的 —— 井必须在"营地视野之外但一趟能来回"的圈上，
+   * 取水才会变成一次需要规划的外出，而不是站在火边顺手就办了。
+   *
+   * **1.0.24 补的那条：离任何营地的出生点至少 WELL_SPAWN_CLEARANCE 米。**
+   *
+   * 半径是从**营地中心**量的，而出生点在营地的 approach 路径末端 —— 两者能差
+   * 二三十米。于是"营地外 22~34 米"完全允许一口井落在出生点脚边：首局那个营地
+   * 就摊上了，井离出生点只有 2.89 米，而 WELL_REACH 是 3.2。
+   *
+   * 教学桶挪到 2.2 米之后，行动键的优先级表里 findNearestBarrel 排在井前面，
+   * 开局那一下已经不会被井抢走了。这条约束要挡的是剩下那点：井跟桶挤在同一片地上、
+   * 以及玩家空手回到出生点时按钮又变回"打水"。
+   *
+   * **推开，不是重抽。** 原来写成 `continue` 试过一版：阈值填 6 还是 18，结果完全一样 ——
+   * 那不是"把井挪开一点"，而是"这个候选作废、重新随机一个"，于是井从出生点 2.89 米
+   * 直接跳到 25.46 米，还因为多消费了 random() 把后面所有随机摆放（地标等）整体挪了位。
+   * nudgeOffSpawn 改成沿"背离出生点"的方向推到刚好 6 米，位移 3 米出头，
+   * random() 消费量和加这条约束之前一模一样 —— 世界其余部分一个物件都没动。
+   */
+  /** 把候选点沿"背离出生点"的方向推到刚好 WELL_SPAWN_CLEARANCE 米，只推最近的那一个。 */
+  const nudgeOffSpawn = (point: Vec2, spawns: Vec2[]): Vec2 => {
+    let worst: Vec2 | null = null;
+    let worstDistance = WELL_SPAWN_CLEARANCE;
+    for (const spawn of spawns) {
+      const gap = distance(point, spawn);
+      if (gap < worstDistance) { worst = spawn; worstDistance = gap; }
+    }
+    if (!worst) return point;
+    // 正好落在出生点上时没有方向可推，交给外层重抽。
+    const away = normalize({ x: point.x - worst.x, z: point.z - worst.z });
+    if (away.x === 0 && away.z === 0) return point;
+    return {
+      x: worst.x + away.x * WELL_SPAWN_CLEARANCE,
+      z: worst.z + away.z * WELL_SPAWN_CLEARANCE,
+    };
+  };
+
+  const campSpawns = camps.map((camp) => {
+    const approach = camp.approach.map((local) => campLocalToWorld(camp, local));
+    return approach[approach.length - 1] ?? campGatePosition(camp);
+  });
   const wells: WellDefinition[] = [];
   for (const camp of camps) {
     for (let attempt = 0; attempt < 240; attempt += 1) {
       const angle = random() * TAU;
       const radius = 22 + random() * 12;
-      const point = { x: camp.x + Math.cos(angle) * radius, z: camp.z + Math.sin(angle) * radius };
+      const raw = { x: camp.x + Math.cos(angle) * radius, z: camp.z + Math.sin(angle) * radius };
+      const point = nudgeOffSpawn(raw, campSpawns);
       if (Math.abs(point.x) > 96 || Math.abs(point.z) > 96) continue;
       if (!awayFromCamps(point, camps, 6)) continue;
       if (!isTerrainWalkable(terrainWorld, point) || terrainSlopeAt(terrainWorld, point) > 0.34) continue;

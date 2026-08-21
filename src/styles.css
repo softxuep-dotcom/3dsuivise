@@ -278,13 +278,23 @@ button { font: inherit; }
  * 中间那道 18px 的间距是防误触的：体温和攻击挨着就会点错。
  */
 /*
- * pointer-events 落在**按钮自己**身上，容器放行。
+ * 容器只在**键鼠档**放行，触屏保持 1.0.22 的命中行为。规则在文件末尾的
+ * `@media (pointer: fine)` 里。
  *
- * 原先是整个容器 auto —— 它在 640×360 的框上是 192×192 的盒子，从 (428,144)
- * 一直盖到右下角，而四颗按钮实际只占 56%，**剩下 44% 是空隙**。点在空隙上
- * 既按不到按钮，也走不了路（点地移动是主要操作），右下角整块变成走不进去的死区。
+ * 死区本身是真的：容器在 640×360 上是 192×192、从 (428,144) 盖到右下角，
+ * 四颗按钮只占 56%，剩下 44% 是空隙。但**这个死区只在键鼠档有代价** ——
+ * 那边点地移动是主要操作，空隙吞掉的是一次真实的移动指令。
  *
- * 摇杆和教学层早就是这个写法（容器 none、交互子元素 auto），这里补齐。
+ * 触屏档不一样。InputController 在 pointerType === "touch" 时启动摇杆后就
+ * return，点地移动那条路根本走不到；而 startJoystick 又拒绝在右半屏生成摇杆
+ * （clientX > innerWidth * 0.5 直接返回）。所以空隙放行之后，那一下在游戏里
+ * **什么都不会发生**，唯一的变化是 onGameplayIntent 会触发 —— 等于给一个屏幕
+ * 毫无反应的玩家报一次 gameplayStart。
+ *
+ * 而 Fit Test 的判据之一是平均时长 > 3min，固定 500 局的样本里每注入一局
+ * 近零时长的样本，平均就掉约 0.36 秒，而 1.0.22 的全部余量只有 16 秒。
+ * 触屏放着不动的代价是零（那些点本来也没有反馈），收益是 0–1m 那一格跟
+ * 1.0.22 严格可比。gameplayStart 的口径要收，另开一版单独收。
  */
 .bottom-right {
   right: max(18px, env(safe-area-inset-right));
@@ -292,10 +302,8 @@ button { font: inherit; }
   display: flex;
   align-items: flex-end;
   gap: 18px;
-  pointer-events: none;
+  pointer-events: auto;
 }
-
-.bottom-right button { pointer-events: auto; }
 
 .utility-buttons { display: flex; gap: 8px; }
 
@@ -466,20 +474,30 @@ button { font: inherit; }
  * 算数"只能靠一路点过去试。亮度差不用读字就分得出来，而且它一直在，不像搏动
  * 那样用过一次就停（见 HudController.syncHintPulse）。
  *
- * 压暗那一档照抄体温键冷却时的口径（.utility-button:disabled 的 opacity .42）——
- * 界面里"现在按不动"就该是同一种长相。
+ * **差值做在亮的那一档，不压暗默认档。** 第一版照抄了体温键冷却的口径
+ * （.utility-button:disabled 的 opacity .42），理由写的是"开局本来就够不着东西"。
+ * 那句话是错的：跑模拟层实测，出生点 2.89 米就有一口井，而 WELL_REACH = 3.2，
+ * 所以 t=0 的 getInteractionHint() 返回的是 well 而不是 none —— 开局这颗键是亮的。
  *
- * **只压暗，不给 disabled**：这颗键的 pointerdown 还兼着向平台报 gameplayStart
- * （InputController.bindButton → onGameplayIntent）。出生点周围没有可交互物，
- * 所以开局它本来就是暗的 —— 真给它 disabled，第一下点在这颗键上的玩家在平台
- * 看来就从没开始玩过。
+ * 真正的问题在后面那十秒：教学桶在 8.5 米外（TUTORIAL_BARREL_RADIUS），而
+ * FUEL_PICKUP_REACH 只有 2.6，玩家一朝桶走就立刻离开井的范围，于是走向第一个
+ * 目标的全程这颗键都停在 .42 —— 和"按不动"长同一个样，而它其实按得动，
+ * 它的 pointerdown 还兼着向平台报 gameplayStart（见 InputController.bindButton）。
+ *
+ * 所以默认档回到 .round-button.action 的原色（观感等同 1.0.22，opacity 一动不动），
+ * armed 档往上加：底色提亮一档，外圈补一道浅色描边。对比度没丢，也没有任何一帧
+ * 让一颗能按的键看着像坏的。同理仍然不给 disabled —— 真置灰，第一下点在这颗键上
+ * 的人在平台看来就没开始玩过。
  *
  * 键鼠档不进这套：那边四颗键早就摊平成贴底边的文字 chip，动词本身就是全部内容。
  */
 @media (pointer: coarse) {
-  #action-button { transition: opacity .14s ease-out, background-color .14s ease-out; }
-  #action-button:not(.armed) { opacity: .42; background: rgba(48, 110, 127, .55); }
-  #action-button.armed { background: rgba(64, 148, 170, .88); }
+  #action-button { transition: background-color .14s ease-out, box-shadow .14s ease-out; }
+  #action-button:not(.armed) { background: rgba(48, 110, 127, .7); }
+  #action-button.armed {
+    background: rgba(72, 166, 190, .95);
+    box-shadow: 0 0 0 2px rgba(150, 226, 244, .5), 0 0 14px rgba(88, 190, 214, .4);
+  }
 }
 
 /*
@@ -1976,7 +1994,15 @@ html[lang="vi"] .pause-card h2 { letter-spacing: .04em; }
     align-items: center;
     justify-content: flex-end;
     gap: 8px;
+    /*
+     * 容器放行、按钮自己接收 —— 死区修复只在这一档生效。
+     * 键鼠档点地移动是主要操作，容器吞掉的那 44% 空隙是实打实的死区；
+     * 触屏档不做这件事，理由见文件上半部分 .bottom-right 那段注释。
+     */
+    pointer-events: none;
   }
+
+  .bottom-right button { pointer-events: auto; }
 
   /*
    * .utility-buttons / .action-buttons 是 display: contents，包装层不存在，
