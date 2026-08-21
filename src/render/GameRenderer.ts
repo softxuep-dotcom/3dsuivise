@@ -970,7 +970,9 @@ export class GameRenderer {
       const slope = terrainSlopeAt(this.world, point, 1.15);
       const moisture = terrainMoistureAt(this.world, point);
       const saltAmount = terrainSaltAt(this.world, point);
-      color.copy(sand).lerp(gravel, moisture * 0.72);
+      // 0.72 → 0.42：最深处从「比沙地暗 17%」收到「暗 10%」。
+      // 配合 terrainMoistureAt 改成的多倍频，湿地退成砂砾斑驳，不再是一滩水。
+      color.copy(sand).lerp(gravel, moisture * 0.42);
       let campWear = 0;
       for (const camp of this.world.camps) {
         const distance = Math.hypot(x - camp.x, z - camp.z);

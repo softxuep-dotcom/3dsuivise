@@ -18,7 +18,7 @@ import type {
   WorldDefinition,
   DenDefinition,
 } from "../simulation/types";
-import { BARRIER_STATS } from "../simulation/types";
+import { BARRIER_STATS, STONE_COLLIDE_RADIUS } from "../simulation/types";
 import mapBlueprint from "./mapBlueprint.json";
 
 interface MapBlueprint {
@@ -398,6 +398,9 @@ function placeBarrels(
  */
 const BARREL_STREAM_DRAWS = 71;
 
+/** 见下面挡门石那段：这一座的门边石头是它夜间可攻性的支点，暂时动不得。 */
+const LOAD_BEARING_GATE_STONE_CAMP = 0;
+
 const CAMP_ROTATION = [0, 4, 2, 3] as const;
 
 /** runIndex 0 = 这台机器上的第一局。 */
@@ -528,22 +531,70 @@ export function createWorld(seed = 71291, startCampId = BLUEPRINT.startCampId): 
   /*
    * 每座营地一条窄坡道，外加一块能把它堵死的大石。
    *
-   * 石头放在门**旁边**，不是门口正中。原先是 addItem("stone", gate.x, gate.z)——
-   * 那在天然石头还没有碰撞的年代没问题：它只是躺在门口的建材，玩家搬起来、
-   * 放下（placed = true）才算堵门。后来 isBlockingGroundItem 把天然石头也算成实体，
-   * 这块石头就从"建材"变成了"出生即焊死的门闩"：五座营地的大门全部从开局起
-   * 就通不过去，玩家进不去、狗也进不去（实测流场可达格从 99.9% 掉到 0.4%）。
+   * 石头**放在营地里**，不放在路口。
    *
-   * 沿入口法线挪开一个身位：石头仍然就在手边，堵不堵门重新变成玩家的选择。
+   * 两版历史都栽在同一个地方：最早是 addItem("stone", gate.x, gate.z)，正压门心 ——
+   * 后来 isBlockingGroundItem 把未放置的天然石头也算成实体，这块建材就变成了
+   * "出生即焊死的门闩"，五座营地开局全部堵死（实测流场可达格 99.9% → 0.4%）。
+   * 第二版沿入口法线让开一个身位，通了，但石头仍然贴着路口 —— 玩家一进门就被
+   * 一块挡路的东西迎面拦住，而营地入口恰恰是全局最不该放障碍物的一格。
+   *
+   * 现在整块挪进营地内圈的**后半圈**（背着大门那一侧）：路口彻底空出来，
+   * 石头仍然在营地里、抬眼就看得见，要不要拿它去封门仍然是玩家的选择。
    */
   for (const camp of camps) {
     const gate = campGatePosition(camp);
-    const aside = camp.entranceAngle + Math.PI / 2;
-    // 半个门宽（让开通道）+ 石头自己的碰撞半径 1.48 + 余量。
-    // 只加 1.6 不够：岩壁洞窟的门本来就最窄，石头还是压在通道上，
-    // 那一座的流场可达格仍然只有 0.4%。
-    const offset = CAMP_ENTRANCE_WIDTH[camp.kind] / 2 + 1.48 + 1.1;
-    addItem("stone", gate.x + Math.cos(aside) * offset, gate.z + Math.sin(aside) * offset);
+    // 注意是**垂直于**门轴，不是朝着门。石头是实体障碍，一旦落在
+    // 「营心 → 大门」这条线上就把营地唯一的入口走廊堵死了 ——
+    // 实测攻营犬整夜 0 只摸得到玩家（tests/wolfPathing.test.ts 锁着这条）。
+    const bearing = Math.atan2(gate.z - camp.z, gate.x - camp.x);
+    /*
+     * 落点：营地后半圈、离营心 5.2~7 米。
+     *
+     * 5.2 是下限 —— 营心是火塘，2.0~3.6 米是出生营地那圈柴堆，石头自己还有
+     * 1.48 的半径，再近就叠在一起了。角度避开门轴 ±100°：那是进营走廊，
+     * 就算石头不挡路，把它摆在门口也正是这次要改掉的观感。
+     *
+     * 地形是烘焙出来的，写死的点会落进坡里；逐点验可走，全扫不到就退回下限点。
+     */
+    /*
+     * **windy-ridge #0 是例外，它的石头必须留在门边。**
+     *
+     * 那座营地的攻营犬到达数在 1.0.25 上就只有 3 只（阈值 2，五座里最低），
+     * 而门边那块石头恰好把流场从一条走不通的线上导开了 —— 实测把它挪进营地、
+     * 或者干脆取消它的碰撞，两种做法都让整夜到达数掉到 0（狼停在离玩家 9.95 米处），
+     * 营地直接变成夜里的无敌区。
+     *
+     * 这不是石头的锅，是那座营地本来就贴着可通行的边界在跑；石头只是碰巧撑住了它。
+     * 在把那条路径修稳之前，这里不动它 —— tests/wolfPathing.test.ts「营地 0」守着这条。
+     * 另外四座（含蓝图指定的出生营地 #1）照常挪进营地内圈。
+     */
+    if (camp.id === LOAD_BEARING_GATE_STONE_CAMP) {
+      const aside = camp.entranceAngle + Math.PI / 2;
+      const offset = CAMP_ENTRANCE_WIDTH[camp.kind] / 2 + STONE_COLLIDE_RADIUS + 1.1;
+      addItem("stone", gate.x + Math.cos(aside) * offset, gate.z + Math.sin(aside) * offset);
+      continue;
+    }
+    let spot = {
+      x: camp.x + Math.cos(bearing + Math.PI) * 5.2,
+      z: camp.z + Math.sin(bearing + Math.PI) * 5.2,
+    };
+    search: for (const radius of [5.6, 5.2, 6.3, 7.0]) {
+      for (let degrees = 180; degrees >= 100; degrees -= 20) {
+        for (const side of degrees === 180 ? [1] : [1, -1]) {
+          const candidate = {
+            x: camp.x + Math.cos(bearing + (side * degrees * Math.PI) / 180) * radius,
+            z: camp.z + Math.sin(bearing + (side * degrees * Math.PI) / 180) * radius,
+          };
+          if (!isTerrainWalkable(terrainWorld, candidate)) continue;
+          if (distanceToCampApproach(camp, candidate) < camp.approachWidth * 0.5 + STONE_COLLIDE_RADIUS) continue;
+          if (walls.some((wall) => distance(candidate, wall) < wall.radius + STONE_COLLIDE_RADIUS + 0.6)) continue;
+          spot = candidate;
+          break search;
+        }
+      }
+    }
+    addItem("stone", spot.x, spot.z);
   }
 
   // The starting abandoned camp contains enough wood to teach fire management immediately.
@@ -555,18 +606,30 @@ export function createWorld(seed = 71291, startCampId = BLUEPRINT.startCampId): 
    * 4 根散柴在 40 秒的白天里根本收不齐，而玩家那 40 秒还要搬油桶（二选一，
    * 实测采柴会把装车进度从 4/6 打到 1/6）。
    *
-   * 改成 10 根、抱团摆在火塘边一圈：**不是给资源，是取消一次搜索**。
+   * 改成抱团摆在火塘边一圈：**不是给资源，是取消一次搜索**。
    * "去找柴"这一步在第一天没有任何教学价值（它教的是地图，而玩家还没有地图概念），
    * 而它失败的代价是整夜无法回血。搜索取消之后，"捡起来 → 添进火里 → 暖了"
    * 这条链仍然要玩家自己走一遍，该教的一步没省。
    *
+   * 根数 10 → 5。10 根是 950 秒的火，而第一夜只有 FIRST_NIGHT_DURATION=150 秒，
+   * 一根柴烧 95 秒 —— **两根就够过夜**。多出来的八根既没有解决任何问题，
+   * 又把火塘围成了一圈柴垛，看着像资源点而不是营地。5 根留出 475 秒，
+   * 第一夜有三倍余量、还能垫进第二夜，取消搜索这件事一点没打折。
+   *
    * 半径 2.0~3.6：都在火塘的 FIRE_WARMTH_RADIUS(10) 之内，捡起来原地就能添。
    */
-  for (let i = 0; i < 10; i += 1) {
-    const angle = (i / 10) * TAU + 0.31;
+  for (let i = 0; i < 5; i += 1) {
+    const angle = (i / 5) * TAU + 0.31;
     const radius = 2.0 + (i % 3) * 0.8;
     addItem("wood", startCamp.x + Math.cos(angle) * radius, startCamp.z + Math.sin(angle) * radius);
   }
+  /*
+   * 补 5 次空抽。addItem 每件消耗一次 random()（rotation），柴堆从 10 根减到 5 根
+   * 就等于把主流提前了 5 步，后面**所有**随机摆放（散落物、仙人掌、井、地标）跟着整体挪位。
+   * 实测后果：换营地时井的位置不再逐字节相同 —— 而 resetRun 赌的正是它们相同
+   * （见上面 BARREL_STREAM_DRAWS，tests/worldRotation.test.ts 两条一起锁着）。
+   */
+  for (let i = 0; i < 5; i += 1) random();
 
   /*
    * 68 → 88 件，木头占比 0.72 → 0.60（石头从 ~19 块涨到 ~35 块）。

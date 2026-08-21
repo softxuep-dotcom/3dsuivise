@@ -108,10 +108,25 @@ export function isTerrainWalkable(world: TerrainWorld, point: Vec2): boolean {
   return terrainSlopeAt(world, point) <= world.terrain.maxWalkableSlope;
 }
 
+/**
+ * 湿度：只喂渲染（地表配色 + 地被密度），不参与任何模拟或寻路。
+ *
+ * 原先是**单层 18 米 value noise + 洼地加成 0.35**。这两条合起来正好画出"水洼"：
+ * 单层噪声给的是边界干净的大团块，洼地加成又把最暗的团块精准摆进低地 ——
+ * 上色之后就是一滩滩摊在沙子上的深色水塘（真机日间截图里非常明显，
+ * 夜里蓝光一打更像水）。
+ *
+ * 两处一起改：叠三个倍频把团块边界打碎成砂砾质感；洼地加成压到 0.14，
+ * 让"低处更湿"退成一点倾向而不是一眼可辨的水坑轮廓。
+ */
 export function terrainMoistureAt(world: TerrainWorld, point: Vec2): number {
-  const noise = valueNoise(point.x / 18, point.z / 18, world.terrain.seed + 211) * 0.5 + 0.5;
+  const seed = world.terrain.seed + 211;
+  const noise =
+    valueNoise(point.x / 18, point.z / 18, seed) * 0.60 +
+    valueNoise(point.x / 7.4, point.z / 7.4, seed + 17) * 0.27 +
+    valueNoise(point.x / 3.1, point.z / 3.1, seed + 31) * 0.13;
   const height = terrainHeightAt(world, point);
-  return clamp(noise * 0.72 + clamp((1.8 - height) / 7, 0, 0.35), 0, 1);
+  return clamp((noise * 0.5 + 0.5) * 0.72 + clamp((1.8 - height) / 7, 0, 0.14), 0, 1);
 }
 
 /**

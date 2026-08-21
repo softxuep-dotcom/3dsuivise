@@ -39,11 +39,25 @@ def normalize(values: np.ndarray, low: float = -1.0, high: float = 1.0) -> np.nd
 
 
 def spectral_noise(shape: tuple[int, int], rng: np.random.Generator, power: float, lower: float, upper: float) -> np.ndarray:
+    """Band-limited 1/f noise with *tapered* band edges.
+
+    The band used to be a hard mask (`envelope = 0` outside `lower..upper`).
+    A step in the frequency domain convolves the spatial domain with a ringing
+    kernel, and that ringing is what produced the long dead-straight ridges
+    fanning out across the map -- clearly visible in a slope map as a starburst,
+    and on screen as crumpled-foil creases that no desert has.
+
+    Rolling both edges off over roughly an octave keeps the same spectral
+    character (same seed, same slope, same feature scale) while removing the
+    ringing.
+    """
     frequencies = tuple(np.fft.fftfreq(size, d=1.0 / size) for size in shape)
     radial = np.hypot(*np.meshgrid(*frequencies))
     envelope = np.zeros_like(radial)
-    valid = (radial > lower) & (radial < upper)
-    envelope[valid] = np.power(radial[valid], power)
+    positive = radial > 0.0
+    envelope[positive] = np.power(radial[positive], power)
+    envelope *= smoothstep(lower * 0.5, lower * 1.6, radial)
+    envelope *= 1.0 - smoothstep(upper * 0.62, upper, radial)
     phases = np.exp(2j * np.pi * rng.random(shape))
     values = np.real(np.fft.ifft2(np.fft.fft2(phases) * envelope))
     return normalize(values)
@@ -102,33 +116,57 @@ def ridge_chain_height(terrain: np.ndarray, x_grid: np.ndarray, z_grid: np.ndarr
     return chain_height
 
 
-def flow_accumulation(height: np.ndarray) -> np.ndarray:
+NEIGHBOUR_OFFSETS = [
+    (dz, dx)
+    for dz in (-1, 0, 1)
+    for dx in (-1, 0, 1)
+    if (dz, dx) != (0, 0)
+]
+
+
+def flow_accumulation(height: np.ndarray, exponent: float = 1.15) -> np.ndarray:
+    """Multiple-flow-direction accumulation.
+
+    This used to be plain D8: every cell picked its single steepest neighbour
+    and handed it the whole catchment. D8's well-known failure mode is that
+    drainage can only leave a cell along one of eight fixed bearings, so
+    channels snap to 45-degree lines and run dead straight for hundreds of
+    cells. `erode` then carved those lines into the surface, and the result was
+    the starburst of ruler-straight ridges fanning across the whole map -- very
+    obvious in a slope map, and on screen the desert read as crumpled foil.
+
+    Spreading each cell's water over *every* downslope neighbour, weighted by
+    slope^exponent, is the standard fix (Freeman 1991). Channels become
+    dendritic and the straight-line bias disappears. `exponent` controls how
+    focused the channels stay: 1.0 is very diffuse, larger values approach D8.
+    """
     rows, columns = height.shape
-    count = rows * columns
-    receiver = np.arange(count, dtype=np.int64).reshape(height.shape)
-    best = height.copy()
-    indices = np.arange(count, dtype=np.int64).reshape(height.shape)
-    for dz in (-1, 0, 1):
-        for dx in (-1, 0, 1):
-            if dx == 0 and dz == 0:
+    flat = height.ravel()
+    accumulation = np.ones(rows * columns, dtype=np.float64)
+    # 从高到低处理，保证每个格子出水时它自己的汇水量已经收齐。
+    for index in np.argsort(flat)[::-1]:
+        z, x = divmod(int(index), columns)
+        targets: list[int] = []
+        weights: list[float] = []
+        total = 0.0
+        for dz, dx in NEIGHBOUR_OFFSETS:
+            nz = z + dz
+            nx = x + dx
+            if nz < 0 or nz >= rows or nx < 0 or nx >= columns:
                 continue
-            shifted = np.full_like(height, np.inf)
-            shifted_indices = np.full_like(indices, -1)
-            source_z = slice(max(0, -dz), min(rows, rows - dz))
-            source_x = slice(max(0, -dx), min(columns, columns - dx))
-            target_z = slice(max(0, dz), min(rows, rows + dz))
-            target_x = slice(max(0, dx), min(columns, columns + dx))
-            shifted[target_z, target_x] = height[source_z, source_x]
-            shifted_indices[target_z, target_x] = indices[source_z, source_x]
-            better = shifted < best
-            best[better] = shifted[better]
-            receiver[better] = shifted_indices[better]
-    accumulation = np.ones(count, dtype=np.float64)
-    receiver_flat = receiver.ravel()
-    for index in np.argsort(height.ravel())[::-1]:
-        target = receiver_flat[index]
-        if target >= 0 and target != index:
-            accumulation[target] += accumulation[index]
+            neighbour = nz * columns + nx
+            drop = flat[index] - flat[neighbour]
+            if drop <= 0.0:
+                continue
+            weight = (drop / math.hypot(dx, dz)) ** exponent
+            targets.append(neighbour)
+            weights.append(weight)
+            total += weight
+        if total <= 0.0:
+            continue
+        carried = accumulation[index] / total
+        for neighbour, weight in zip(targets, weights):
+            accumulation[neighbour] += carried * weight
     return accumulation.reshape(height.shape)
 
 
