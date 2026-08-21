@@ -109,6 +109,39 @@ function tableRuns(runs: RunResult[]): void {
   }
 }
 
+/**
+ * 表 4：无聊的量化。
+ *
+ * 前三张表答的都是"会不会死"。但真正把人赶走的多半不是死 —— 主创看 Playtest
+ * 录像的结论是「大部分人没死就走了」，而机器人**只有死这一个出口**，
+ * 它永远量不到"走"。这张表是能从模拟层挤出来的、离"无聊"最近的东西。
+ *
+ * 两个口径：
+ *   静默空档   —— 一个事件都没有：在走路，屏幕上什么都没发生
+ *   无进展空档 —— 可以一直在挥刀，但局面十秒没动过（见 PROGRESS_EVENTS）
+ *
+ * 后者才是关键。一个人可以一边不停砍一边觉得无聊，正是因为砍了半天什么都没变。
+ */
+function tableBoredom(runs: RunResult[]): void {
+  const silence = runs.map((r) => r.maxSilence).sort((a, b) => a - b);
+  const noProg = runs.map((r) => r.maxNoProgress).sort((a, b) => a - b);
+  console.log("\n表 4  空档（离「无聊」最近的可测量）");
+  console.log("─".repeat(56));
+  console.log(`  最长静默空档    中位 ${median(silence).toFixed(1)}s   最差 ${silence[silence.length - 1].toFixed(1)}s`);
+  console.log(`  最长无进展空档  中位 ${median(noProg).toFixed(1)}s   最差 ${noProg[noProg.length - 1].toFixed(1)}s`);
+  console.log("");
+  console.log("  每分钟进展事件数（-1 = 没活到这一分钟）");
+  for (let m = 0; m < 5; m += 1) {
+    const vals = runs.map((r) => r.progressPerMinute[m]).filter((v) => v >= 0);
+    if (!vals.length) { console.log(`    第 ${m + 1} 分钟   —（无人到达）`); continue; }
+    const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+    const bar = "▉".repeat(Math.min(30, Math.round(avg)));
+    console.log(`    第 ${m + 1} 分钟  ${avg.toFixed(1).padStart(5)}  (n=${String(vals.length).padStart(2)})  ${bar}`);
+  }
+  console.log("\n注：机器人不会因为无聊退出，所以这张表只给「客观上有没有事发生」，");
+  console.log("      给不了「玩家觉不觉得有意思」。要后者只有 Playtest 录像。");
+}
+
 describe("autoplay", () => {
   it(`跑 ${RUNS} 局（${DIFFICULTY}）`, () => {
     const runs = runBatch(RUNS, DIFFICULTY);
@@ -116,5 +149,6 @@ describe("autoplay", () => {
     tableDuration(runs);
     tableDeaths(runs);
     tableSession(runs);
+    tableBoredom(runs);
   }, 600_000);
 });

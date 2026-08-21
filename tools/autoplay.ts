@@ -62,6 +62,22 @@ const RUN_LIMIT_SECONDS = 900;
 
 export type RunOutcome = DeathCause | "victory" | "timeout";
 
+/**
+ * 「有进展」的事件。
+ *
+ * 判据不是"有没有反馈"，是**这一下之后局面变了没有**：狼倒了、油进车了、
+ * 装备升了、火点着了、状态档位跳了。挥刀（attack）、命中（wolf-hit）、
+ * 连击（combo）这些每帧都在发，它们是**同一件事的持续**，不是新的事情 ——
+ * 一个人可以一边不停挥刀一边觉得无聊，正是因为局面十秒没动过。
+ *
+ * 这条名单决定"无进展空档"这个指标的含义，改它等于换了无聊的定义。
+ */
+const PROGRESS_EVENTS = new Set([
+  "wolf-killed", "critter-killed", "fuel-loaded", "craft-weapon", "craft-coat",
+  "build", "cook", "truck-depart", "condition", "feed-fire", "structure-destroyed",
+  "draw-water", "pickup",
+]);
+
 export interface RunResult {
   campId: number;
   seed: number;
@@ -78,6 +94,12 @@ export interface RunResult {
   upgraded: boolean;
   /** 活过第一夜没有 —— 节奏表里最关键的那道闸。 */
   reachedDawn: boolean;
+  /** 全程零事件的最长空档（秒）。走路、没打架、什么也没捡。 */
+  maxSilence: number;
+  /** 没有任何"进展事件"的最长空档（秒）。可以一直在挥刀，但局面十秒没动。 */
+  maxNoProgress: number;
+  /** 前五分钟每分钟的进展事件数。长度固定 5，跑不满的分钟记 -1。 */
+  progressPerMinute: number[];
 }
 
 /* ------------------------------------------------------------------ *
@@ -328,6 +350,8 @@ export function runOnce(campId: number, difficulty: Difficulty = "easy", seed = 
   const startWeapon = sim.player.weapon;
   const startArmor = sim.player.armor;
   let reachedDawn = false;
+  let lastAny = 0, lastProgress = 0, maxSilence = 0, maxNoProgress = 0;
+  const perMinute = [0, 0, 0, 0, 0];
 
   for (let t = 0; t < RUN_LIMIT_SECONDS / STEP; t += 1) {
     if (!sim.running) break;
@@ -345,8 +369,25 @@ export function runOnce(campId: number, difficulty: Difficulty = "easy", seed = 
     if (!sim.clockStarted && Math.hypot(move.x, move.z) < 0.09) move = { x: 1, z: 0 };
     sim.update(STEP, norm(move));
     if (sim.day >= 2 && sim.phase === "day") reachedDawn = true;
-    sim.drainEvents();
+
+    const events = sim.drainEvents();
+    const now = sim.elapsed;
+    if (events.length) {
+      maxSilence = Math.max(maxSilence, now - lastAny);
+      lastAny = now;
+    }
+    const progressed = events.filter((e) => PROGRESS_EVENTS.has(e.type));
+    if (progressed.length) {
+      maxNoProgress = Math.max(maxNoProgress, now - lastProgress);
+      lastProgress = now;
+      const m = Math.floor(now / 60);
+      if (m < 5) perMinute[m] += progressed.length;
+    }
   }
+
+  // 收尾：最后一段空档也要算进去，否则"死前干站了 40 秒"会被漏掉。
+  maxSilence = Math.max(maxSilence, sim.elapsed - lastAny);
+  maxNoProgress = Math.max(maxNoProgress, sim.elapsed - lastProgress);
 
   const outcome: RunOutcome = sim.deathCause
     ?? (sim.truck.loaded >= 6 ? "victory" : "timeout");
@@ -365,6 +406,9 @@ export function runOnce(campId: number, difficulty: Difficulty = "easy", seed = 
     armor: sim.player.armor,
     upgraded: sim.player.weapon !== startWeapon || sim.player.armor !== startArmor,
     reachedDawn,
+    maxSilence: Math.round(maxSilence * 10) / 10,
+    maxNoProgress: Math.round(maxNoProgress * 10) / 10,
+    progressPerMinute: perMinute.map((n, i) => (sim.elapsed >= i * 60 ? n : -1)),
   };
 }
 

@@ -548,10 +548,25 @@ export function createWorld(seed = 71291, startCampId = BLUEPRINT.startCampId): 
 
   // The starting abandoned camp contains enough wood to teach fire management immediately.
   const startCamp = camps[startCampId];
-  addItem("wood", startCamp.x + 2.2, startCamp.z + 2.6);
-  addItem("wood", startCamp.x - 2.4, startCamp.z + 1.4);
-  addItem("wood", startCamp.x + 3.4, startCamp.z - 2.2);
-  addItem("wood", startCamp.x - 3.8, startCamp.z - 1.7);
+  /*
+   * 出生营地的柴堆。
+   *
+   * 原来是散落的 4 根。自动机实测第一夜「有火可烤」占比 0%、营地燃料全程为 0 ——
+   * 4 根散柴在 40 秒的白天里根本收不齐，而玩家那 40 秒还要搬油桶（二选一，
+   * 实测采柴会把装车进度从 4/6 打到 1/6）。
+   *
+   * 改成 10 根、抱团摆在火塘边一圈：**不是给资源，是取消一次搜索**。
+   * "去找柴"这一步在第一天没有任何教学价值（它教的是地图，而玩家还没有地图概念），
+   * 而它失败的代价是整夜无法回血。搜索取消之后，"捡起来 → 添进火里 → 暖了"
+   * 这条链仍然要玩家自己走一遍，该教的一步没省。
+   *
+   * 半径 2.0~3.6：都在火塘的 FIRE_WARMTH_RADIUS(10) 之内，捡起来原地就能添。
+   */
+  for (let i = 0; i < 10; i += 1) {
+    const angle = (i / 10) * TAU + 0.31;
+    const radius = 2.0 + (i % 3) * 0.8;
+    addItem("wood", startCamp.x + Math.cos(angle) * radius, startCamp.z + Math.sin(angle) * radius);
+  }
 
   /*
    * 68 → 88 件，木头占比 0.72 → 0.60（石头从 ~19 块涨到 ~35 块）。
