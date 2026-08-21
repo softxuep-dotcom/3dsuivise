@@ -145,7 +145,7 @@
           <p class="tagline" data-i18n="intro.tagline">Find six fuel barrels. Drive out.</p>
           <div class="verb-row" data-i18n-attr="aria-label:intro.verbs.aria">
             <span><b data-i18n="intro.phase.day">Day</b><i data-i18n="intro.verb1">Find water and fuel</i></span>
-            <span><b data-i18n="intro.phase.night">Night</b><i data-i18n="intro.verb2">Feed the fire. Hold off the dogs.</i></span>
+            <span><b data-i18n="intro.phase.night">Night</b><i data-i18n="intro.verb2">Feed the fire, hold off the dogs</i></span>
           </div>
           <!-- 上一局的高度。没玩过时整行隐藏（HudController.refreshRecordsLine），不占版面。 -->
           <p id="records-line" class="records-line hidden"></p>
@@ -223,7 +223,7 @@
                 <b data-i18n="difficulty.normal">Normal</b><span data-i18n="difficulty.normal.blurb"></span>
               </button>
               <button class="difficulty-option" type="button" role="radio" aria-checked="false" data-difficulty="insane">
-                <b data-i18n="difficulty.insane">Maddening</b><span data-i18n="difficulty.insane.blurb"></span>
+                <b data-i18n="difficulty.insane">Hard</b><span data-i18n="difficulty.insane.blurb"></span>
               </button>
             </div>
             <!-- 选了别的档才出现：难度在开局时定死，改了必须重开一局才算数。 -->
@@ -255,7 +255,7 @@
 
       <div id="game-over" class="overlay hidden">
         <div class="intro-card game-over-card">
-          <p class="eyebrow" data-i18n="over.eyebrow">The sands remember your tracks</p>
+          <p class="eyebrow" data-i18n="over.eyebrow">The sand remembers your tracks</p>
           <h2 data-i18n="over.title">Buried by the sand</h2>
           <div class="death-report" role="group" data-i18n-attr="aria-label:death.report">
             <div class="death-report-cause">
@@ -271,14 +271,14 @@
           <p id="result-copy"></p>
           <!-- 只有平台支持激励视频、且这局还有次数时才显示（HudController 控制）。 -->
           <button id="revive-button" class="primary-button revive-button hidden" type="button"></button>
-          <button id="restart-button" class="primary-button" type="button" data-i18n="over.restart">Hold one more night</button>
+          <button id="restart-button" class="primary-button" type="button" data-i18n="over.restart">Face another night</button>
         </div>
       </div>
 
       <div id="victory" class="overlay hidden">
         <div class="intro-card victory-card">
           <p class="eyebrow" data-i18n="win.eyebrow">The engine caught</p>
-          <h2 data-i18n="win.title">Out of the sands</h2>
+          <h2 data-i18n="win.title">Out of the sand</h2>
           <p id="victory-copy"></p>
           <p id="victory-progression-copy" class="victory-progression-copy"></p>
           <div class="victory-actions" role="group" data-i18n-attr="aria-label:win.chooseDifficulty">
@@ -335,7 +335,7 @@
             "intro.phase.day": "Day",
             "intro.verb1": "Find water and fuel",
             "intro.phase.night": "Night",
-            "intro.verb2": "Feed the fire. Hold off the dogs.",
+            "intro.verb2": "Feed the fire, hold off the dogs",
             "intro.verbs.aria": "Day and night objectives",
             "boot.landscapeHint": "Best played in landscape",
             boot: "Loading engine…",

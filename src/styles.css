@@ -1,5 +1,17 @@
+/*
+ * 字体栈先西文后中文。
+ *
+ * 原来把 "Microsoft YaHei" 排在第一位 —— 而它是 **每一台 Windows 都预装**的，
+ * 于是英/美玩家的整个界面都在用雅黑的拉丁字形：它们是从 CJK 字体里派生的，
+ * 字宽比 Segoe UI 宽 8.5%（实测 16px 下同一串文字 253.7px vs 233.8px），
+ * 小字号 hinting 也差，一眼就是"中文软件"的观感。macOS 上 PingFang SC 同理。
+ *
+ * CSS 的字体回退是 **逐字符** 的，所以把西文字体提到前面不会弄坏中文：
+ * Segoe UI / SF Pro 都没有汉字，汉字自然落到后面的雅黑 / 苹方。
+ * 中文 Windows 上 system-ui 本来就是雅黑，中文玩家看到的效果一字不变。
+ */
 :root {
-  font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+  font-family: system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Microsoft YaHei", "PingFang SC", sans-serif;
   color: #f4f8fb;
   background: #101821;
   font-synthesis: none;
