@@ -5,19 +5,21 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "tsc --noEmit && vite build",
-    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit && tsc --noEmit -p tools && vite build",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tools",
     "preview": "vite preview --host 0.0.0.0",
     "build:poki": "vite build --mode poki",
     "package:poki": "npm run build:poki && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-poki.ps1",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "autoplay": "vitest run --config vitest.autoplay.config.ts --reporter=verbose --disable-console-intercept"
   },
   "dependencies": {
     "three": "^0.185.1"
   },
   "devDependencies": {
     "@gltf-transform/cli": "^4.4.2",
+    "@types/node": "^26.2.0",
     "@types/three": "^0.185.4",
     "typescript": "^7.0.2",
     "vite": "^8.2.0",
