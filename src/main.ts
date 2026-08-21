@@ -341,6 +341,8 @@ async function bootstrap(): Promise<void> {
       renderer.resetRun(world, simulation);
       hud.resetRun(simulation, difficulty);
       nightIntro.reset();
+      // 上一局的最低帧不该挂在新一局头上。
+      perf?.resetWorst();
       input.cancelMoveTarget();
       started = false;
       revivesLeft = 3;
@@ -458,6 +460,19 @@ async function bootstrap(): Promise<void> {
     }
   });
 
+  /*
+   * 真机性能读数，只在 ?perf=1 时创建。
+   *
+   * 加它的原因是这个仓库的渲染改动一直没法在提交前验证：开发环境不合成帧，
+   * 而 Poki 的 MEDIAN FPS 一天只能取两次。带上这个开关在手机上开一局，
+   * draw calls / triangles / programs 当场就能分出瓶颈是批处理、填充率还是 CPU。
+   * 不带开关时这个类连构造都不会发生，DOM 也不创建。
+   */
+  const perf = new URLSearchParams(window.location.search).has("perf")
+    // 动态导入，跟 PokiPlatform 同一个写法：不带开关时这一整块连下载都不会发生。
+    ? new (await import("./ui/PerfOverlay")).PerfOverlay(() => renderer.getRenderStats())
+    : null;
+
   const frame = (now: number): void => {
     const delta = Math.min((now - previousTime) / 1000, 0.05);
     previousTime = now;
@@ -491,6 +506,8 @@ async function bootstrap(): Promise<void> {
       // 教学走在 HUD 之后：它要读背包的开合状态，也要按最新的一帧投影去挖亮洞。
       nightIntro.update(delta);
       renderer.render(delta);
+      // 排在 render 之后：renderer.info 的计数是这一帧画完才有的。
+      perf?.update(delta);
     }
     requestAnimationFrame(frame);
   };

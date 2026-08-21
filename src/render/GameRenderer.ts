@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import type { RenderStats } from "../ui/PerfOverlay";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
@@ -1131,6 +1132,24 @@ export class GameRenderer {
    * 状态；如果这期间还每帧挪灯，灯和贴图就对不上了。反过来说，灯不挪也不影响
    * 光照方向 —— 位置是焦点加固定偏移 (−35,+55,+25)，方向恒定。
    */
+  /**
+   * 把 three.js 自己的统计交出去给 PerfOverlay。
+   *
+   * renderer.info 是零成本的：three 本来就在累计这些计数，这里只是读一次。
+   * programs 是**已编译的着色器程序数** —— 它比 draw calls 更能说明材质有没有
+   * 被无谓地 clone（每只狼一份材质 = 每只狼一个程序），所以一并报出来。
+   */
+  getRenderStats(): RenderStats {
+    const info = this.renderer.info;
+    return {
+      calls: info.render.calls,
+      triangles: info.render.triangles,
+      programs: info.programs?.length ?? 0,
+      geometries: info.memory.geometries,
+      textures: info.memory.textures,
+    };
+  }
+
   private scheduleShadowUpdate(): void {
     if (!this.lowPower) return;
     this.shadowStaleFrames += 1;
