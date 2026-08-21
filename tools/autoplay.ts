@@ -194,6 +194,25 @@ function nearestCritter(sim: GameSimulation): Vec2 | null {
   return best;
 }
 
+/**
+ * 最近的一根地上枯木。
+ *
+ * **没有这一条，机器人整夜都点不着火。** 它原来只捡 hint 递到脚边的东西，
+ * 于是白天 40 秒全花在搬桶上，进夜时背包 1 根柴、营地燃料 0，
+ * 体温 50 → 0，失温挡掉整夜的回血（实测五座营地"有火可烤"都是 0%）。
+ * 柴是体温的唯一来源，必须主动去找。
+ */
+function nearestWood(sim: GameSimulation): Vec2 | null {
+  let best: Vec2 | null = null;
+  let bestD = Infinity;
+  for (const item of sim.items) {
+    if (item.kind !== "wood") continue;
+    const d = dist(sim.player, item);
+    if (d < bestD) { bestD = d; best = { x: item.x, z: item.z }; }
+  }
+  return best;
+}
+
 /** 地上还没被搬走的桶里最近的那个。 */
 function nearestGroundBarrel(sim: GameSimulation): Vec2 | null {
   let best: Vec2 | null = null;
@@ -273,7 +292,19 @@ function decide(sim: GameSimulation, homeCamp: Vec2, pol: Policy, rand: () => nu
     if (prey) return sim.directionToClickTarget(prey) ?? { x: 0, z: 0 };
   }
 
-  // 8. 白天去搬桶 —— 通关进度是唯一的长期目标。
+  /*
+   * 8. 备柴优先于搬桶。
+   *
+   * 顺序不能反：柴是体温的唯一来源，而失温会把整夜的回血闸掉
+   * （getRestBlocker 的 sim.38 / sim.41 两条），死得比没油快得多。
+   * 搬桶只是通关进度，慢一趟不致命。
+   */
+  if (sim.getInventoryCount("wood") < pol.woodStock) {
+    const wood = nearestWood(sim);
+    if (wood) return sim.directionToClickTarget(wood) ?? { x: 0, z: 0 };
+  }
+
+  // 9. 白天去搬桶 —— 通关进度是唯一的长期目标。
   const barrel = nearestGroundBarrel(sim);
   if (barrel) return sim.directionToClickTarget(barrel) ?? { x: 0, z: 0 };
   return { x: 0, z: 0 };
