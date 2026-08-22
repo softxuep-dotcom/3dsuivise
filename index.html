@@ -84,8 +84,17 @@
 
         <div id="prompt" class="prompt hidden"></div>
 
+        <!--
+          两副浮动摇杆：左半屏一副、右半屏一副，各吃各的手指，谁推得多就听谁的。
+          见 InputController 的 startJoystick。
+
+          只有左边那副有**待机位**（角落里那个半透明圈，用来告诉新玩家"这半边能推"）。
+          右边没有：竖屏 375×812 实测，右下角 x163..355 / y596..788 整块都给了四颗键，
+          再塞一个 104px 的圈只能压在「行动」和「体温」上。右边那副按下去才出现。
+        -->
         <div id="touch-controls">
           <div id="joystick" class="joystick" data-i18n-attr="aria-label:hud.joystick.aria"><i></i></div>
+          <div id="joystick-right" class="joystick" aria-hidden="true"><i></i></div>
         </div>
 
         <!--

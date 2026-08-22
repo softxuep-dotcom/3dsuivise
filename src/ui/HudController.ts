@@ -38,6 +38,22 @@ const required = <T extends HTMLElement>(id: string): T => {
 /** 行动键熄灭前的余量拍数。HUD 每 0.08 秒走一拍，三拍 ≈ 0.24 秒。见 syncActionArmed。 */
 const ARMED_GRACE_TICKS = 3;
 
+/*
+ * toast 的三档轻重。数字大的能顶掉数字小的，见 showToast。
+ *
+ * 分档挂在**事件类型**上而不是文案里：模拟层四十多处 events.push 都不带轻重，
+ * 给它们逐个加一个字段是另一笔账，而"这句话有多急"本来就是表现层的判断。
+ */
+const TOAST_CASUAL = 0;   // 拾取、猎杀：说的是"刚才那下成了"，错过不影响任何决策
+const TOAST_NORMAL = 1;   // 模拟层的 message：指令和警告的主力
+const TOAST_CRITICAL = 2; // 昼夜切换、卡车发车：错过等于错过一整个相位
+/** 两条之间的空白。没有它，换一条只看得出"字变长了"，看不出是新的一句。 */
+const TOAST_GAP = 0.14;
+/** 被顶掉的那条排回队首时至少还能再说这么久，免得闪一下就没。 */
+const TOAST_MIN_SECONDS = 0.9;
+/** 排队超过这么久的普通提示直接作废 —— 场上早就不是那回事了。 */
+const TOAST_STALE_SECONDS = 6;
+
 const ACTION_ICON: Record<InteractionHint["action"], string> = {
   pickup: "pickup",
   drop: "drop",
@@ -216,6 +232,13 @@ export class HudController {
    */
   private actionOverride: InteractionHint | null = null;
   private toastTimer = 0;
+  /** 正在显示的那条有多急；-1 = 没有在显示。 */
+  private toastPriority = -1;
+  /** 上一条说完之后的空白余量（秒）。 */
+  private toastGap = 0;
+  /** 只用来算"排了多久"的单调秒表，随 update 走，暂停时自然停住。 */
+  private toastClock = 0;
+  private readonly toastQueue: { text: string; seconds: number; priority: number; queuedAt: number }[] = [];
   private lastHudUpdate = 0;
   private inventoryOpen = false;
   private adPlaying = false;
@@ -283,6 +306,9 @@ export class HudController {
     this.setPaused(false);
     this.toast.classList.add("hidden");
     this.toastTimer = 0;
+    this.toastGap = 0;
+    this.toastPriority = -1;
+    this.toastQueue.length = 0;
     this.objectiveChip.classList.remove("muted");
     this.huntProgress.classList.remove("fuel-loaded");
     // 两个搏动提示本来就是"每局第一次"的口径（见字段上的注释，它们不写 localStorage）,
@@ -551,12 +577,19 @@ export class HudController {
       this.lastBlocked = blocked;
       this.blockedListener?.(blocked);
     }
+    this.toastClock += deltaSeconds;
     if (this.toastTimer > 0) {
       this.toastTimer -= deltaSeconds;
       if (this.toastTimer <= 0) {
         this.toast.classList.add("hidden");
-        this.objectiveChip.classList.remove("muted");
+        this.toastPriority = -1;
+        // 队列见底才把目标条亮回来：中间那道空白里再亮一次会闪。
+        if (this.toastQueue.length > 0) this.toastGap = TOAST_GAP;
+        else this.objectiveChip.classList.remove("muted");
       }
+    } else if (this.toastGap > 0) {
+      this.toastGap -= deltaSeconds;
+      if (this.toastGap <= 0) this.playNextToast();
     }
     this.lastHudUpdate += deltaSeconds;
     if (this.lastHudUpdate < 0.08) return;
@@ -696,18 +729,19 @@ export class HudController {
     if (event.type === "nourish") this.flashNourish(event);
     if (event.type === "message") this.showToast(t(event.key, event.params), 3.1);
     if (event.type === "phase") {
-      this.showToast(t(event.phase === "night" ? "toast.nightfall" : "toast.daybreak", { day: event.day }), 3.4);
+      this.showToast(t(event.phase === "night" ? "toast.nightfall" : "toast.daybreak", { day: event.day }), 3.4, TOAST_CRITICAL);
     }
     if (event.type === "pickup" && (event.kind === "raw-meat" || event.kind === "hide" || event.kind === "water")) {
       const label = t(`loot.${event.kind}`);
-      this.showToast(label, 1.4);
+      this.showToast(label, 1.4, TOAST_CASUAL);
     }
     if (event.type === "critter-killed") {
       const label = this.simulation.getCritterLabel(event.kind);
-      this.showToast(t(event.kind === "oryx" ? "toast.huntBig" : "toast.hunt", { name: label }), 1.8);
+      this.showToast(t(event.kind === "oryx" ? "toast.huntBig" : "toast.hunt", { name: label }), 1.8, TOAST_CASUAL);
     }
     if (event.type === "fuel-loaded") {
-      // 模拟层紧接着还会发详细 message；再发一条同义 toast 会在同一帧互相覆盖。
+      // 模拟层紧接着还会发详细 message，这里不再重复一条同义 toast ——
+      // 队列虽然不会再让它们互相覆盖了，但两条说同一件事只是让人多等一拍。
       // 这里专门让常驻进度跳一格，详细说明继续交给 message。
       this.updateHuntProgress();
       this.huntProgress.classList.remove("fuel-loaded");
@@ -716,7 +750,7 @@ export class HudController {
     }
     if (event.type === "truck-depart") {
       this.closeInventory();
-      this.showToast(t("toast.truckDepart"), 5);
+      this.showToast(t("toast.truckDepart"), 5, TOAST_CRITICAL);
     }
     if (event.type === "victory") {
       this.closeInventory();
@@ -736,12 +770,74 @@ export class HudController {
    * 玩家没有"两个都做"的选项，只会愣一下。
    *
    * 压暗而不是隐藏：目标条要保持在原位不跳，玩家的眼睛才知道回哪儿找它。
+   *
+   * ---
+   *
+   * **它是一个队列，不是一个槽。**
+   *
+   * 原先这里直接 `textContent = text`，于是同一帧到达的几条互相覆盖 —— main.ts
+   * 每帧把模拟层攒下的事件整批倒出来，一帧里出现两三条是常态。实测代价：第一天
+   * 唯一带确切数字的燃料预警（还差 2 根枯木）被同帧的"石头能封口"顶掉，
+   * 而「第 1 夜 · 野狗群正在涌入」从来没在屏幕上停留过 —— 它总是排在别的后面。
+   *
+   * 规则四条：
+   *   1. 同一句话不排两遍（同帧里"拾取"和模拟层的详细 message 常常同义）；
+   *   2. 顺手级只争当下 —— 现在有东西在说就丢掉，绝不排队。一条 1.4 秒的"兽皮"
+   *      让真正的警告晚 1.4 秒，这买卖不划算；
+   *   3. 更急的立刻顶掉正在说的那条，被顶掉的排回队首（顺手级除外）——
+   *      "天亮了"不该在"捡到兽皮"后面等；
+   *   4. 后面还压着东西时每条只说七成时长，队列跟得上场上的节奏；排过头（6 秒）
+   *      的普通提示直接作废，那时它说的已经不是当下了。
    */
-  showToast(text: string, seconds = 2.3): void {
+  showToast(text: string, seconds = 2.3, priority: number = TOAST_NORMAL): void {
+    if (this.toastTimer > 0 && this.toast.textContent === text) {
+      // 同一句话又来一遍：续上时长，不排第二条。
+      this.toastTimer = Math.max(this.toastTimer, seconds);
+      return;
+    }
+    if (this.toastQueue.some((entry) => entry.text === text)) return;
+
+    const busy = this.toastTimer > 0 || this.toastGap > 0;
+    if (!busy) {
+      this.playToast(text, seconds, priority);
+      return;
+    }
+    if (priority <= TOAST_CASUAL) return;
+    if (priority > this.toastPriority && this.toastTimer > 0) {
+      if (this.toastPriority >= TOAST_NORMAL) {
+        this.toastQueue.unshift({
+          text: this.toast.textContent ?? "",
+          seconds: Math.max(this.toastTimer, TOAST_MIN_SECONDS),
+          priority: this.toastPriority,
+          queuedAt: this.toastClock,
+        });
+      }
+      this.playToast(text, seconds, priority);
+      return;
+    }
+    this.toastQueue.push({ text, seconds, priority, queuedAt: this.toastClock });
+  }
+
+  /** 空白走完之后接上下一条；队列见底就把目标条亮回来。 */
+  private playNextToast(): void {
+    while (this.toastQueue.length > 0) {
+      const entry = this.toastQueue.shift();
+      if (!entry) break;
+      if (entry.priority < TOAST_CRITICAL && this.toastClock - entry.queuedAt > TOAST_STALE_SECONDS) continue;
+      const crowded = this.toastQueue.length > 0 ? 0.72 : 1;
+      this.playToast(entry.text, Math.max(entry.seconds * crowded, TOAST_MIN_SECONDS), entry.priority);
+      return;
+    }
+    this.objectiveChip.classList.remove("muted");
+  }
+
+  private playToast(text: string, seconds: number, priority: number): void {
     this.toast.textContent = text;
     this.toast.classList.remove("hidden");
     this.objectiveChip.classList.add("muted");
     this.toastTimer = seconds;
+    this.toastGap = 0;
+    this.toastPriority = priority;
   }
 
   private updateInventory(): void {

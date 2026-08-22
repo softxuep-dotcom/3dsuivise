@@ -1456,6 +1456,33 @@ html[lang="vi"] .pause-card h2 { letter-spacing: .04em; }
     box-shadow: 0 5px 15px rgba(0,0,0,.2);
   }
 
+  /*
+   * 右半屏那副：**按下去才出现，没有待机位**。
+   *
+   * 竖屏 375×812 实测，右下角 x163..355 / y596..788 整块是 .bottom-right 的
+   * （它自己收触摸事件），四颗键就摆在里面。一个 104px 的待机圈镜像过去只能压在
+   * 「行动」和「体温」上，把两颗最高频的键盖掉 —— 那比没有圈糟得多。
+   * 而"半屏能推"这件事左边那个圈已经教过了，右边不需要再教一遍。
+   *
+   * 藏法是 visibility，两头都不能用别的：
+   *   display: none —— startJoystick 要读 offsetWidth 定圆心，量出来是 0，圆心会歪；
+   *   opacity: 0    —— 压不过教学那条 `#hud.tutorial-dim .joystick:not(.tutorial-lit)`
+   *                    （1 个 id + 3 个类，比这里任何单 id 的写法都高），
+   *                    实测暗场时这个本该隐形的圈会被它抬到 .14，正好浮在
+   *                    「行动」和「体温」上面。换成 visibility 就不跟它抢同一个属性了。
+   */
+  #joystick-right {
+    left: auto;
+    right: max(20px, env(safe-area-inset-right));
+    visibility: hidden;
+  }
+
+  /* 推起来时 left/top 由 JS 写成行内样式，right 必须让开。 */
+  #joystick-right.floating {
+    right: auto;
+    visibility: visible;
+  }
+
   .bottom-right {
     right: max(20px, env(safe-area-inset-right));
     bottom: max(24px, env(safe-area-inset-bottom));
@@ -1530,6 +1557,32 @@ html[lang="vi"] .pause-card h2 { letter-spacing: .04em; }
     align-items: flex-start;
     max-width: calc(100vw - 20px);
     transform: none;
+  }
+
+  /*
+   * **toast 不跟着中央栏沉到左下角。**
+   *
+   * 中央栏在竖屏是"钉在底边往上长"的常驻件（时钟、休息胶囊），那个位置对它们合适 ——
+   * 常驻信息本来就该待在余光里，需要时才去看一眼。但 toast 是**一次性的、
+   * 必须当场读完的一句话**，跟着沉下去之后它落在 y≈508（375×812 实测），
+   * 而角色渲染在 y≈481：提示出现在视线焦点的**下方偏左**，还左对齐排在时钟底下，
+   * 整个读起来像时钟的副标题，而不像一句要照做的话。
+   *
+   * 现在它自己占一个锚点：横向居中，下沿吊在角色头顶上方约 50px 处
+   * （竖屏 y≈130..430 这一段除了地形什么都没有，两边的拇指也都够不着）。
+   * 用 bottom 而不是 top 定位，多行时向上长 —— 长出来的字压进空带，不会往下盖住人。
+   *
+   * position: fixed 而不是 absolute：它在 DOM 里仍是 .top-stack 的孩子，
+   * 而上面那条规则把 .top-stack 的 transform 清成了 none，fixed 的包含块因此是视口。
+   * **给竖屏的 .top-stack 加任何 transform 都会把这条一起拖走。**
+   */
+  #toast {
+    position: fixed;
+    left: 50%;
+    bottom: 52%;
+    width: max-content;
+    max-width: min(84vw, 320px);
+    transform: translateX(-50%);
   }
 }
 
