@@ -192,6 +192,9 @@ export class HudController {
   private readonly objective = required<HTMLElement>("objective");
   private readonly objectiveChip = required<HTMLElement>("objective-chip");
   private readonly phaseLabel = required<HTMLElement>("phase-label");
+  /** 顶沿相位条。见 index.html 里那段：它和时钟同源，但编码不同。 */
+  private readonly phaseBar = required<HTMLElement>("phase-bar");
+  private readonly phaseFill = required<HTMLElement>("phase-fill");
   private readonly timeLabel = required<HTMLElement>("time-label");
   private readonly clock = required<HTMLElement>("clock");
   private readonly prompt = required<HTMLElement>("prompt");
@@ -627,8 +630,19 @@ export class HudController {
     this.syncThermalButton(player.warmth);
     this.bagUsage.textContent = `${player.inventory.filter(Boolean).length}/8`;
     this.objective.textContent = tx(this.simulation.getObjective());
-    this.phaseLabel.textContent = t(this.simulation.phase === "day" ? "phase.day" : "phase.night");
-    this.clock.classList.toggle("night", this.simulation.phase === "night");
+    const night = this.simulation.phase === "night";
+    this.phaseLabel.textContent = t(night ? "phase.night" : "phase.day");
+    this.clock.classList.toggle("night", night);
+    /*
+     * 相位条：本相位还剩多少。phaseTime 是倒计时，所以直接就是剩余量。
+     *
+     * 跟着这一拍走（每 0.08 秒），不进每帧那一段 —— 一条要走两三分钟才退完的线，
+     * 每帧重算一次纯属浪费，而 0.08 秒的台阶在 375px 宽上是 0.02px，看不出来。
+     */
+    this.phaseBar.classList.toggle("night", night);
+    const phaseLength = this.simulation.getPhaseDuration();
+    const remaining = phaseLength > 0 ? clamp(this.simulation.phaseTime / phaseLength, 0, 1) : 0;
+    this.phaseFill.style.transform = `scaleX(${remaining.toFixed(4)})`;
     const seconds = Math.max(0, Math.ceil(this.simulation.phaseTime));
     this.timeLabel.textContent = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
     // 取水改成一按即得之后，中央栏只剩休息这一个胶囊 —— 原来那条"两个胶囊

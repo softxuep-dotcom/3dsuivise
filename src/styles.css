@@ -87,12 +87,46 @@ button { font: inherit; }
 }
 
 /*
+ * 相位进度条。见 index.html 里那段。
+ *
+ * 高度 3px、贴最上沿、pointer-events 关掉 —— 它压在画面上，绝不能吃掉点击。
+ * z-index 4 比三个角面板（5）低一档：真要在刘海屏上算错撞上了，让面板赢，
+ * 一条线被盖住只是少个信息，面板被盖住是挡住读数。
+ *
+ * 填充用 transform: scaleX 而不是改 width：scaleX 只走合成层，
+ * 而这条每 0.08 秒更新一次、整局不停，改 width 会每次都触发一遍布局。
+ */
+.phase-bar {
+  position: absolute;
+  z-index: 4;
+  top: env(safe-area-inset-top, 0px);
+  right: 0;
+  left: 0;
+  height: 3px;
+  background: rgba(8, 14, 19, .5);
+  pointer-events: none;
+}
+
+.phase-bar i {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform-origin: left center;
+  background: #e8a24a;
+  /* 只过渡颜色，不过渡 transform —— 缩放是每帧的连续量，加过渡只会让它追不上。 */
+  transition: background-color .8s linear;
+}
+
+/* 夜里换冷色：和时钟胶囊的 .night 是同一套配色，两处说的是同一件事。 */
+.phase-bar.night i { background: #6fb7d8; }
+
+/*
  * HUD 的三个角面板共用一条横向预算，加起来必须小于视口宽度，否则在矮横屏上会互相压。
  * 左列和中列都用 vw 表达，右侧状态栏是固定 232px（五条状态轴需要稳定的列宽）：
  *   30vw + 34vw + 232px，780px 宽时合计 731px，1280px 时 1012px —— 都有净空。
  */
 .left-stack {
-  top: max(18px, env(safe-area-inset-top));
+  top: max(18px, calc(env(safe-area-inset-top) + 5px));
   left: max(18px, env(safe-area-inset-left));
   display: flex;
   flex-direction: column;
@@ -112,7 +146,7 @@ button { font: inherit; }
  * 是玩家真正在看的地方，任何常驻元素都不许落进去。
  */
 .top-stack {
-  top: max(18px, env(safe-area-inset-top));
+  top: max(18px, calc(env(safe-area-inset-top) + 5px));
   left: 50%;
   display: flex;
   flex-direction: column;
@@ -172,7 +206,7 @@ button { font: inherit; }
 }
 
 .status-strip {
-  top: max(18px, env(safe-area-inset-top));
+  top: max(18px, calc(env(safe-area-inset-top) + 5px));
   right: max(18px, env(safe-area-inset-right));
   width: 232px;
   padding: 12px;
@@ -513,15 +547,26 @@ button { font: inherit; }
 }
 
 /*
- * 圆里能放字的宽度比外接方框窄得多（68px 的圆在标签那一行只剩 ~52px），
- * 而这些标签要过六种语言 —— 法语的"Température normale"比中文的"体温适宜"长四倍。
+ * 圆里能放字的宽度比外接方框窄得多，而这些标签要过**十二种**语言。
  * 所以圆里的标签最多两行，超出省略；完整文案一直在 aria-label 里。
+ *
+ * 52 → 62：52 是按 68px 的圆估的，但触屏档的圆实际是 78px，估小了。
+ * 逐语言实测（把每种语言的字真塞进元素量渲染宽，不是数字符）还有四处被剃掉尾巴：
+ *
+ *   行动键  ru「Подбросить дров」两行仍超  3px
+ *   体温键  ru「Охладиться」58px           超 6px
+ *           de「Aufwärmen」 55px           超 3px
+ *           it「Raffreddati」54px          超 2px
+ *
+ * 62px 全包得住，78px 的圆两侧各还剩 8px。**这个数别再按字符数估** ——
+ * 字符最长的是德/意/法（短标签平均 1.29/1.31/1.27 倍英文），
+ * 但像素最宽的常是俄语：西里尔字母单字更宽，「Подбросить дров」是全场最宽的一条。
  */
 .utility-button .button-label,
 .round-button .button-label {
   display: -webkit-box;
   overflow: hidden;
-  max-width: 52px;
+  max-width: 62px;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   font-size: 8px;
@@ -1360,7 +1405,7 @@ html[lang="vi"] .pause-card h2 { letter-spacing: .04em; }
 
 @media (pointer: coarse), (max-width: 760px) {
   .left-stack {
-    top: max(10px, env(safe-area-inset-top));
+    top: max(10px, calc(env(safe-area-inset-top) + 5px));
     left: max(10px, env(safe-area-inset-left));
     gap: 8px;
     /* 触屏档右侧状态栏收窄到 142px，左列的预算相应放宽。 */
@@ -1370,7 +1415,7 @@ html[lang="vi"] .pause-card h2 { letter-spacing: .04em; }
   .objective-chip { padding: 8px 10px; }
   .objective-chip strong { font-size: 12px; }
   .status-strip {
-    top: max(10px, env(safe-area-inset-top));
+    top: max(10px, calc(env(safe-area-inset-top) + 5px));
     right: max(10px, env(safe-area-inset-right));
     width: 142px;
     padding: 8px;
@@ -1388,7 +1433,7 @@ html[lang="vi"] .pause-card h2 { letter-spacing: .04em; }
    * 英文四个标签在 6px 间距下会冲出 142px 面板。
    */
   .supply-line { gap: 4px; margin-bottom: 4px; padding: 3px 5px; font-size: 9px; }
-  .top-stack { top: max(10px, env(safe-area-inset-top)); gap: 6px; }
+  .top-stack { top: max(10px, calc(env(safe-area-inset-top) + 5px)); gap: 6px; }
   .clock { padding: 5px 10px; }
   .toast { padding: 7px 12px; font-size: 12px; }
   .status-pill { padding: 5px 11px; font-size: 10px; }
@@ -1568,9 +1613,19 @@ html[lang="vi"] .pause-card h2 { letter-spacing: .04em; }
    * 而角色渲染在 y≈481：提示出现在视线焦点的**下方偏左**，还左对齐排在时钟底下，
    * 整个读起来像时钟的副标题，而不像一句要照做的话。
    *
-   * 现在它自己占一个锚点：横向居中，下沿吊在角色头顶上方约 50px 处
-   * （竖屏 y≈130..430 这一段除了地形什么都没有，两边的拇指也都够不着）。
+   * 现在它自己占一个锚点：横向居中，吊在顶部 HUD 和角色之间那条空带里。
    * 用 bottom 而不是 top 定位，多行时向上长 —— 长出来的字压进空带，不会往下盖住人。
+   *
+   * **52% → 62%。** 52% 把下沿放在 y≈390（375×812 实测），而顶部 HUD 最深只到 260,
+   * 中间白空了 98px，读起来却像压在画面正中。62% 把下沿提到 y≈309、上沿 278：
+   *
+   *   顶部 HUD 最坏占用   260px   （右上栏 + 体温徽章 + 说明行全出来、法语最长文案）
+   *   toast 上沿          278px   ← 余 18px
+   *   toast 下沿          309px
+   *   角色                481px   ← 余 172px
+   *
+   * 用百分比而不是写死 top：等距相机是固定俯角的，角色恒定落在视口高的 ~59% 处，
+   * 所以只有按比例定位才能在各种屏高上都保持"在人头顶上方、又不压住人"。
    *
    * position: fixed 而不是 absolute：它在 DOM 里仍是 .top-stack 的孩子，
    * 而上面那条规则把 .top-stack 的 transform 清成了 none，fixed 的包含块因此是视口。
@@ -1579,7 +1634,7 @@ html[lang="vi"] .pause-card h2 { letter-spacing: .04em; }
   #toast {
     position: fixed;
     left: 50%;
-    bottom: 52%;
+    bottom: 62%;
     width: max-content;
     max-width: min(84vw, 320px);
     transform: translateX(-50%);
@@ -1650,13 +1705,13 @@ html[lang="vi"] .pause-card h2 { letter-spacing: .04em; }
  * 让状态栏降到 ~175px，一直到 300px 高的横屏都还留有净空。
  */
 @media (orientation: landscape) and (max-height: 400px) {
-  .status-strip { top: max(6px, env(safe-area-inset-top)); padding: 6px 7px; }
+  .status-strip { top: max(6px, calc(env(safe-area-inset-top) + 5px)); padding: 6px 7px; }
   .meter { margin-bottom: 3px; }
   .meter i { height: 5px; }
   .condition-badge { margin-bottom: 4px; padding: 3px 6px; font-size: 9px; }
   .drain-note { margin: -2px 0 4px; padding-left: 32px; font-size: 8px; }
   .supply-line { margin-bottom: 3px; padding: 2px 5px; font-size: 8px; }
-  .top-stack { top: max(6px, env(safe-area-inset-top)); gap: 5px; }
+  .top-stack { top: max(6px, calc(env(safe-area-inset-top) + 5px)); gap: 5px; }
   .clock { padding: 4px 8px; }
   .toast { padding: 6px 11px; font-size: 11px; }
 }
@@ -2136,10 +2191,28 @@ html[lang="vi"] .pause-card h2 { letter-spacing: .04em; }
   /* 图标让位给文字：短动词本身就是这颗键的含义。 */
   .bottom-right .hud-sprite { display: none; }
 
+  /*
+   * **这一档必须把 max-width 解开。**
+   *
+   * 52px 是给移动端那颗 68px 圆键定的（见 .round-button .button-label），
+   * 圆里确实只有那么宽。但键鼠档的按钮是胶囊、图标还藏掉了，标签就是按钮的全部内容,
+   * 而这一排的容器是整个屏幕底边：1280x720 实测 .bottom-right 宽 1244px，
+   * 四颗键只占右边 414px，**左边 830px 一直空着**。52px 就这么漏了过来，
+   * 配上 overflow: hidden 且没有省略号 —— 超出的字被直接切掉，看不出是被切了。
+   *
+   * 实测切掉的不止外语：英文 "Add fuel" 57px 也超。十二种语言里最长的是
+   * 俄语「Подбросить дров」121px，法/德/意约 101px，所以 128px 全包得住。
+   *
+   * min-width 留住原来的 52px：行动键的文案随场景在变（拾取/添柴/点火/装车…），
+   * 完全放开会让胶囊一直伸缩，把左边的攻击键推来推去 —— 鼠标底下的键不该乱动。
+   * 留个地板之后只有真正长的那几条会撑开，短文案一律停在原宽度。
+   */
   .bottom-right .button-label {
     display: inline-flex;
     align-items: center;
     gap: 5px;
+    min-width: 52px;
+    max-width: 128px;
     font-size: 13px;
     white-space: nowrap;
   }

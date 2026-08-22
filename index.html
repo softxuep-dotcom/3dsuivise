@@ -13,6 +13,20 @@
       <div class="version-label" aria-label="Game version %APP_VERSION%">%APP_VERSION%</div>
 
       <div id="hud" class="hidden" aria-live="polite">
+        <!--
+          相位进度条：贴着屏幕最上沿的一条 3px，从满到空表示这个昼/夜还剩多少。
+
+          **它和时钟说的是同一件事，但编码不同。** "Night 02:11" 要读、要解析、
+          要在心里换算成"还有两分钟"，那是一次完整的注视；而你最需要知道天亮没有的时刻，
+          恰恰是被狗围着、眼睛离不开角色的时候。一条退到一小截的线是**前注意**的 ——
+          余光扫到就知道，不用读。精确秒数留给时钟，想要确切数字时再去左上角看。
+
+          放最上沿是因为那 3px 是全 HUD 唯一一块谁都用不上的地方，永远不和任何面板抢位置。
+          刘海屏上它落在 env(safe-area-inset-top) 处（安全区之下、内容之上），
+          而三个角面板的 top 锚点都相应加了 5px 让开它 —— 见 styles.css 里
+          `calc(env(safe-area-inset-top) + 5px)` 那几处。非刘海屏上 max() 会取回原值，行为不变。
+        -->
+        <div id="phase-bar" class="phase-bar" aria-hidden="true"><i id="phase-fill"></i></div>
         <div class="left-stack">
           <!--
             这里原来还有一行 `第 N 天 · 地名 · 野狗 N`（hud.dayLine）。删了：
@@ -25,6 +39,24 @@
             <!-- 通关进度贴着目标走：它就是"我为什么在打狼"的答案。 -->
             <span class="objective-progress" id="hunt-progress"></span>
           </section>
+          <!--
+            时钟排在目标条与齿轮之间。
+
+            它原来在顶部中央栏里，而竖屏那一栏是**沉底向上长**的（顶部两个角面板
+            会抢同一段横向空间，见 styles.css 竖屏块的头注释）—— 于是 375×812 上
+            时钟落在 y 508，而角色渲染在 y 489：**全 HUD 唯一一个掉进主场景的常驻件，
+            就在角色正下方 19px**。那一栏当初必须沉底是因为里面还有 toast（会换行、
+            高度不定），toast 已经单独定位出去了，拖它下来的那只手早松开了。
+
+            为什么是这一列而不是右上状态栏：目标行说"现在该干什么"，时钟说"你还有多久"，
+            这两句是同一个念头，玩家本来就要合起来读 —— 放一起是一次注视，
+            分在屏幕两端是两次扫视。而右上那个面板的含义是"我的身体"（血/水/食/温/力），
+            时间不属于身体，混进去会稀释它，还会把三个面板里最高、最易变的那个撑得更高。
+
+            作为 flex 子元素而不是绝对定位：左列高度随目标文案换行而变，
+            写死 top 就是在赌当下这一屏 —— 上一版正是这么赌输的。
+          -->
+          <div class="clock" id="clock"><span id="phase-label"></span><b id="time-label">00:50</b></div>
           <!--
             设置入口放在目标条**下面**，不是上面。
 
@@ -61,7 +93,6 @@
           原先每个元素各写一套 top 偏移，每加一档响应式断点就要重算一遍，迟早叠在一起。
         -->
         <div class="top-stack">
-          <div class="clock" id="clock"><span id="phase-label"></span><b id="time-label">00:50</b></div>
           <div id="toast" class="toast hidden"></div>
           <div id="rest-indicator" class="status-pill rest-indicator hidden"></div>
         </div>
