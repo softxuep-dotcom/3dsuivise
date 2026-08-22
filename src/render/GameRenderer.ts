@@ -58,8 +58,8 @@ interface WolfView {
  * 这里保留接近原来的那组倍率，只留下"越大的狗血条越宽"这一点。
  */
 /** 相机距离系数。竖屏拉远补视野，横屏拉近补可读性 —— 见 updateCamera。 */
-const PORTRAIT_CAMERA_SCALE = 0.98;
-const LANDSCAPE_CAMERA_SCALE = 0.58;
+const PORTRAIT_CAMERA_SCALE = 1.08;
+const LANDSCAPE_CAMERA_SCALE = 0.64;
 
 /** 可搬运物的本色，以及被啃到快碎时染向的暗红。 */
 const STONE_COLOR = 0x748084;
@@ -342,6 +342,134 @@ const makeMaterial = (color: THREE.ColorRepresentation, roughness = 0.9): THREE.
   new THREE.MeshStandardMaterial({ color, roughness, flatShading: true })
 );
 
+/** 材质的"看起来一样吗"指纹。**按参数比，不按对象比** —— 见 mergeStaticGroup。 */
+interface MaterialProbe {
+  color?: THREE.Color;
+  emissive?: THREE.Color;
+  emissiveIntensity?: number;
+  roughness?: number;
+  metalness?: number;
+  flatShading?: boolean;
+  map?: THREE.Texture | null;
+}
+
+const materialSignature = (material: THREE.Material): string => {
+  const probe = material as THREE.Material & MaterialProbe;
+  return [
+    material.type,
+    probe.color?.getHexString() ?? "-",
+    probe.emissive?.getHexString() ?? "-",
+    probe.emissiveIntensity ?? "-",
+    probe.roughness ?? "-",
+    probe.metalness ?? "-",
+    probe.flatShading ?? "-",
+    probe.map?.uuid ?? "-",
+    material.side,
+    material.transparent,
+    material.opacity,
+    material.depthWrite,
+    material.depthTest,
+  ].join("|");
+};
+
+/**
+ * 把一组"建好就再也不动"的装饰压成**每种材质一个网格**。
+ *
+ * ## 为什么值得做
+ *
+ * 巢、地标、营地这三处是一样的写法：一个 Group 里塞十几二十个小 Mesh，
+ * 每个几十到一百个顶点。它们从建好到这一局结束不会移动、不会换色、不会单独显隐 ——
+ * 也就是说这些 Mesh 之间**没有任何一条信息是运行时才知道的**，完全可以在建的时候
+ * 就烤成一块。实测在开局营地那个机位上，这三处合计吃掉整帧 188 条 draw call 里的 47 条。
+ *
+ * ## 为什么是"逐个对象合"，不是"全场合成一块"
+ *
+ * 跨对象合会把整张图的巢/地标连成一个横跨全图的网格，包围球覆盖所有地方，
+ * 于是**永远进不了视锥剔除**——玩家在空旷沙漠里也要提交全图的装饰。
+ * 逐个对象合（一座营地合一次、一个巢合一次）两头都占：簇内的十几条塌成两三条，
+ * 而"这座营地在不在画面里"仍然由 three 逐个剔除。
+ *
+ * 几何在**组的局部坐标系**里烤，所以 Group 自己的位置/旋转/缩放照旧生效，
+ * 剔除用的还是它自己的包围球。
+ *
+ * ## 两个必须按参数分桶的地方
+ *
+ * **材质按指纹分桶，不按对象。** 石碑的三道刻痕、井口的黑面都是在循环里
+ * `makeMaterial(...)` 现造的，参数完全相同却是不同对象；按对象分桶等于没合。
+ *
+ * **castShadow / receiveShadow 也要进桶键。** 同一个 deadwood 材质，树干投影、
+ * 车辕不投影，合到一起就只能二选一，画面会变。
+ *
+ * @param keep 这些对象（连同其子树）原样留下 —— 营火的火苗和地光每帧都在动。
+ */
+const mergeStaticGroup = (group: THREE.Object3D, keep: ReadonlySet<THREE.Object3D> = new Set()): void => {
+  interface Bucket {
+    material: THREE.Material;
+    cast: boolean;
+    receive: boolean;
+    /** 合并前可能被整桶换成非索引版本，所以不是 readonly。 */
+    parts: THREE.BufferGeometry[];
+    sources: THREE.Mesh[];
+  }
+  group.updateMatrixWorld(true);
+  const toLocal = new THREE.Matrix4().copy(group.matrixWorld).invert();
+  const local = new THREE.Matrix4();
+  const buckets = new Map<string, Bucket>();
+
+  const walk = (object: THREE.Object3D): void => {
+    if (keep.has(object)) return;
+    for (const child of [...object.children]) walk(child);
+    if (!(object instanceof THREE.Mesh) || Array.isArray(object.material)) return;
+    const key = `${materialSignature(object.material)}|${object.castShadow}|${object.receiveShadow}`;
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      bucket = { material: object.material, cast: object.castShadow, receive: object.receiveShadow, parts: [], sources: [] };
+      buckets.set(key, bucket);
+    }
+    // 烤进组的局部坐标；applyMatrix4 会连法线一起按法线矩阵变换，
+    // 所以巢那些 scale(1.5, 0.5, 1) 的土脊不会因为非等比缩放而错光。
+    const baked = object.geometry.clone();
+    baked.applyMatrix4(local.multiplyMatrices(toLocal, object.matrixWorld));
+    bucket.parts.push(baked);
+    bucket.sources.push(object);
+  };
+  walk(group);
+
+  for (const bucket of buckets.values()) {
+    /*
+     * 索引要先统一。
+     *
+     * mergeGeometries 要求一桶里的几何**要么全带 index、要么全不带**，否则直接返回 null
+     * 并往控制台刷一行错。而 three 的多面体（Dodecahedron / Octahedron / Icosahedron，
+     * 也就是这里的火圈石、石堆、洞穴巨石、矿石）是**非索引**的，圆柱、方块、球、环面
+     * 则都带索引 —— 营地那种一个材质下既有石头又有木头的桶正好踩中。
+     *
+     * 混了就整桶转成非索引。这些都是 flatShading 的低模，本来就几乎没有共享顶点，
+     * 展开的代价可以忽略；而换来的是这些桶真的能合上。
+     */
+    const indexed = bucket.parts.filter((part) => part.index !== null).length;
+    if (indexed > 0 && indexed < bucket.parts.length) {
+      bucket.parts = bucket.parts.map((part) => {
+        if (part.index === null) return part;
+        const flat = part.toNonIndexed();
+        part.dispose();
+        return flat;
+      });
+    }
+    // 只有一件的桶合了还是它自己，白搭一次拷贝，留原样。
+    const geometry = bucket.parts.length > 1 ? mergeGeometries(bucket.parts, false) : null;
+    for (const part of bucket.parts) part.dispose();
+    // 属性对不齐时 mergeGeometries 返回 null。真出现了就放弃这一桶、保持原样 ——
+    // 宁可多几条 draw call，也不能把装饰弄丢。
+    if (!geometry) continue;
+    for (const source of bucket.sources) source.removeFromParent();
+    const mesh = new THREE.Mesh(geometry, bucket.material);
+    mesh.castShadow = bucket.cast;
+    mesh.receiveShadow = bucket.receive;
+    group.add(mesh);
+  }
+};
+
 /**
  * 汽油桶。**整张图上唯一的锈红色**——沙丘、砾石、枯木、铁矿全是黄褐到灰的
  * 一族，所以这个色相在远处就是一个"那边有东西"的信号。没有小地图，
@@ -546,19 +674,19 @@ export class GameRenderer {
    * 夜里一口气 30 只狗、白天 52 只猎物，绝大多数时刻都在这个半径之外。
    * 注意只关**渲染**，模拟层照跑：狗该来还是会来，只是走到近处才画出来。
    *
-   * 45 → 41 是跟着相机拉近同比缩的（系数 ×0.907，见 PORTRAIT/LANDSCAPE_CAMERA_SCALE）。
-   * 同比缩的意义在于**屏幕上的表现完全不变**：距离系数是相似变换，41 米处的狗在新镜头下
-   * 占的像素和 45 米处在旧镜头下一模一样，所以"在多大的时候冒出来"这件事一点没动。
+   * 这个数跟着相机走：1.0.28 随镜头拉近同比缩到 41，1.0.29 又随镜头一起退回 45
+   * （那次拉近被 Fit Test 打回来了，理由见 updateCamera 那段）。同比缩的意义在于
+   * **屏幕上的表现完全不变**：距离系数是相似变换，所以两版里狗"冒出来时有多大"一样。
    *
    * 原注释说的"45 米外雾已经糊成背景色"是**错的**，一并改掉：FogExp2 的遮蔽率是
    * 1 - exp(-(密度×距离)²)，密度 0.0075 时 45 米只有 10.8%，几乎是透明的。
    *
-   * 而实测（见 updateCamera 那张表）竖屏背向镜头那一侧地面能看到 74.8 米 ——
+   * 而实测（见 updateCamera 那张表）竖屏背向镜头那一侧地面能看到 80.2 米 ——
    * 也就是说这条剔除线**本来就在画面里**，远端确实会看到狗凭空出现。
-   * 这一版没动这个取舍：要消掉它得把线抬到 75 米，夜里多画的狗是实打实的开销，
+   * 一直没动这个取舍：要消掉它得把线抬到 80 米，夜里多画的狗是实打实的开销，
    * 而它发生在画面最上缘、目标只有十几像素高的那一小块楔形区域里。
    */
-  private static readonly LOW_POWER_DRAW_DISTANCE = 41;
+  private static readonly LOW_POWER_DRAW_DISTANCE = 45;
 
   /** 触屏 / 窄屏走低功耗档：pixelRatio 1、512² 隔帧阴影、贴地装饰不收影、远处实体剔除。 */
   private readonly lowPower: boolean;
@@ -1599,6 +1727,8 @@ export class GameRenderer {
       }
 
       group.position.y += 0.02;
+      // 一个巢十几个小 Mesh，从建好到这局结束一动不动 —— 按材质压成两三块。
+      mergeStaticGroup(group);
       this.scene.add(group);
     }
   }
@@ -1659,6 +1789,9 @@ export class GameRenderer {
           group.add(rune);
         }
       }
+      // 三道刻痕的材质是循环里现造的，参数一模一样却是三个对象 ——
+      // mergeStaticGroup 按材质**指纹**分桶，所以它们照样能合到一块。
+      mergeStaticGroup(group);
       this.scene.add(group);
     }
   }
@@ -1726,6 +1859,14 @@ export class GameRenderer {
     }
 
     this.buildTruckBeacon(group);
+    /*
+     * 车体合批。车斗上那六个油桶槽位要逐个显隐（装了几桶就亮几个，还有落位反馈），
+     * 地环是半透明、每帧改透明度 —— 这两样留着；底盘、驾驶室、轮子、油箱口合成几块。
+     * 卡车整体会在通关时开走，但那是 group 的位移，和零件之间的相对关系无关。
+     */
+    const truckDynamic = new Set<THREE.Object3D>(this.truckLoadViews);
+    if (this.truckRing) truckDynamic.add(this.truckRing);
+    mergeStaticGroup(group, truckDynamic);
     this.scene.add(group);
     return group;
   }
@@ -1841,6 +1982,9 @@ export class GameRenderer {
     for (const barrel of this.simulation.barrels) {
       const view = createBarrelView();
       this.applyLowPowerShadowPolicy(view);
+      // 桶身、桶箍、桶盖之间不动；syncBarrels 只改整只桶的 visible / position / rotation。
+      // 必须排在 applyLowPowerShadowPolicy 之后 —— castShadow 是分桶键的一部分。
+      mergeStaticGroup(view);
       view.rotation.y = barrel.rotation;
       this.scene.add(view);
       this.barrelViews.set(barrel.id, view);
@@ -1962,6 +2106,14 @@ export class GameRenderer {
         group.add(ore);
       }
 
+      /*
+       * 整座矿脉合成两块（岩体一块、矿石一块）。
+       *
+       * 它虽然会**整体**缩放和显隐（syncIronNodes 按储量 setScalar、挖空了隐藏），
+       * 但那都是写在 group 上的；底座、四根棱柱、三颗矿石彼此之间从建好起一动不动。
+       * mergeStaticGroup 烤的是组的局部坐标，所以组照样能缩放、能隐藏。
+       */
+      mergeStaticGroup(group);
       this.scene.add(group);
       this.ironViews.set(node.id, group);
     }
@@ -2016,6 +2168,8 @@ export class GameRenderer {
       }
       this.wellPips.set(well.id, pips);
 
+      // 水珠要逐颗显隐、还要各自上下浮，留着；井沿、井口、两根柱子和横木合成两块。
+      mergeStaticGroup(group, new Set<THREE.Object3D>(pips));
       this.scene.add(group);
       this.wellViews.set(well.id, group);
     }
@@ -2140,6 +2294,9 @@ export class GameRenderer {
         brokenFence.castShadow = true;
         group.add(brokenFence);
       }
+      // 火苗和地光每帧都在缩放/改透明度，必须原样留着；营地其余那几十块
+      //（火圈石、柴、洞口、旗杆、石堆、木箱、斜棚、断栅）建好就再也不动。
+      mergeStaticGroup(group, new Set<THREE.Object3D>([flame, glow]));
       this.scene.add(group);
       this.campViews.set(camp.id, { flame, glow });
     }
@@ -3423,23 +3580,44 @@ export class GameRenderer {
      * 这两档是**分开调的**：竖屏那个数是为了补视野，横屏那个数是为了补可读性，
      * 合成一个系数的话动一个必然弄坏另一个。
      *
-     * 两档都往近走过几轮（横屏 0.80 → 0.70 → 0.64 → 0.58，竖屏 1.18 → 1.08 → 0.98）。
-     * 前几轮的表按 47° FOV 算（那个数其实只对桌面成立，见 resize 里的 fov 选择）：
+     * 两档都往近走过几轮（横屏 0.80 → 0.70 → 0.64，竖屏 1.18 → 1.08）。按 47° FOV 算：
      *
      *   横屏 844×390   距离 28.8 → 23.1   横向可见 54.2m → 43.4m   角色占屏高 10.4% → 13.0%
      *   竖屏 390×844   距离 42.5 → 38.9   横向可见 17.1m → 15.6m   角色占屏高  7.0% →  7.7%
      *
-     * 最后这一轮改成**实测**：在真实视口里按方位角逐个二分，找出地面点还在画面内的
-     * 最远半径。这比"横向可见"有用得多 —— 等距视角下可见范围是**极不对称**的，
-     * 朝镜头那一侧和背镜头那一侧差着八倍，而所有"什么时候该出现/该消失"的判断
-     * （守卫仇恨、剔除距离）吃的都是这两个极值，不是那个平均意义上的横向宽度。
+     * 当前值的实测可见半径（在真实视口里按方位角逐个二分，找地面点还在画面内的最远距离）。
+     * 这比"横向可见"有用得多 —— 等距视角下可见范围**极不对称**，朝镜头那一侧和背镜头
+     * 那一侧差着八倍，而所有"什么时候该出现/该消失"的判断（守卫仇恨、剔除距离）
+     * 吃的都是这两个极值，不是那个平均意义上的横向宽度：
      *
-     *                     最小可见半径        最大可见半径
-     *   竖屏 375×812      9.4m → 8.5m        80.2m → 74.8m
-     *   横屏 844×390     11.0m →  9.9m       52.1m → 48.0m
+     *                     最小可见半径     最大可见半径
+     *   竖屏 375×812          9.4m            80.2m
+     *   横屏 844×390         11.0m            52.1m
      *
      * 距离系数是**纯相似变换**（方向 (19,24,19) 归一化后与系数无关，FOV 也不动），
      * 所以上面每个数都随系数线性缩放，改系数不需要重新实测一遍。
+     *
+     * ## 再往近走过一次，被 Fit Test 打回来了 —— 别再试第三次
+     *
+     * 1.0.28 把两档降到 **0.98 / 0.58**（可见范围同比缩 9%），Poki Fit Test 对比 1.0.24：
+     *
+     *   0–1m  123 → 124     3–4m   47 →  53
+     *   1–2m  129 → 104     4–5m   28 →  38
+     *   2–3m   95 →  96     5m+    89 → 101
+     *
+     * 前端确实变好了（1–2m 掉 25 人，大半挪进 3m 以上，玩够 3 分钟的比例 32.1% → 37.2%）。
+     * **但平均时长只从 3m28s 涨到 3m30s。** 用各格中点反推 5m+ 那格的平均时长：
+     * **11.1 分钟 → 9.8 分钟** —— 越过 5 分钟的人多了，可这些人每人少玩了约 1.3 分钟。
+     *
+     * 而 5m+ 一格贡献了全部游玩时长的 56%（89 人 × 11.1 分 = 989 人·分，占 1772 的一半以上），
+     * 所以尾巴缩水把前端的收益吃掉了大半。
+     *
+     * 归因：野外六桶按到卡车的距离分档 30~55m / 55~85m / 85~125m，最后一两桶必须走远门。
+     * **拉近镜头正好作用在这段路上** —— 近处可读性换来的是远途导航变难，
+     * 而长会话玩家的时间几乎全花在远途上。前期变好、后期变难，两头相抵。
+     *
+     * 已在 1.0.29 退回 1.08 / 0.64。要再动这两个数之前，先想清楚**它对 5m+ 那群人做了什么**
+     * ——他们才是平均时长的主人，而前端那几格再怎么改都只值几秒。
      *
      * 还剩多少视野是这条的下限：开场斥候在 27 米、教学猎物在 5.5~7 米，都还在画面里。
      */
