@@ -1,12 +1,12 @@
 /** Korean */
 
 export const ko: Record<string, string> = {
-  "action.board": "운전",
-  "action.cactus": "베기",
+  "action.board": "출발",
+  "action.cactus": "수액 채취",
   "action.drop": "놓기",
-  "action.chop": "패기",
+  "action.chop": "나무 베기",
   "action.feed": "장작 넣기",
-  "action.ignite": "불붙이기",
+  "action.ignite": "불 붙이기",
   "action.load": "싣기",
   "action.mine": "채굴",
   "action.none": "행동",
