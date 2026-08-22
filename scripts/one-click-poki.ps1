@@ -1,4 +1,4 @@
-<#
+﻿<#
   一键打包 Poki 上传包。
 
   给「打包Poki.cmd」用的。它做的事和 `npm run package:poki` 是同一件，
