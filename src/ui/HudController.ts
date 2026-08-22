@@ -248,8 +248,8 @@ export class HudController {
   private paused = false;
   private readonly pauseOverlay = required<HTMLElement>("pause-overlay");
   private readonly reviveButton = required<HTMLButtonElement>("revive-button");
-  private lastPlatformIdle = false;
-  private platformIdleListener: ((idle: boolean) => void) | null = null;
+  private lastBlocked = false;
+  private blockedListener: ((blocked: boolean) => void) | null = null;
 
   /** 本局实际在跑的难度 —— 软重开选档时会与 simulation 一起更新。 */
   private difficulty: Difficulty;
@@ -327,37 +327,13 @@ export class HudController {
     this.hud.classList.remove("hidden");
   }
 
-  /** 订阅"平台眼里在不在玩"的翻转。平台适配层拿它报 gameplayStart / gameplayStop。 */
-  onPlatformIdleChange(listener: (idle: boolean) => void): void {
-    this.platformIdleListener = listener;
+  /** 订阅"可玩 / 不可玩"的翻转。平台适配层拿它报 gameplayStart / gameplayStop。 */
+  onGameplayBlockedChange(listener: (blocked: boolean) => void): void {
+    this.blockedListener = listener;
   }
 
-  /**
-   * **模拟层冻不冻结。** 开背包也算 —— 背包是真的把世界停住（见 main.ts 里
-   * `simulation.update` 那个 if），实测开着的两秒半里相位、狼、五轴一个数都不变。
-   */
   isGameplayBlocked(): boolean {
     return this.inventoryOpen || this.adPlaying || this.paused;
-  }
-
-  /**
-   * **平台眼里算不算"没在玩"。** 和 isGameplayBlocked 差一个 inventoryOpen。
-   *
-   * 两者曾经是同一个谓词，于是**每开一次背包就给 Poki 报一次 gameplayStop + Start**——
-   * 平台那边把一局切成两段。而背包是吃饭、烤肉、合成、建造的唯一入口，一局要开很多次：
-   * playtest 里一个真玩了 3:33 的德国玩家被记成 3 段，一段平均 71 秒。
-   *
-   * 分开的理由是这两件事问的**不是同一个问题**：
-   *   isGameplayBlocked  —— 世界该不该继续走？开背包时不该（那是公平性选择，
-   *                          免得"打斗中来不及开背包"）。
-   *   isPlatformIdle     —— 玩家人还在不在？开背包时**在** —— 他正在挑吃什么、造什么，
-   *                          手没离开屏幕。而广告和显式暂停（齿轮 / ESC）是真的离开了。
-   *
-   * 留个尾巴：Poki 过审时可能会问"游戏暂停了为什么不报停"。答案是这游戏另有一个独立的
-   * 暂停控件（齿轮键，见 index.html），背包不是暂停菜单。
-   */
-  isPlatformIdle(): boolean {
-    return this.adPlaying || this.paused;
   }
 
   /**
@@ -594,14 +570,15 @@ export class HudController {
   }
 
   update(deltaSeconds: number): void {
-    // 每帧自查"平台眼里在不在玩"，变了才通知。
+    // 每帧自查"现在算不算在玩"，变了才通知。
     //
-    // 自查而不在各个开关处逐个报：广告和暂停各有好几条改法，漏掉任何一条，
-    // 平台那边的"这一局玩了多久"就错了。自查一次全都覆盖，代价是最多晚一帧。
-    const idle = this.isPlatformIdle();
-    if (idle !== this.lastPlatformIdle) {
-      this.lastPlatformIdle = idle;
-      this.platformIdleListener?.(idle);
+    // 不在各个开关处逐个报，是因为 inventoryOpen 有五条改法（背包键、关闭键、
+    // 建造完成、死亡、通关），漏掉任何一条，平台那边的"这一局玩了多久"就错了。
+    // 自查一次全都覆盖，代价是最多晚一帧 —— 对统计毫无影响。
+    const blocked = this.isGameplayBlocked();
+    if (blocked !== this.lastBlocked) {
+      this.lastBlocked = blocked;
+      this.blockedListener?.(blocked);
     }
     this.toastClock += deltaSeconds;
     if (this.toastTimer > 0) {
