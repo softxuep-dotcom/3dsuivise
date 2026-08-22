@@ -109,7 +109,8 @@ const WOOD_ITEM_GEOMETRY = createWoodItemGeometry();
  * 顺带把 draw call 之外的另一项（缓冲数量与显存）也压下去。
  * 仙人掌的刺与矿脉的棱柱同理：形状逐个都一样，只是摆放不同。
  *
- * 只提**参数恒定**的那些。仙人掌的主干和手臂长度是每株随机的，留在原地。
+ * 主干和手臂原先因为"每株高度随机"留在了原地，现在也提上来了：随机的只是
+ * **高度**，而高度可以交给实例矩阵在 Y 上缩放表达，见 CACTUS_TRUNK_* 那两段。
  */
 const DROP_HIDE_GEOMETRY = new THREE.CircleGeometry(0.62, 5);
 const DROP_MEAT_GEOMETRY = new THREE.DodecahedronGeometry(0.42, 0);
@@ -117,6 +118,51 @@ const DROP_BONE_GEOMETRY = new THREE.CylinderGeometry(0.07, 0.07, 0.82, 6);
 const CACTUS_SPINE_GEOMETRY = new THREE.ConeGeometry(0.04, 0.2, 4);
 const CACTUS_ELBOW_GEOMETRY = new THREE.CapsuleGeometry(0.18, 0.34, 3, 6);
 const CACTUS_FLOWER_GEOMETRY = new THREE.IcosahedronGeometry(0.16, 0);
+
+/*
+ * 主干与手臂的基准胶囊。
+ *
+ * 每株的高度仍然是随机的（主干 1.6~2.5、手臂 0.55~0.95），但不再各造一份几何 ——
+ * 取区间中点做基准，逐株用实例矩阵在 Y 上缩放。CapsuleGeometry 的总高是
+ * `height + 2 × radius`，所以缩放比取 `(目标总高) / (基准总高)`。
+ *
+ * 代价是两端的半球会跟着在 Y 上被拉长或压扁：主干缩放比落在 0.83~1.17 之间，
+ * 半球的竖直半径因此在 0.25~0.35 之间浮动（原本恒为 0.3）。这是几厘米的事，
+ * 摊在一株两三米高、七面体的低模仙人掌上看不出来 —— 而换到的是
+ * 「32 株 288 个 Mesh」变成「5 个 InstancedMesh」。
+ */
+const CACTUS_TRUNK_RADIUS = 0.3;
+const CACTUS_TRUNK_BASE_HEIGHT = 2.05;
+const CACTUS_TRUNK_GEOMETRY = new THREE.CapsuleGeometry(CACTUS_TRUNK_RADIUS, CACTUS_TRUNK_BASE_HEIGHT, 3, 7);
+const CACTUS_ARM_RADIUS = 0.18;
+const CACTUS_ARM_BASE_HEIGHT = 0.75;
+const CACTUS_ARM_GEOMETRY = new THREE.CapsuleGeometry(CACTUS_ARM_RADIUS, CACTUS_ARM_BASE_HEIGHT, 3, 6);
+
+/**
+ * 一株仙人掌的五个合批。每株的九个部件散在这五个批次里，槽位由 cactusSlots 给。
+ * 一株 = 主干 1 + 手臂 2 + 肘 2 + 花 1 + 刺 3。
+ */
+interface CactusBatches {
+  readonly trunks: THREE.InstancedMesh;
+  readonly arms: THREE.InstancedMesh;
+  readonly elbows: THREE.InstancedMesh;
+  readonly flowers: THREE.InstancedMesh;
+  readonly spines: THREE.InstancedMesh;
+  /** 显隐翻转时要一起打 needsUpdate 的那五个，省得每次现拼数组。 */
+  readonly all: readonly THREE.InstancedMesh[];
+}
+
+/**
+ * 一株仙人掌九个部件的世界矩阵，建好就不再变（仙人掌不会移动）。
+ * 割光时往实例里写零矩阵，长回来时把这些原样写回去 —— 比重算一遍便宜也短。
+ */
+interface CactusPlacement {
+  readonly trunk: THREE.Matrix4;
+  readonly arms: readonly THREE.Matrix4[];
+  readonly elbows: readonly THREE.Matrix4[];
+  readonly flower: THREE.Matrix4;
+  readonly spines: readonly THREE.Matrix4[];
+}
 
 /**
  * 矿脉的四根棱柱。
@@ -548,7 +594,23 @@ export class GameRenderer {
   private readonly felledTrees = new Set<number>();
   /** 路障挨打后的闪光余量（秒），按物品 id 记。 */
   private readonly barrierFlash = new Map<number, number>();
-  private readonly cactusViews = new Map<number, THREE.Object3D>();
+  /*
+   * 仙人掌走合批，不再一株一个 Group。
+   *
+   * 32 株 × 9 个部件 = 288 个 Mesh，实测在开局营地那个机位上占了整帧 188 条
+   * draw call 里的 53 条。而它每帧要做的事只有 syncCacti 那一句「割光了就隐藏」——
+   * 没有逐株颜色、没有逐株动画，正好是实例矩阵能完整表达的那一类。
+   *
+   * 代价是剔除粒度：原先 32 株各自剔除（镜头里通常只画 6 株），现在整批同进同出。
+   * 换到的三角形是白送的 —— 同一轮实测里把地形那 73.7k 三角整个隐藏，帧时间
+   * 纹丝不动，而砍掉静态装饰的 draw call 省了 0.95 ms。这张图是 draw call 受限的。
+   */
+  private cactusBatches: CactusBatches | null = null;
+  /** patch.id → 实例槽位。id 不保证等于下标，所以老老实实记一张表。 */
+  private readonly cactusSlots = new Map<number, number>();
+  private readonly cactusPlacements = new Map<number, CactusPlacement>();
+  /** 上一次写进实例的显隐状态，用来避免每帧重写矩阵。 */
+  private readonly cactusVisible = new Map<number, boolean>();
   private readonly ironViews = new Map<number, THREE.Object3D>();
   private readonly wellViews = new Map<number, THREE.Object3D>();
   private readonly wellPips = new Map<number, THREE.Object3D[]>();
@@ -1951,46 +2013,134 @@ export class GameRenderer {
   }
 
   /** 仙人掌：柱状主干 + 两条手臂 + 顶花，是荒漠里唯一稳定的水源。 */
+  /**
+   * 仙人掌：五个 InstancedMesh 装下全场。
+   *
+   * 摆放参数（主干高、两条手臂高、整株朝向）和原来逐个 Mesh 的版本**逐字一致**，
+   * 连 mulberry32(4127) 的取数顺序都没动 —— 主干、手臂 0、手臂 1、朝向。
+   * 换掉的只是"这些参数最后落在哪儿"：以前是 Group 里九个子节点的局部变换，
+   * 现在预乘成九个世界矩阵直接写进实例。仙人掌不会动，所以只算这一次。
+   */
   private buildCacti(): void {
+    const patches = this.simulation.cacti;
+    if (patches.length === 0) return;
     const fleshMaterial = makeMaterial(0x4f7a48, 0.95);
     const flowerMaterial = new THREE.MeshStandardMaterial({ color: 0xe0567a, roughness: 0.6, emissive: 0x3a0a18 });
     const spineMaterial = makeMaterial(0xd8cba4, 0.8);
+    const batch = (
+      geometry: THREE.BufferGeometry,
+      material: THREE.Material,
+      perPatch: number,
+      castShadow: boolean,
+    ): THREE.InstancedMesh => {
+      const mesh = new THREE.InstancedMesh(geometry, material, patches.length * perPatch);
+      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      // 主干和手臂是仅有的两个够大、值得进阴影图的部件；肘、花、刺原先也不投影。
+      mesh.castShadow = castShadow;
+      return mesh;
+    };
+    const trunks = batch(CACTUS_TRUNK_GEOMETRY, fleshMaterial, 1, true);
+    const arms = batch(CACTUS_ARM_GEOMETRY, fleshMaterial, 2, true);
+    const elbows = batch(CACTUS_ELBOW_GEOMETRY, fleshMaterial, 2, false);
+    const flowers = batch(CACTUS_FLOWER_GEOMETRY, flowerMaterial, 1, false);
+    const spines = batch(CACTUS_SPINE_GEOMETRY, spineMaterial, 3, false);
+    const batches: CactusBatches = {
+      trunks, arms, elbows, flowers, spines,
+      all: [trunks, arms, elbows, flowers, spines],
+    };
+
     const random = mulberry32(4127);
-    for (const patch of this.simulation.cacti) {
-      const group = new THREE.Group();
+    // 局部变换 → 世界矩阵。整株的朝向和落点先转成一对四元数 / 位移，再逐部件预乘。
+    const spin = new THREE.Quaternion();
+    const origin = new THREE.Vector3();
+    const localPosition = new THREE.Vector3();
+    const localRotation = new THREE.Quaternion();
+    const localEuler = new THREE.Euler();
+    const worldPosition = new THREE.Vector3();
+    const worldRotation = new THREE.Quaternion();
+    const worldScale = new THREE.Vector3(1, 1, 1);
+    const place = (): THREE.Matrix4 => new THREE.Matrix4().compose(
+      worldPosition.copy(localPosition).applyQuaternion(spin).add(origin),
+      worldRotation.multiplyQuaternions(spin, localRotation),
+      worldScale,
+    );
+
+    patches.forEach((patch, slot) => {
       const trunkHeight = 1.6 + random() * 0.9;
-      const trunk = new THREE.Mesh(new THREE.CapsuleGeometry(0.3, trunkHeight, 3, 7), fleshMaterial);
-      trunk.position.y = trunkHeight / 2 + 0.3;
-      trunk.castShadow = true;
-      group.add(trunk);
+      const armHeights = [0.55 + random() * 0.4, 0.55 + random() * 0.4];
+      // 朝向要排在两条手臂之后取，否则整片仙人掌林的随机序列就和原来对不上了。
+      spin.setFromAxisAngle(ITEM_UP, random() * Math.PI * 2);
+      origin.set(patch.x, this.worldHeight(patch.x, patch.z), patch.z);
+
+      localRotation.identity();
+      // 胶囊总高 = height + 2×radius，缩放比按总高算，中心位置因此和原版分毫不差。
+      const trunkBase = CACTUS_TRUNK_BASE_HEIGHT + CACTUS_TRUNK_RADIUS * 2;
+      worldScale.set(1, (trunkHeight + CACTUS_TRUNK_RADIUS * 2) / trunkBase, 1);
+      localPosition.set(0, trunkHeight / 2 + 0.3, 0);
+      const trunk = place();
+
       // 两条手臂朝相反方向伸出，高度略有差异，避免看起来太对称。
+      const armMatrices: THREE.Matrix4[] = [];
+      const elbowMatrices: THREE.Matrix4[] = [];
+      const armBase = CACTUS_ARM_BASE_HEIGHT + CACTUS_ARM_RADIUS * 2;
       for (let side = 0; side < 2; side += 1) {
         const dir = side === 0 ? 1 : -1;
-        const armHeight = 0.55 + random() * 0.4;
-        const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.18, armHeight, 3, 6), fleshMaterial);
-        arm.position.set(dir * 0.42, 0.75 + side * 0.42 + armHeight / 2, 0);
-        arm.castShadow = true;
-        group.add(arm);
-        const elbow = new THREE.Mesh(CACTUS_ELBOW_GEOMETRY, fleshMaterial);
-        elbow.rotation.z = Math.PI / 2;
-        elbow.position.set(dir * 0.24, 0.75 + side * 0.42, 0);
-        group.add(elbow);
+        const armHeight = armHeights[side];
+        worldScale.set(1, (armHeight + CACTUS_ARM_RADIUS * 2) / armBase, 1);
+        localPosition.set(dir * 0.42, 0.75 + side * 0.42 + armHeight / 2, 0);
+        armMatrices.push(place());
+
+        worldScale.set(1, 1, 1);
+        localRotation.setFromEuler(localEuler.set(0, 0, Math.PI / 2));
+        localPosition.set(dir * 0.24, 0.75 + side * 0.42, 0);
+        elbowMatrices.push(place());
+        localRotation.identity();
       }
-      const flower = new THREE.Mesh(CACTUS_FLOWER_GEOMETRY, flowerMaterial);
-      flower.position.y = trunkHeight + 0.42;
-      group.add(flower);
+
+      worldScale.set(1, 1, 1);
+      localPosition.set(0, trunkHeight + 0.42, 0);
+      const flower = place();
+
+      const spineMatrices: THREE.Matrix4[] = [];
       for (let index = 0; index < 3; index += 1) {
-        const spine = new THREE.Mesh(CACTUS_SPINE_GEOMETRY, spineMaterial);
         const angle = (index / 3) * Math.PI * 2;
-        spine.position.set(Math.cos(angle) * 0.31, 0.6 + index * 0.42, Math.sin(angle) * 0.31);
-        spine.rotation.z = -Math.cos(angle) * 1.2;
-        spine.rotation.x = Math.sin(angle) * 1.2;
-        group.add(spine);
+        localPosition.set(Math.cos(angle) * 0.31, 0.6 + index * 0.42, Math.sin(angle) * 0.31);
+        // 原来写的是 rotation.z / rotation.x 两个分量，默认 XYZ 序，这里照搬。
+        localRotation.setFromEuler(localEuler.set(Math.sin(angle) * 1.2, 0, -Math.cos(angle) * 1.2));
+        spineMatrices.push(place());
       }
-      group.rotation.y = random() * Math.PI * 2;
-      group.position.set(patch.x, this.worldHeight(patch.x, patch.z), patch.z);
-      this.scene.add(group);
-      this.cactusViews.set(patch.id, group);
+      localRotation.identity();
+
+      this.cactusSlots.set(patch.id, slot);
+      this.cactusPlacements.set(patch.id, {
+        trunk, arms: armMatrices, elbows: elbowMatrices, flower, spines: spineMatrices,
+      });
+      this.cactusVisible.set(patch.id, true);
+      this.writeCactus(patch.id, true, batches);
+    });
+
+    for (const mesh of batches.all) {
+      mesh.instanceMatrix.needsUpdate = true;
+      // 包围球只在这里算一次：矩阵此后只在"隐藏 / 显示"之间切，不会长出界。
+      mesh.computeBoundingSphere();
+    }
+    this.cactusBatches = batches;
+    this.scene.add(trunks, arms, elbows, flowers, spines);
+  }
+
+  /** 把一株仙人掌的九个部件写进实例；visible 为 false 时写零矩阵（同 HIDDEN_ITEM_MATRIX）。 */
+  private writeCactus(id: number, visible: boolean, batches: CactusBatches | null = this.cactusBatches): void {
+    const slot = this.cactusSlots.get(id);
+    const placement = this.cactusPlacements.get(id);
+    if (!batches || slot === undefined || !placement) return;
+    batches.trunks.setMatrixAt(slot, visible ? placement.trunk : HIDDEN_ITEM_MATRIX);
+    batches.flowers.setMatrixAt(slot, visible ? placement.flower : HIDDEN_ITEM_MATRIX);
+    for (let index = 0; index < 2; index += 1) {
+      batches.arms.setMatrixAt(slot * 2 + index, visible ? placement.arms[index] : HIDDEN_ITEM_MATRIX);
+      batches.elbows.setMatrixAt(slot * 2 + index, visible ? placement.elbows[index] : HIDDEN_ITEM_MATRIX);
+    }
+    for (let index = 0; index < 3; index += 1) {
+      batches.spines.setMatrixAt(slot * 3 + index, visible ? placement.spines[index] : HIDDEN_ITEM_MATRIX);
     }
   }
 
@@ -2622,11 +2772,21 @@ export class GameRenderer {
   }
 
   private syncCacti(): void {
+    const batches = this.cactusBatches;
+    if (!batches) return;
+    let changed = false;
     for (const patch of this.simulation.cacti) {
-      const view = this.cactusViews.get(patch.id);
       // 割光的仙人掌整株隐藏，等它自己长回来。
-      if (view) view.visible = patch.juice > 0;
+      const visible = patch.juice > 0;
+      if (this.cactusVisible.get(patch.id) === visible) continue;
+      this.cactusVisible.set(patch.id, visible);
+      this.writeCactus(patch.id, visible, batches);
+      changed = true;
     }
+    if (!changed) return;
+    for (const mesh of batches.all) mesh.instanceMatrix.needsUpdate = true;
+    // 主干和手臂在阴影图里，割光/长回要立刻重画 —— 同 syncTrees，等不到 30 帧兜底。
+    this.markShadowDirty();
   }
 
   private syncIronNodes(): void {

@@ -114,6 +114,38 @@ export function instantiateAnimal(asset: AnimalAsset): AnimalInstance {
   root.add(model);
 
   /*
+   * 一个实例只留**一副**骨架。
+   *
+   * 素材那边本来就是一副：狼 4 个 SkinnedMesh（鹿 7 个、主角 8 个）共用同一个
+   * Skeleton。但 SkeletonUtils.clone 是逐 mesh 处理的 —— `clonedMesh.skeleton =
+   * sourceMesh.skeleton.clone()` 每个 mesh 各克隆一副，于是一只狗身上出现四副。
+   * 四副的 bones 数组是同一批克隆骨头、boneInverses 也逐个相同，纯属重复。
+   *
+   * 代价全在**每帧**：three 为每副骨架各算一遍 51 根骨头的世界矩阵、各传一张
+   * 16×16 的 bone texture，同一件事做四遍。实测把它们并成一副之后，
+   * 夜里那一帧的渲染时间掉 10%（2.79 → 2.53 ms）。
+   *
+   * 顺带堵掉一个泄漏：bone texture 是三方在**第一次真正画到**这只动物时才建的，
+   * 而原先没有任何地方销毁它 —— 每只被画出来过的狗永久留下 4 张贴图，
+   * 实测一夜下来纹理计数只增不减（13 → 37，正好 6 只可见狗 ×4）。
+   * 现在多余的那几副当场 dispose，剩下的一副交给下面的 dispose() 收。
+   */
+  const skinnedMeshes: THREE.SkinnedMesh[] = [];
+  model.traverse((object) => {
+    if (object instanceof THREE.SkinnedMesh) skinnedMeshes.push(object);
+  });
+  const skeleton = skinnedMeshes.length > 0 ? skinnedMeshes[0].skeleton : null;
+  if (skeleton) {
+    for (const mesh of skinnedMeshes) {
+      if (mesh.skeleton === skeleton) continue;
+      const duplicate = mesh.skeleton;
+      // bindMatrix 是逐 mesh 的，必须原样传回去，不能让 bind() 拿 matrixWorld 现推。
+      mesh.bind(skeleton, mesh.bindMatrix);
+      duplicate.dispose();
+    }
+  }
+
+  /*
    * 材质必须每只一份，**不能共享** —— syncWolves 每帧都按各自的状态染色：
    * 受击闪红、撤退转灰、追击时加自发光、大小狗底色不同。共享会让全场一起闪。
    * （flatShading 已经在源材质上设过，这里不再逐个翻版本。）
@@ -170,6 +202,8 @@ export function instantiateAnimal(asset: AnimalAsset): AnimalInstance {
       mixer.stopAllAction();
       mixer.uncacheRoot(model);
       for (const material of owned) material.dispose();
+      // 骨架自带一张 bone texture，材质的 dispose() 不会顺带收它。
+      skeleton?.dispose();
     },
   };
   return instance;
