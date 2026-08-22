@@ -269,11 +269,13 @@ async function bootstrap(): Promise<void> {
   input.setRouter((target) => simulation.directionToClickTarget(target));
 
   /*
-   * "可玩 / 不可玩"的唯一报点。
+   * 给平台报"在玩 / 没在玩"的唯一报点。
    *
-   * HUD 每帧自查 isGameplayBlocked()（开背包会暂停模拟层、广告期间会冻结），
-   * 翻转时回调到这里。所有暂停路径因此只有这一处要维护 ——
-   * 以后再加什么会暂停游戏的 UI，平台信号自动跟着对。
+   * HUD 每帧自查 isPlatformIdle()，翻转时回调到这里。所有会让玩家离开的路径
+   * 因此只有这一处要维护 —— 以后再加什么会中断游玩的 UI，平台信号自动跟着对。
+   *
+   * **注意它读的不是 isGameplayBlocked()。** 那个管的是模拟层冻不冻结，开背包也算；
+   * 这个管的是玩家人在不在，开背包不算。两者的差别和为什么，见 HudController.isPlatformIdle。
    */
   /*
    * 死后续命：看一次激励视频原地复活，一局三次。
@@ -318,8 +320,12 @@ async function bootstrap(): Promise<void> {
     });
   };
 
-  hud.onGameplayBlockedChange((blocked) => {
-    if (blocked) platform.gameplayStop();
+  /*
+   * 只有广告和显式暂停会翻转它，**开背包不会** —— 见 HudController.isPlatformIdle
+   * 那段注释：背包把世界停住是公平性选择，但玩家人还在屏幕前挑吃什么、造什么。
+   */
+  hud.onPlatformIdleChange((idle) => {
+    if (idle) platform.gameplayStop();
     else if (started && simulation.running && !document.hidden) platform.gameplayStart();
   });
 
@@ -517,7 +523,9 @@ async function bootstrap(): Promise<void> {
     } else {
       previousTime = performance.now();
       if (started && hiddenAt > 0) hud.showToast(t("hud.resumed"), 1.5);
-      if (started && simulation.running && !hud.isGameplayBlocked()) platform.gameplayStart();
+      // 回到前台就接着算在玩，背包开着也一样 —— 判据要和上面那个监听同源，
+      // 否则"开着背包切后台再回来"会卡在报停状态，直到下一次广告或暂停才恢复。
+      if (started && simulation.running && !hud.isPlatformIdle()) platform.gameplayStart();
     }
   });
 
