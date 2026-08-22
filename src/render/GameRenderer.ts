@@ -58,8 +58,8 @@ interface WolfView {
  * 这里保留接近原来的那组倍率，只留下"越大的狗血条越宽"这一点。
  */
 /** 相机距离系数。竖屏拉远补视野，横屏拉近补可读性 —— 见 updateCamera。 */
-const PORTRAIT_CAMERA_SCALE = 1.08;
-const LANDSCAPE_CAMERA_SCALE = 0.64;
+const PORTRAIT_CAMERA_SCALE = 0.98;
+const LANDSCAPE_CAMERA_SCALE = 0.58;
 
 /** 可搬运物的本色，以及被啃到快碎时染向的暗红。 */
 const STONE_COLOR = 0x748084;
@@ -365,6 +365,43 @@ function createBarrelView(): THREE.Group {
   return group;
 }
 
+/*
+ * 开局指路的浮动箭头。
+ *
+ * **做成几何体而不是贴图**：场景里每一件道具都是这么搭起来的（锥、胶囊、盒子 +
+ * 平直着色），一张外来的箭头贴图会是整个 3D 场景里唯一一处纹理 —— 风格上对不上，
+ * 还得为一个开局十几秒就退场的东西背一张图的体积和授权。
+ *
+ * 尺寸和"不发光柱"这两条是照着 buildTruckBeacon 那段定的：那里拆掉过一根 26 米的
+ * 加色光柱，理由是"网游任务标记那一套，和低多边形沙漠不搭，而且注定挡视野"。
+ * 所以这根箭头做得小（总高 1.68 米，和人一般高）、贴着目标浮、正常参与深度测试，
+ * 不做任何穿墙显示。
+ *
+ * 这个高度是量出来的，不是estimate：竖屏一屏见 15.6 米、375 CSS px，1 米 ≈ 24 px，
+ * 而等距相机压着看，竖向还要再乘 cos(41.8°) ≈ 0.75 —— 1.68 米落到屏幕上约 30 px。
+ * 上一版做 1.32 米（约 24 px），在开局那一屏里读起来像地上插了根小钉子。
+ *
+ * 四棱锥的头配四棱柱的柄 —— 段数取 4 是为了和仙人掌刺那些四面锥同一档面数，
+ * 而且两者的顶点相位一致，接缝处不会错开。两段合成一个几何，整根一次 draw call。
+ *
+ * **尖端在 y=0，往上长**：摆的时候直接把"要指的那个点"交给它，不用再减半高。
+ */
+function createGuideArrowGeometry(): THREE.BufferGeometry {
+  // 头**比自己高还宽**（半径 0.58 对高 0.66）：等距相机压着看，竖向本来就只剩
+  // cos(41.8°) ≈ 0.75，头做瘦了从画面上读出来是一根钉子，不是箭头。
+  const head = new THREE.ConeGeometry(0.72, 0.84, 4);
+  head.rotateX(Math.PI);
+  head.translate(0, 0.42, 0);
+  const shaft = new THREE.CylinderGeometry(0.24, 0.24, 0.84, 4);
+  // 0.84 是锥底，柄从那里接着往上长，所以中心在 0.84 + 0.84/2。
+  shaft.translate(0, 1.26, 0);
+  const merged = mergeGeometries([head, shaft]);
+  head.dispose();
+  shaft.dispose();
+  if (!merged) throw new Error("guide arrow geometry merge failed");
+  return merged;
+}
+
 interface BladeVisual {
   name: string;
   /** 刃宽倍率，基准是求生匕首的 0.25。 */
@@ -506,13 +543,22 @@ export class GameRenderer {
   private readonly camera = new THREE.PerspectiveCamera(47, 1, 0.1, 320);
   /*
    * 低功耗档下，超过这个距离的狗和猎物直接不画。
-   *
-   * 45 米的依据：相机看得到的范围本来就有限，而雾（FogExp2 密度 0.0075）
-   * 在 45 米外已经把东西糊成背景色 —— 剔掉它们肉眼看不出来。
    * 夜里一口气 30 只狗、白天 52 只猎物，绝大多数时刻都在这个半径之外。
    * 注意只关**渲染**，模拟层照跑：狗该来还是会来，只是走到近处才画出来。
+   *
+   * 45 → 41 是跟着相机拉近同比缩的（系数 ×0.907，见 PORTRAIT/LANDSCAPE_CAMERA_SCALE）。
+   * 同比缩的意义在于**屏幕上的表现完全不变**：距离系数是相似变换，41 米处的狗在新镜头下
+   * 占的像素和 45 米处在旧镜头下一模一样，所以"在多大的时候冒出来"这件事一点没动。
+   *
+   * 原注释说的"45 米外雾已经糊成背景色"是**错的**，一并改掉：FogExp2 的遮蔽率是
+   * 1 - exp(-(密度×距离)²)，密度 0.0075 时 45 米只有 10.8%，几乎是透明的。
+   *
+   * 而实测（见 updateCamera 那张表）竖屏背向镜头那一侧地面能看到 74.8 米 ——
+   * 也就是说这条剔除线**本来就在画面里**，远端确实会看到狗凭空出现。
+   * 这一版没动这个取舍：要消掉它得把线抬到 75 米，夜里多画的狗是实打实的开销，
+   * 而它发生在画面最上缘、目标只有十几像素高的那一小块楔形区域里。
    */
-  private static readonly LOW_POWER_DRAW_DISTANCE = 45;
+  private static readonly LOW_POWER_DRAW_DISTANCE = 41;
 
   /** 触屏 / 窄屏走低功耗档：pixelRatio 1、512² 隔帧阴影、贴地装饰不收影、远处实体剔除。 */
   private readonly lowPower: boolean;
@@ -559,6 +605,12 @@ export class GameRenderer {
   private readonly carriedFuel: THREE.Object3D;
   private readonly truckGroup: THREE.Group;
   private truckRing: THREE.Mesh | null = null;
+  /** 开局指路箭头。状态每帧从模拟层现算，见 syncGuideArrow。 */
+  private readonly guideArrow: THREE.Mesh;
+  /** 箭头的上下浮动与自转共用这一个相位，秒。 */
+  private guidePhase = 0;
+  /** 算车头世界坐标用的暂存，避免每帧 new 一个 Vector3。 */
+  private readonly guideAnchor = new THREE.Vector3();
   /** 车斗上那一排已装的油桶，按 loaded 逐个点亮。 */
   private readonly truckLoadViews: THREE.Object3D[] = [];
   /** 新装油桶的落位反馈；只属于渲染层，不参与装车判定。 */
@@ -787,6 +839,7 @@ export class GameRenderer {
     this.buildWells();
     this.truckGroup = this.buildTruck();
     this.buildBarrels();
+    this.guideArrow = this.buildGuideArrow();
     this.playerBodyMaterial = makeMaterial(0x2f7b8d, 0.75);
     const player = this.buildPlayer();
     this.playerGroup = player.group;
@@ -835,6 +888,7 @@ export class GameRenderer {
     this.syncPlayer(delta);
     this.syncItems(delta);
     this.syncBarrels(delta);
+    this.syncGuideArrow(delta);
     this.syncCacti();
     this.syncIronNodes();
     this.syncTrees();
@@ -1702,6 +1756,85 @@ export class GameRenderer {
     ring.position.y = 0.09;
     group.add(ring);
     this.truckRing = ring;
+  }
+
+  private buildGuideArrow(): THREE.Mesh {
+    /*
+     * 颜色跟卡车走，不跟油桶走。
+     *
+     * 地环是 0x36d9cc、HUD 那枚卡车指示牌的字是 0x8ff0e6 —— 这一族青绿在这个游戏里
+     * 已经固定表示"通关路线上的东西"。箭头先指的虽然是个红油桶，但它说的仍是
+     * 同一句话（"往这儿走"），所以用同一族颜色，而不是跟着被指的东西变。
+     *
+     * 带自发光：白天它靠主光就够亮，但这根箭头在夜里也可能还在（玩家磨蹭到入夜），
+     * 而夜里环境光压得很低，纯漫反射会整根沉进背景。
+     */
+    const mesh = new THREE.Mesh(
+      createGuideArrowGeometry(),
+      new THREE.MeshStandardMaterial({
+        color: 0x2fe0cf,
+        emissive: 0x0f9c90,
+        roughness: 0.45,
+        metalness: 0,
+        // 和场上所有道具同一档：平直着色，四个面各自一个色阶，轮廓才咬得住沙子。
+        flatShading: true,
+      }),
+    );
+    // 它是"指路的"，不是场上的实体：不投影，免得地上多出一道解释不了的影子。
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    mesh.visible = false;
+    this.scene.add(mesh);
+    return mesh;
+  }
+
+  /**
+   * 开局那一趟的指路箭头：先浮在第一桶油上，扛起来之后挪到车头，装进车里就退场。
+   *
+   * **不留状态机**，每帧从模拟层现算：中途把桶放下箭头就自己飞回桶上，再扛起来又回车头。
+   * 一个 latch 都不需要，软重开也不用清 —— resetRun 换掉 simulation 之后它自然接着新的一局。
+   *
+   * 退场判据是 `loaded >= 1`：第一桶进了车，这段引导就干完了。剩下五桶不再指 ——
+   * 否则它就从"开局教一次"变成一个常驻任务标记，正是 buildTruckBeacon 拆光柱时否掉的东西。
+   * 退场只关 visible 不 dispose：软重开复用同一个渲染器，下一局还要用它。
+   */
+  private syncGuideArrow(delta: number): void {
+    const arrow = this.guideArrow;
+    const fuel = this.simulation.getFuelProgress();
+    if (fuel.loaded >= 1) {
+      arrow.visible = false;
+      return;
+    }
+
+    if (fuel.carrying) {
+      // 车头顶上。cab 在 buildTruck 里是 local (1.9, 1.95, 0)、高 1.5，顶面因此在 2.7，
+      // 再留 0.35 的净空。localToWorld 会自己把 truckGroup 的世界矩阵更到最新。
+      this.guideAnchor.set(1.9, 3.05, 0);
+      this.truckGroup.localToWorld(this.guideAnchor);
+    } else {
+      /*
+       * 第一桶 = createWorld 最后压进去的那一桶（出生点 2.2 米外那桶，见 placeBarrels
+       * 末尾）。按下标取而不是记 id：软重开会换一整套 world，下标每局都对，记下来的 id 不一定。
+       */
+      const barrels = this.simulation.barrels;
+      const first = barrels[barrels.length - 1];
+      if (!first || first.placement !== "ground") {
+        arrow.visible = false;
+        return;
+      }
+      // 桶身 1.18 高、中心抬到地面 +0.62，顶盖到 +1.31；再留 0.24 净空。
+      this.guideAnchor.set(first.x, this.worldHeight(first.x, first.z) + 1.55, first.z);
+    }
+
+    this.guidePhase += delta;
+    arrow.visible = true;
+    arrow.position.set(
+      this.guideAnchor.x,
+      this.guideAnchor.y + Math.sin(this.guidePhase * 2.6) * 0.19,
+      this.guideAnchor.z,
+    );
+    // 固定朝向的等距相机不跟人转，所以慢转一圈就能保证四个面轮流对着玩家。
+    arrow.rotation.y = this.guidePhase * 1.15;
   }
 
   private buildBarrels(): void {
@@ -3290,11 +3423,23 @@ export class GameRenderer {
      * 这两档是**分开调的**：竖屏那个数是为了补视野，横屏那个数是为了补可读性，
      * 合成一个系数的话动一个必然弄坏另一个。
      *
-     * 两档都往近走过一轮（横屏 0.80 → 0.70 → 0.64，竖屏 1.18 → 1.08）。
-     * 按 47° FOV 算：
+     * 两档都往近走过几轮（横屏 0.80 → 0.70 → 0.64 → 0.58，竖屏 1.18 → 1.08 → 0.98）。
+     * 前几轮的表按 47° FOV 算（那个数其实只对桌面成立，见 resize 里的 fov 选择）：
      *
      *   横屏 844×390   距离 28.8 → 23.1   横向可见 54.2m → 43.4m   角色占屏高 10.4% → 13.0%
      *   竖屏 390×844   距离 42.5 → 38.9   横向可见 17.1m → 15.6m   角色占屏高  7.0% →  7.7%
+     *
+     * 最后这一轮改成**实测**：在真实视口里按方位角逐个二分，找出地面点还在画面内的
+     * 最远半径。这比"横向可见"有用得多 —— 等距视角下可见范围是**极不对称**的，
+     * 朝镜头那一侧和背镜头那一侧差着八倍，而所有"什么时候该出现/该消失"的判断
+     * （守卫仇恨、剔除距离）吃的都是这两个极值，不是那个平均意义上的横向宽度。
+     *
+     *                     最小可见半径        最大可见半径
+     *   竖屏 375×812      9.4m → 8.5m        80.2m → 74.8m
+     *   横屏 844×390     11.0m →  9.9m       52.1m → 48.0m
+     *
+     * 距离系数是**纯相似变换**（方向 (19,24,19) 归一化后与系数无关，FOV 也不动），
+     * 所以上面每个数都随系数线性缩放，改系数不需要重新实测一遍。
      *
      * 还剩多少视野是这条的下限：开场斥候在 27 米、教学猎物在 5.5~7 米，都还在画面里。
      */
