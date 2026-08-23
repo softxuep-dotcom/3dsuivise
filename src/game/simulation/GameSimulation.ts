@@ -84,11 +84,29 @@ function screenBearing(from: Vec2, to: Vec2): number {
  * 再留一点给"囤水"那步，35 秒会把引导链压得没法完成。40 秒下中位玩家
  * 仍然能在离开前看到天黑。
  *
- * 这条只缩白天，不动 FIRST_NIGHT_DURATION：第一昼夜因此从 240 秒降到 190 秒，
+ * 这条只缩白天，第一昼夜因此从 240 秒降到 190 秒，
  * 而开局口粮是按 240 秒配的（见 STARTING_RATION 那段），所以只会更宽松，不会饿死人。
+ *
+ * ## 第一夜 150 → 100
+ *
+ * 150 秒**没有解**。模拟层拿七种打法的画像各跑一遍，**没有一种活到黎明，全部死于狗咬**；
+ * 同一画像抖动六次也只活一次。不是失温、不是狼太多 —— 装备为 0、100 点血、一把初始匕首，
+ * 硬扛 150 秒本来就走不通（见 docs/游戏测试-交接.md）：
+ *
+ *     第一夜      黎明落在        活到黎明    整夜贴身次数
+ *     150s        190s / 3m10s      1/6         3~5
+ *     110s        150s / 2m30s      3/6         1~4
+ *      90s        130s / 2m10s      5/6         1~4
+ *
+ * 而中位会话约 1m38s —— **绝大多数玩家从没完整走完一个昼夜循环**，
+ * 而"熬过夜、天亮再来"正是这个游戏的核心。这和当年"一半玩家在 19 帧下玩"是同一类问题：
+ * 不是难度曲线陡，是有一整段体验多数人根本到不了。
+ *
+ * 取 100 秒：黎明落在 140s / 2m20s，压在中位玩家的耐心线附近，
+ * 存活率介于上表的 3/6 与 5/6 之间。机器人不守火，绝对值偏悲观，A/B 的差值才是有效信息。
  */
 const FIRST_DAY_DURATION = 40;
-const FIRST_NIGHT_DURATION = 150;
+const FIRST_NIGHT_DURATION = 100;
 const LATER_DAY_DURATION = 180;
 const SECOND_NIGHT_DURATION = 180;
 const LATER_NIGHT_DURATION = 180;
@@ -534,7 +552,7 @@ const STARTING_RATION: ReadonlyArray<readonly [InventoryItemKind, number]> = [
    * 这正是节奏表 §3 说的"保底那一列缺失"——保温是可选、操作驱动，
    * 失温是必然、时间驱动，剪刀差的锋面在体温轴上。
    *
-   * 3 根 = 285 秒火，把 150 秒的第一夜整个盖住，还剩一截给天亮后。
+   * 3 根 = 285 秒火，把 100 秒的第一夜整个盖住，还剩一大截给天亮后。
    * "柴要自己囤"这一课挪到第二夜（180 秒）去上 —— 那时玩家已经见过火灭一次
    * 是什么后果，而不是在还没搞懂规则的时候先冻死。
    */
@@ -849,8 +867,12 @@ export class GameSimulation {
       health: 100,
       maxHealth: 100,
       warmth: WARMTH_INITIAL,
-      hunger: 82,
-      water: 90,
+      // 各按原值的九成起步（饱食 82 → 74、水分 90 → 81）。
+      // 见 WATER_DECAY / HUNGER_DECAY：0.42/s 下满值要 238 秒才见底，
+      // 而第一个昼夜只有 140 秒 —— 满着开局的话这两条轴在第一个循环里
+      // 根本不构成决策，五条轴里有两条是纯装饰。缩九成让它们在第二个循环开头就开始咬人。
+      hunger: 74,
+      water: 81,
       stamina: STAMINA_MAX,
       maxStamina: STAMINA_MAX,
       condition: "normal",
