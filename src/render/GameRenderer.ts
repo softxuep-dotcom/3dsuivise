@@ -266,6 +266,49 @@ const SHADOW_MAX_STALE_FRAMES = 30;
 const LOW_POWER_SHADOW_EXTENT = 44;
 const LOW_POWER_SHADOW_MAP = 768;
 
+/*
+ * ═══ 一次性画质上调 ═══  （要调参数的话，改这一块就够了）
+ *
+ * ## 它解决的是"好手机被一刀切压住"
+ *
+ * 移动档把 pixelRatio 钉死在 1.0。而现代旗舰手机的 devicePixelRatio 普遍是 2.5~3.5，
+ * 所以 3D 画面实际是按原生 **1/9 的像素数**渲染再拉满屏 —— 屏幕最好的那批设备
+ * 挨刀最狠。而它们的富余本来就浪费掉了：帧率撞在刷新率上限上，多出来的性能不产生
+ * 任何收益。
+ *
+ * ## 为什么是"一次性、只向上"，而不是自适应梯子
+ *
+ * 梯子要调一堆阈值，而这些阈值只能在真机上验证 —— 手上只有一台旗舰机的话，
+ * 下面那些降级档一次都跑不到，等于把一套没人验证过的机制推给最弱的那批玩家。
+ *
+ * 只允许**升一次、不许降**就没有这个问题：判据不满足时什么都不发生，
+ * 弱机的行为和现在逐字相同；满足时也只动一次，玩家不会看见画质来回变。
+ *
+ * ## 两个判据必须同时成立
+ *
+ * 只看出帧间隔是不够的：帧率撞在 vsync 上限时，间隔恒等于刷新间隔，**读不出富余**——
+ * 一台 120Hz 手机轻松跑满和勉强跑满，间隔都是 8.33ms。所以再加一条渲染耗时。
+ *
+ *   出帧间隔贴着刷新率  → GPU 跟得上，一帧没掉
+ *   渲染耗时远低于刷新间隔 → CPU 侧确实有富余
+ *
+ * 两条都成立才升。前者管 GPU，后者管 CPU，缺一条都可能升错。
+ */
+/** 玩家真正开始玩之后先跳过这么久：着色器编译和 GLB 解析都挤在这一段。 */
+const UPGRADE_WARMUP_MS = 3000;
+/** 采样窗口。攒满这么久才做判断，判断完就永久收工。 */
+const UPGRADE_WINDOW_MS = 3000;
+/** 样本不够就不升 —— 宁可不动，也不能拿几帧下结论。 */
+const UPGRADE_MIN_SAMPLES = 60;
+/** 出帧间隔中位数不得超过刷新间隔的这个倍数（1.15 ≈ 允许偶尔掉一帧）。 */
+const UPGRADE_MAX_INTERVAL_RATIO = 1.15;
+/** 渲染耗时中位数不得超过刷新间隔的这个比例。留的余量要够 pixelRatio 抬上去之后的开销。 */
+const UPGRADE_MAX_WORK_RATIO = 0.4;
+/** 达标后 pixelRatio 抬到这里（仍受 devicePixelRatio 封顶）。 */
+const UPGRADE_PIXEL_RATIO = 1.5;
+/** 达标后阴影图抬到这里。范围 ±44 不动，所以每米 texel 数从 8.7 涨到 11.6。 */
+const UPGRADE_SHADOW_MAP = 1024;
+
 const BLOB_SHADOW_TEXTURE_SIZE = 64;
 /** 同屏最多画几片。玩家 1 + 45 米内的狼与猎物，实测远不到这个数。 */
 const BLOB_SHADOW_CAPACITY = 48;
@@ -341,6 +384,134 @@ interface CritterView {
 const makeMaterial = (color: THREE.ColorRepresentation, roughness = 0.9): THREE.MeshStandardMaterial => (
   new THREE.MeshStandardMaterial({ color, roughness, flatShading: true })
 );
+
+/** 材质的"看起来一样吗"指纹。**按参数比，不按对象比** —— 理由见 mergeStaticGroup。 */
+interface MaterialProbe {
+  color?: THREE.Color;
+  emissive?: THREE.Color;
+  emissiveIntensity?: number;
+  roughness?: number;
+  metalness?: number;
+  flatShading?: boolean;
+  map?: THREE.Texture | null;
+}
+
+const materialSignature = (material: THREE.Material): string => {
+  const probe = material as THREE.Material & MaterialProbe;
+  return [
+    material.type,
+    probe.color?.getHexString() ?? "-",
+    probe.emissive?.getHexString() ?? "-",
+    probe.emissiveIntensity ?? "-",
+    probe.roughness ?? "-",
+    probe.metalness ?? "-",
+    probe.flatShading ?? "-",
+    probe.map?.uuid ?? "-",
+    material.side,
+    material.transparent,
+    material.opacity,
+    material.depthWrite,
+    material.depthTest,
+  ].join("|");
+};
+
+/**
+ * 把一组"零件之间不动"的装饰按材质压成整块，一种材质一个网格。
+ *
+ * ## 为什么值得做
+ *
+ * 巢、地标、营地、铁矿、油桶、井、卡车车体，写法都一样：一个 Group 里塞十几二十个
+ * 小 Mesh，每个几十到一百个顶点。它们彼此之间从建好到这一局结束不会动、不会换色、
+ * 不会单独显隐 —— 也就是说这些 Mesh 之间**没有一条信息是运行时才知道的**，
+ * 完全可以在建的时候就烤成一块。
+ *
+ * ## 关键：烤的是**组的局部坐标**
+ *
+ * 所以"整个组会不会动"完全无所谓。铁矿按储量整体缩放、油桶被扛走、卡车通关时开走 ——
+ * 这些都写在 Group 上，合批之后照样生效。只要零件**彼此之间**不动就能合。
+ *
+ * ## 为什么逐个对象合，不跨对象合
+ *
+ * 跨对象会把整张图的巢连成一个横跨全图的网格，包围球覆盖所有地方，于是**永远进不了
+ * 视锥剔除** —— 玩家在空旷沙漠里也要提交全图的装饰。逐个合两头都占：簇内的十几条塌成
+ * 两三条，而"这座营地在不在画面里"仍然由 three 逐个剔除。
+ *
+ * ## 两个必须按参数分桶的地方
+ *
+ * **材质按指纹分桶，不按对象。** 石碑的三道刻痕、井口的黑面都是在循环里
+ * `makeMaterial(...)` 现造的，参数完全相同却是不同对象；按对象分桶等于没合。
+ *
+ * **castShadow / receiveShadow 也进桶键。** 同一个 deadwood 材质，树干投影、车辕不投影，
+ * 合到一起就只能二选一，画面会变。
+ *
+ * @param keep 这些对象（连同其子树）原样留下 —— 营火的火苗、井上的水珠这些每帧都在动。
+ */
+const mergeStaticGroup = (group: THREE.Object3D, keep: ReadonlySet<THREE.Object3D> = new Set()): void => {
+  interface Bucket {
+    material: THREE.Material;
+    cast: boolean;
+    receive: boolean;
+    /** 合并前可能被整桶换成非索引版本，所以不是 readonly。 */
+    parts: THREE.BufferGeometry[];
+    sources: THREE.Mesh[];
+  }
+  group.updateMatrixWorld(true);
+  const toLocal = new THREE.Matrix4().copy(group.matrixWorld).invert();
+  const local = new THREE.Matrix4();
+  const buckets = new Map<string, Bucket>();
+
+  const walk = (object: THREE.Object3D): void => {
+    if (keep.has(object)) return;
+    for (const child of [...object.children]) walk(child);
+    if (!(object instanceof THREE.Mesh) || Array.isArray(object.material)) return;
+    const key = `${materialSignature(object.material)}|${object.castShadow}|${object.receiveShadow}`;
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      bucket = { material: object.material, cast: object.castShadow, receive: object.receiveShadow, parts: [], sources: [] };
+      buckets.set(key, bucket);
+    }
+    // applyMatrix4 会连法线一起按法线矩阵变换，所以巢那些 scale(1.5, 0.5, 1) 的
+    // 土脊不会因为非等比缩放而错光。
+    const baked = object.geometry.clone();
+    baked.applyMatrix4(local.multiplyMatrices(toLocal, object.matrixWorld));
+    bucket.parts.push(baked);
+    bucket.sources.push(object);
+  };
+  walk(group);
+
+  for (const bucket of buckets.values()) {
+    /*
+     * 索引要先统一。
+     *
+     * mergeGeometries 要求一桶里的几何**要么全带 index、要么全不带**，否则返回 null
+     * 并往控制台刷一行错。而 three 的多面体（Dodecahedron / Octahedron / Icosahedron，
+     * 也就是这里的火圈石、石堆、洞穴巨石、矿石）是**非索引**的，圆柱方块球环面则都带索引 ——
+     * 营地那种一个材质下既有石头又有木头的桶正好踩中。
+     *
+     * 混了就整桶转成非索引。这些都是 flatShading 的低模，本来就几乎没有共享顶点，
+     * 展开的代价可以忽略；换来的是这些桶真的能合上。
+     */
+    const indexed = bucket.parts.filter((part) => part.index !== null).length;
+    if (indexed > 0 && indexed < bucket.parts.length) {
+      bucket.parts = bucket.parts.map((part) => {
+        if (part.index === null) return part;
+        const flat = part.toNonIndexed();
+        part.dispose();
+        return flat;
+      });
+    }
+    // 只有一件的桶合了还是它自己，白搭一次拷贝，留原样。
+    const geometry = bucket.parts.length > 1 ? mergeGeometries(bucket.parts, false) : null;
+    for (const part of bucket.parts) part.dispose();
+    // 万一还是合不上就放弃这一桶、保持原样 —— 宁可多几条 draw call，也不能把装饰弄丢。
+    if (!geometry) continue;
+    for (const source of bucket.sources) source.removeFromParent();
+    const mesh = new THREE.Mesh(geometry, bucket.material);
+    mesh.castShadow = bucket.cast;
+    mesh.receiveShadow = bucket.receive;
+    group.add(mesh);
+  }
+};
 
 /**
  * 汽油桶。**整张图上唯一的锈红色**——沙丘、砾石、枯木、铁矿全是黄褐到灰的
@@ -592,6 +763,15 @@ export class GameRenderer {
   private readonly blobShadowScale = new THREE.Vector3(1, 1, 1);
   /** 上下文丢失期间跳过绘制，否则每帧都会刷一串 GL 错误。 */
   private contextLost = false;
+  /*
+   * 一次性画质上调的采样状态，见 UPGRADE_* 那一块。
+   * `upgradeSettled` 置位之后这套东西就彻底静默，不再有任何每帧开销。
+   */
+  private upgradeSettled = false;
+  private upgradeStartedAt = 0;
+  private lastFrameAt = 0;
+  private readonly upgradeIntervals: number[] = [];
+  private readonly upgradeWork: number[] = [];
   private readonly raycaster = new THREE.Raycaster();
   private readonly pointer = new THREE.Vector2();
   private readonly terrainMesh: THREE.Mesh;
@@ -882,6 +1062,7 @@ export class GameRenderer {
   render(deltaSeconds: number): void {
     // 上下文丢失期间任何 GL 调用都会报错刷屏，直接跳过这一帧。
     if (this.contextLost) return;
+    const frameStart = this.upgradeSettled ? 0 : performance.now();
     const delta = Math.min(deltaSeconds, 0.05);
     this.time += delta;
     // 贴地阴影每帧重新累计：写完直接设 count，不需要隐藏用不到的实例。
@@ -911,6 +1092,63 @@ export class GameRenderer {
     }
     this.scheduleShadowUpdate();
     this.renderer.render(this.scene, this.camera);
+    // 排在最后：要量的是这一帧渲染的全部耗时。收工之后这一句直接 return。
+    if (!this.upgradeSettled) this.probeQualityUpgrade(frameStart);
+  }
+
+  /**
+   * 一次性画质上调的采样与判定。每帧调一次，判完就永久关掉。
+   *
+   * 设计意图和两个判据写在 UPGRADE_* 常量那一块，这里只讲实现上的三个取舍：
+   *
+   * **只在移动档跑。** 桌面档本来就是 1.6 / 1024，没有可升的余地。
+   *
+   * **等 `simulation.running` 才开始计时。** 玩家还停在开场页时场上没有狼、没有猎物，
+   * 那时候量出来的富余是假的，照着它升档会在入夜时翻车。
+   *
+   * **异常帧整个丢掉。** 切后台、着色器编译、GC 长停顿都会混进来；它们既不代表
+   * 这台机器的稳态开销，又足以把中位数拖歪。
+   */
+  private probeQualityUpgrade(frameStart: number): void {
+    if (!this.lowPower) { this.upgradeSettled = true; return; }
+    if (!this.simulation.running) { this.lastFrameAt = 0; return; }
+    const now = performance.now();
+    if (this.upgradeStartedAt === 0) this.upgradeStartedAt = now;
+    const interval = this.lastFrameAt > 0 ? frameStart - this.lastFrameAt : 0;
+    this.lastFrameAt = frameStart;
+    const elapsed = now - this.upgradeStartedAt;
+    if (elapsed < UPGRADE_WARMUP_MS) return;
+    if (interval > 0 && interval < 250) {
+      this.upgradeIntervals.push(interval);
+      this.upgradeWork.push(now - frameStart);
+    }
+    if (elapsed < UPGRADE_WARMUP_MS + UPGRADE_WINDOW_MS) return;
+
+    // 到点了，判一次就收工 —— 无论升不升，这一局都不会再来第二次。
+    this.upgradeSettled = true;
+    if (this.upgradeIntervals.length < UPGRADE_MIN_SAMPLES) return;
+    const median = (values: number[]): number => {
+      const sorted = [...values].sort((a, b) => a - b);
+      return sorted[sorted.length >> 1];
+    };
+    const sorted = [...this.upgradeIntervals].sort((a, b) => a - b);
+    // 刷新间隔按观测到的最快帧倒推。取 5% 分位而不是最小值：偶发的短间隔会把最小值拉歪。
+    // 12ms 以下认 120Hz，否则一律按 60Hz —— 机器慢到从没跑出满帧时我们也无从分辨，
+    // 而默认 60Hz 会让下面两条判据保持保守。
+    const vsync = sorted[Math.floor(sorted.length * 0.05)] <= 12 ? 8.33 : 16.67;
+    const keepingUp = median(this.upgradeIntervals) <= vsync * UPGRADE_MAX_INTERVAL_RATIO;
+    const hasHeadroom = median(this.upgradeWork) <= vsync * UPGRADE_MAX_WORK_RATIO;
+    if (!keepingUp || !hasHeadroom) return;
+
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, UPGRADE_PIXEL_RATIO));
+    // setPixelRatio 之后要按新比例重新分配绘制缓冲，否则画布还是旧尺寸。
+    this.resize();
+    // 换阴影图尺寸必须先把旧的那张扔掉，three 才会按新尺寸重建。
+    this.sun.shadow.map?.dispose();
+    this.sun.shadow.map = null;
+    this.sun.shadow.mapSize.set(UPGRADE_SHADOW_MAP, UPGRADE_SHADOW_MAP);
+    // 新图是空的，下一帧必须重画，不能等 30 帧兜底。
+    this.markShadowDirty();
   }
 
   /**
@@ -1600,6 +1838,8 @@ export class GameRenderer {
       }
 
       group.position.y += 0.02;
+      // 一个巢十几个小 Mesh，从建好到这局结束一动不动 —— 按材质压成两三块。
+      mergeStaticGroup(group);
       this.scene.add(group);
     }
   }
@@ -1660,6 +1900,9 @@ export class GameRenderer {
           group.add(rune);
         }
       }
+      // 三道刻痕的材质是循环里现造的，参数一样却是三个对象 ——
+      // mergeStaticGroup 按材质**指纹**分桶，所以它们照样能合到一块。
+      mergeStaticGroup(group);
       this.scene.add(group);
     }
   }
@@ -1727,6 +1970,14 @@ export class GameRenderer {
     }
 
     this.buildTruckBeacon(group);
+    /*
+     * 车体合批。车斗上那六个油桶槽位要逐个显隐（装了几桶亮几个，还有落位反馈），
+     * 地环是半透明、每帧改透明度 —— 这两样留着；底盘、驾驶室、轮子、油箱口可以合。
+     * 卡车整体会在通关时开走，但那是 group 的位移，和零件之间的相对关系无关。
+     */
+    const truckDynamic = new Set<THREE.Object3D>(this.truckLoadViews);
+    if (this.truckRing) truckDynamic.add(this.truckRing);
+    mergeStaticGroup(group, truckDynamic);
     this.scene.add(group);
     return group;
   }
@@ -1842,6 +2093,9 @@ export class GameRenderer {
     for (const barrel of this.simulation.barrels) {
       const view = createBarrelView();
       this.applyLowPowerShadowPolicy(view);
+      // 桶身、桶箍、桶盖之间不动；syncBarrels 只改整只桶的 visible / position / rotation。
+      // 必须排在 applyLowPowerShadowPolicy 之后 —— castShadow 是分桶键的一部分。
+      mergeStaticGroup(view);
       view.rotation.y = barrel.rotation;
       this.scene.add(view);
       this.barrelViews.set(barrel.id, view);
@@ -1963,6 +2217,12 @@ export class GameRenderer {
         group.add(ore);
       }
 
+      /*
+       * 整座矿脉合成两块（岩体一块、矿石一块）。它虽然会**整体**缩放和显隐
+       *（syncIronNodes 按储量 setScalar、挖空了隐藏），但那都是写在 group 上的；
+       * 底座、四根棱柱、三颗矿石彼此之间从建好起一动不动。
+       */
+      mergeStaticGroup(group);
       this.scene.add(group);
       this.ironViews.set(node.id, group);
     }
@@ -2017,6 +2277,8 @@ export class GameRenderer {
       }
       this.wellPips.set(well.id, pips);
 
+      // 水珠要逐颗显隐、还要各自上下浮，留着；井沿、井口、两根柱子和横木可以合。
+      mergeStaticGroup(group, new Set<THREE.Object3D>(pips));
       this.scene.add(group);
       this.wellViews.set(well.id, group);
     }
@@ -2141,6 +2403,9 @@ export class GameRenderer {
         brokenFence.castShadow = true;
         group.add(brokenFence);
       }
+      // 火苗和地光每帧都在缩放 / 改透明度，必须原样留着；营地其余那几十块
+      //（火圈石、柴、洞口、旗杆、石堆、木箱、斜棚、断栅）建好就再也不动。
+      mergeStaticGroup(group, new Set<THREE.Object3D>([flame, glow]));
       this.scene.add(group);
       this.campViews.set(camp.id, { flame, glow });
     }
