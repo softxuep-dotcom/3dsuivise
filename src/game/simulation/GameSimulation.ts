@@ -577,6 +577,40 @@ const STAMINA_ACTIVE_REGEN = 1.1; // 移动中：仍只有休息的 1/7，但走
  * 射程 9 米对照近战 3.1~3.8 米：够到"狗已经看见你但还没扑到"的那一段，
  * 而不是变成一把可以站着点名的远程武器。
  */
+/*
+ * 抓狼 / 扔狼。
+ *
+ * ## 为什么必须有门槛
+ *
+ * 健康的狼随手就能抓的话，"抓→扔→抓→扔"会直接删掉整个战斗系统。所以只有**此刻
+ * 动不了**的狼抓得起来：正在硬直（刚被石头砸中或被击退）、或者血量已经跌破三成半。
+ *
+ * 这个门槛不是限制，**它是这套玩法的形状** —— 它逼出一条连招：
+ *
+ *     石头砸中（硬直 0.6 秒） → 冲上去抓起 → 扔向另一只狼
+ *
+ * 于是投石从"一次性远程"变成了起手技，而被扔的和被砸的**两只都掉血**。
+ *
+ * ## 抓着不能久
+ *
+ * 狼在手里挣扎，每秒啃掉 6 点血；加上搬运物本来就有的 0.54× 移速惩罚，
+ * 抓起来就得赶紧扔，当不了盾牌。
+ */
+const GRAB_REACH = 2.2;
+/** 血量跌破这个比例就抓得动，不必等硬直。 */
+const GRAB_HEALTH_FRACTION = 0.35;
+/** 挣扎伤害，点/秒。 */
+const GRAB_STRUGGLE_DPS = 6;
+/** 比石头近、比石头慢：一整只狼比一块石头难扔得多。 */
+const BEAST_THROW_RANGE = 7;
+const BEAST_THROW_SPEED = 13;
+const BEAST_HIT_RADIUS = 1.15;
+/** 砸中的那只吃这么多，被扔的那只吃 BEAST_SELF_DAMAGE。 */
+const BEAST_IMPACT_DAMAGE = 45;
+const BEAST_SELF_DAMAGE = 35;
+/** 落地后趴一会儿：这段时间它不追不咬，是玩家的收尾窗口。 */
+const BEAST_LAND_STUN = 1.4;
+
 const STONE_THROW_RANGE = 9;
 const STONE_THROW_SPEED = 15;
 const STONE_THROW_DAMAGE = 60;
@@ -794,6 +828,13 @@ export class GameSimulation {
   readonly thrownStones: ThrownStone[] = [];
   /** getLitFires 的复用数组，见那里的注释。 */
   private readonly litFireScratch: Vec2[] = [];
+  /** 此刻抓在手里的那只狼。carrying === "beast" 时必定非空。 */
+  private carriedWolf: WolfState | null = null;
+  /**
+   * 飞行中的狼。狼本身留在 this.wolves 里（mode = "airborne"），这里只存飞行参数 ——
+   * 所以渲染层**一行都不用改**：它照常按 wolf.x/z 画，狼飞出去自然就画出来了。
+   */
+  private readonly thrownWolves: { wolf: WolfState; dirX: number; dirZ: number; travelled: number }[] = [];
   private carriedBarrel: FuelBarrelState | null = null;
   /** >0 表示卡车正在驶离，玩家已经在车上，只剩结算动画。 */
   private departTimer = 0;
@@ -1062,6 +1103,8 @@ export class GameSimulation {
     this.updateWells();
     this.updateStructures(delta);
     this.updateThrownStones(delta);
+    this.updateCarriedWolf(delta);
+    this.updateThrownWolves(delta);
     if (this.crittersEnabled) this.updateCritters(delta);
     if (this.wolvesEnabled) this.wolfDirector.updateWolves(delta);
     this.updateRest(delta);
@@ -1194,6 +1237,18 @@ export class GameSimulation {
 
     if (this.player.carrying) {
       this.dropCarriedItem();
+      return;
+    }
+
+    /*
+     * 抓狼。排在发车**之后**、拾取之前：加满油站在车边时那一下必须是走人，
+     * 旁边躺着只晕狼也不能抢；但除此之外，一只此刻动不了的狼比脚边任何东西都值钱。
+     */
+    const grabbable = this.truck.loaded >= FUEL_REQUIRED
+      && distance(this.player, this.truck) <= TRUCK_BOARD_REACH
+      ? null : this.findGrabbableWolf();
+    if (grabbable) {
+      this.grabWolf(grabbable);
       return;
     }
 
@@ -1506,6 +1561,151 @@ export class GameSimulation {
    * **不扣劳力。** 战斗不和采集抢劳力预算是这个项目定过的规矩（见 requestAttack
    * 里那段），扔石头的真实代价是那块石头本身 —— 它落在地上，要走过去才捡得回来。
    */
+  /**
+   * 够得着、而且此刻动不了的那只狼。见 GRAB_REACH 那段的门槛说明。
+   *
+   * 硬直的判据是 attackCooldown —— 被石头砸中或被刀击退都会把它抬高，
+   * 也就是说"刚被你打了一下"和"抓得起来"是同一件事，玩家不需要另外学一套规则。
+   */
+  findGrabbableWolf(): WolfState | null {
+    let best: WolfState | null = null;
+    let bestSq = GRAB_REACH * GRAB_REACH;
+    for (const wolf of this.wolves) {
+      if (wolf.mode === "dead" || wolf.mode === "grabbed" || wolf.mode === "airborne") continue;
+      const stunned = wolf.attackCooldown > 0.2;
+      const weak = wolf.health <= wolf.maxHealth * GRAB_HEALTH_FRACTION;
+      if (!stunned && !weak) continue;
+      const value = distanceSquared(this.player, wolf);
+      if (value >= bestSq) continue;
+      bestSq = value;
+      best = wolf;
+    }
+    return best;
+  }
+
+  private grabWolf(wolf: WolfState): void {
+    wolf.mode = "grabbed";
+    wolf.attackCooldown = Math.max(wolf.attackCooldown, 0.3);
+    this.carriedWolf = wolf;
+    this.player.carrying = "beast";
+    this.events.push({ type: "beast-grabbed", wolfId: wolf.id });
+  }
+
+  /**
+   * 把手里的狼扔出去。索敌口径和投石一致（身前 ±72°），只做转向辅助不做制导。
+   */
+  private throwCarriedWolf(): void {
+    const wolf = this.carriedWolf;
+    if (!wolf) {
+      this.player.carrying = null;
+      return;
+    }
+    const player = this.player;
+    player.attackCooldown = STONE_THROW_COOLDOWN * this.getConditionCooldownScale();
+    player.attackFlash = 0.22;
+
+    const target = this.wolves
+      .filter((other) => other !== wolf && other.mode !== "dead" && other.mode !== "airborne"
+        && distanceSquared(player, other) <= BEAST_THROW_RANGE * BEAST_THROW_RANGE
+        && dot(player.facing, direction(player, other)) >= 0.3)
+      .sort((a, b) => distanceSquared(player, a) - distanceSquared(player, b))[0];
+    if (target) player.facing = direction(player, target);
+
+    wolf.mode = "airborne";
+    wolf.x = player.x + player.facing.x * 0.9;
+    wolf.z = player.z + player.facing.z * 0.9;
+    this.thrownWolves.push({
+      wolf, dirX: player.facing.x, dirZ: player.facing.z, travelled: 0,
+    });
+    this.carriedWolf = null;
+    player.carrying = null;
+    this.noteActivity();
+    this.events.push({ type: "beast-thrown", wolfId: wolf.id });
+  }
+
+  /** 松手：把狼原地放下，它立刻恢复行动（而且很生气）。 */
+  private releaseCarriedWolf(): void {
+    const wolf = this.carriedWolf;
+    this.carriedWolf = null;
+    this.player.carrying = null;
+    if (!wolf) return;
+    wolf.mode = "chase";
+    wolf.provoked = true;
+    wolf.lostTimer = 0;
+    this.events.push({ type: "drop", kind: "beast" });
+  }
+
+  /**
+   * 抓着的那只：跟着玩家走，并且持续啃他。
+   *
+   * 位置直接钉在玩家身前 —— 狼的渲染按 wolf.x/z 画，所以"扛在身上"这件事
+   * 不需要渲染层配合，它自己就跟着走了。
+   */
+  private updateCarriedWolf(delta: number): void {
+    const wolf = this.carriedWolf;
+    if (!wolf) return;
+    if (wolf.mode === "dead") {
+      this.carriedWolf = null;
+      this.player.carrying = null;
+      return;
+    }
+    wolf.x = this.player.x + this.player.facing.x * 0.75;
+    wolf.z = this.player.z + this.player.facing.z * 0.75;
+    wolf.facing = { x: -this.player.facing.x, z: -this.player.facing.z };
+    // 和狼咬人走同一条记账（见构造里的 damagePlayer 闭包）：死因要算在这只狼头上，
+    // 否则结算页会说"体力耗尽"，而玩家明明是被自己手里那只咬死的。
+    this.player.health -= GRAB_STRUGGLE_DPS * delta;
+    this.healthDamageCause = "killed";
+    this.healthDamageAttacker = wolf.kind;
+  }
+
+  /** 飞行中的狼：直线推进，撞到活物两败俱伤，射程走完就摔在地上。 */
+  private updateThrownWolves(delta: number): void {
+    for (let index = this.thrownWolves.length - 1; index >= 0; index -= 1) {
+      const flight = this.thrownWolves[index];
+      const wolf = flight.wolf;
+      if (wolf.mode !== "airborne") {
+        this.thrownWolves.splice(index, 1);
+        continue;
+      }
+      const step = BEAST_THROW_SPEED * delta;
+      wolf.x += flight.dirX * step;
+      wolf.z += flight.dirZ * step;
+      flight.travelled += step;
+
+      let hit = false;
+      for (const other of this.wolves) {
+        if (other === wolf || other.mode === "dead" || other.mode === "airborne") continue;
+        if (distanceSquared(wolf, other) > BEAST_HIT_RADIUS * BEAST_HIT_RADIUS) continue;
+        other.health -= BEAST_IMPACT_DAMAGE;
+        other.hurtFlash = 0.18;
+        other.provoked = true;
+        if (other.health <= 0) { other.mode = "dead"; this.wolfDirector.killWolf(other); }
+        this.events.push({ type: "wolf-hit", wolfId: other.id });
+        hit = true;
+        break;
+      }
+      if (!hit && flight.travelled < BEAST_THROW_RANGE) continue;
+
+      // 被扔的那只无论砸没砸到都要摔一下 —— 空手扔出去也得付出代价，
+      // 否则"抓起来丢开"就是零成本的脱身手段。
+      wolf.health -= BEAST_SELF_DAMAGE;
+      wolf.hurtFlash = 0.18;
+      this.events.push({ type: "wolf-hit", wolfId: wolf.id });
+      if (wolf.health <= 0) {
+        wolf.mode = "dead";
+        this.wolfDirector.killWolf(wolf);
+      } else {
+        wolf.mode = "chase";
+        wolf.provoked = true;
+        wolf.lostTimer = 0;
+        wolf.attackCooldown = Math.max(wolf.attackCooldown, BEAST_LAND_STUN);
+      }
+      this.events.push({ type: "beast-landed", wolfId: wolf.id, hit });
+      this.thrownWolves.splice(index, 1);
+    }
+  }
+
   private throwStone(): void {
     const player = this.player;
     player.attackCooldown = STONE_THROW_COOLDOWN * this.getConditionCooldownScale();
@@ -1619,9 +1819,13 @@ export class GameSimulation {
 
   requestAttack(): void {
     if (!this.running || this.departTimer > 0 || this.player.attackCooldown > 0) return;
-    // 扛着大石时这颗键改成"扔"。其余搬运物（油桶、木桩）仍然挥不了刀。
+    // 扛着大石 / 扛着狼时这颗键都是"扔"。油桶和木桩仍然挥不了刀。
     if (this.player.carrying === "stone") {
       this.throwStone();
+      return;
+    }
+    if (this.player.carrying === "beast") {
+      this.throwCarriedWolf();
       return;
     }
     if (this.player.carrying) return;
@@ -2186,6 +2390,9 @@ export class GameSimulation {
         ? { action: "load", text: loc("hint.loadFuel", { loaded: this.truck.loaded, required: FUEL_REQUIRED }) }
         : { action: "drop", text: loc("hint.dropFuel") };
     }
+    if (this.player.carrying === "beast") {
+      return { action: "drop", text: loc("hint.dropBeast") };
+    }
     if (this.player.carrying) {
       return this.player.carrying === "stake"
         ? { action: "drop", text: loc("hint.dropStake") }
@@ -2194,6 +2401,8 @@ export class GameSimulation {
     if (this.truck.loaded >= FUEL_REQUIRED && distance(this.player, this.truck) <= TRUCK_BOARD_REACH) {
       return { action: "board", text: loc("hint.board") };
     }
+    // 和 requestInteraction 同序：发车之后、拾取之前。
+    if (this.findGrabbableWolf()) return { action: "grab", text: loc("hint.grabWolf") };
     // 与 requestInteraction 同一套优先级：火塘只在比脚边的东西更近时才占住 E。
     if (this.getInventoryCount("wood") > 0) {
       const hearth = this.findNearestHearth(FIRE_WARMTH_RADIUS);
@@ -3505,6 +3714,11 @@ export class GameSimulation {
   private dropCarriedItem(): void {
     const kind = this.player.carrying;
     if (!kind) return;
+    // 活狼没法"放在地上"，只能松手 —— 它落地就恢复行动。
+    if (kind === "beast") {
+      this.releaseCarriedWolf();
+      return;
+    }
     const dropPosition = {
       x: this.player.x + this.player.facing.x * 2.05,
       z: this.player.z + this.player.facing.z * 2.05,

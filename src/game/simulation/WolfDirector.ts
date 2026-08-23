@@ -497,6 +497,14 @@ export class WolfDirector {
       wolf.deathTimer -= delta;
       return;
     }
+    /*
+     * 被抓在手里 / 正在飞 —— 这两拍里狼**不由自己做主**：位置由玩家的手或抛物线写，
+     * 见 GameSimulation.updateCarriedWolf / updateThrownWolves。
+     *
+     * 冷却和受击闪光仍然照常递减（上面两行已经做了）：硬直要能自然走完，
+     * 否则被扔出去的那只落地后会永远带着眩晕。除此之外它不寻路、不咬人、不撤退。
+     */
+    if (wolf.mode === "grabbed" || wolf.mode === "airborne") return;
 
     if (wolf.mode === "retreating") wolf.lostTimer += delta;
     // 夜袭狼靠视野主动锁定；白天的普通野狼只有被激怒后才会追击；精英狼与守巢犬昼夜都在猎杀。

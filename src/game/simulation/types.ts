@@ -25,7 +25,11 @@ export interface LocalizedText {
  * 也**打不了架**（requestAttack 直接被 carrying 挡掉）。于是"取油"这件事
  * 天然是一段没有还手能力的路程 —— 你得先决定这一趟安不安全。
  */
-export type CarryKind = "stone" | "stake" | "fuel";
+/**
+ * 双手搬运物。**"beast" 是抓在手里的活狼** —— 它不是道具，是一只暂时被剥夺了 AI 的狼，
+ * 见 GameSimulation.grabWolf 与 WolfMode 的 "grabbed"。
+ */
+export type CarryKind = "stone" | "stake" | "fuel" | "beast";
 /** 地面上散落的可拾取物仍然有两种；木头进背包，大石上手。 */
 export type GroundItemKind = "wood" | "stone";
 export type InventoryItemKind =
@@ -73,7 +77,15 @@ export type ArmorKind =
   | "scale-1" | "scale-2" | "scale-3"
   | "hide-1" | "hide-2" | "hide-3";
 export type WolfKind = "small" | "large" | "elite";
-export type WolfMode = "entering" | "patrol" | "chase" | "raid" | "retreating" | "dead";
+/**
+ * "grabbed" 与 "airborne" 是被玩家抓起来和扔出去的那两拍。
+ *
+ * 它们和别的模式**不是一类东西**：其余五个描述这只狼想干什么，这两个描述它
+ * **暂时不由自己做主**。所以 WolfDirector 的每狼更新会在最外层直接跳过它们 ——
+ * 位置由玩家的肩膀或抛物线驱动，不走寻路、不咬人、也不该被别的狼当障碍。
+ */
+export type WolfMode = "entering" | "patrol" | "chase" | "raid" | "retreating" | "dead"
+  | "grabbed" | "airborne";
 /**
  * 野狼白天在地图上游荡且只在被激怒后反击；夜袭狼从狗巢涌出且不掉狼皮；
  * **守巢犬**是第三种：从开局就趴在巢边那三桶汽油旁边，昼夜常驻、不撤退、不重生。
@@ -554,6 +566,12 @@ export type GameEvent =
   | { type: "combo"; stacks: number }
   /** 刀线击退：把狼推开并延后它的咬击。 */
   | { type: "knockback"; wolfId: number }
+  /** 抓起一只狼。 */
+  | { type: "beast-grabbed"; wolfId: number }
+  /** 把手里的狼扔出去。 */
+  | { type: "beast-thrown"; wolfId: number }
+  /** 被扔的狼落地或砸中东西。hit 为 true 表示砸到了另一只活物。 */
+  | { type: "beast-landed"; wolfId: number; hit: boolean }
   /** 扔出一块石头。 */
   | { type: "stone-thrown" }
   /** 石头落地（砸中或飞完全程都会发）。hit 为 true 表示砸到了活物。 */
@@ -589,7 +607,7 @@ export type GameEvent =
   | { type: "game-over"; cause: DeathCause; condition: SurvivalCondition; killer: WolfKind | null };
 
 export interface InteractionHint {
-  action: "pickup" | "drop" | "ignite" | "feed" | "cactus" | "mine" | "chop" | "well" | "load" | "board" | "none";
+  action: "pickup" | "drop" | "ignite" | "feed" | "cactus" | "mine" | "chop" | "well" | "load" | "board" | "grab" | "none";
   text: LocalizedText;
 }
 

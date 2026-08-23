@@ -55,6 +55,8 @@ const TOAST_MIN_SECONDS = 0.9;
 const TOAST_STALE_SECONDS = 6;
 
 const ACTION_ICON: Record<InteractionHint["action"], string> = {
+  // 抓狼复用"拾取"那张图：图集里没有专门的抓取图标，而这一下本质就是把东西捧起来。
+  grab: "pickup",
   pickup: "pickup",
   drop: "drop",
   ignite: "ignite",
@@ -546,7 +548,8 @@ export class HudController {
     this.attackButton.classList.toggle("hint-pulse", attack);
     // 扛着大石时改写成"投掷"。每拍都写，因为切语言会把它刷回静态文案。
     if (this.attackLabel) {
-      const throwing = this.simulation.player.carrying === "stone";
+      const carried = this.simulation.player.carrying;
+      const throwing = carried === "stone" || carried === "beast";
       this.attackLabel.textContent = t(throwing ? "hud.throw.label" : "hud.attack.label");
     }
     this.actionButton.classList.toggle("hint-pulse", action);
