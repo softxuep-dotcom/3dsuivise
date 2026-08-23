@@ -792,6 +792,8 @@ export class GameSimulation {
   /** 玩家正扛着的那桶油；放下时要把同一个对象放回地面，而不是新建一桶。 */
   /** 飞行中的石头。用完的槽位留着复用，不 splice —— 和 items 是同一套写法。 */
   readonly thrownStones: ThrownStone[] = [];
+  /** getLitFires 的复用数组，见那里的注释。 */
+  private readonly litFireScratch: Vec2[] = [];
   private carriedBarrel: FuelBarrelState | null = null;
   /** >0 表示卡车正在驶离，玩家已经在车上，只剩结算动画。 */
   private departTimer = 0;
@@ -961,6 +963,7 @@ export class GameSimulation {
       noteActivity: () => sim.noteActivity(),
       getDefense: () => sim.getDefense(),
       getPhaseDuration: () => sim.getPhaseDuration(),
+      getLitFires: () => sim.getLitFires(),
       getPlayerShelter: () => sim.getPlayerShelter(),
       getPlayerArmor: () => ARMOR_STATS[sim.player.armor],
       createDrop: (position, kind, angleOffset, count) => sim.createDrop(position, kind, angleOffset, count),
@@ -2261,6 +2264,21 @@ export class GameSimulation {
       bestDistance = value;
     }
     return best;
+  }
+
+  /**
+   * 此刻还燃着的火源，给狼群做排斥用（见 WolfDirector 的 FIRE_FEAR_RADIUS）。
+   *
+   * 每帧每只狼都会问一次，所以数组是**复用**的：清空再填，不新建。
+   * 夜里三十只狗 × 60 帧 = 每秒一千八百次调用，这里 new 一个数组就是每秒一千八百个垃圾。
+   */
+  getLitFires(): ReadonlyArray<Vec2> {
+    this.litFireScratch.length = 0;
+    for (const camp of this.world.camps) {
+      if (this.camps[camp.id].fuel <= 0) continue;
+      this.litFireScratch.push(camp);
+    }
+    return this.litFireScratch;
   }
 
   /**

@@ -125,6 +125,78 @@ const GUARD_AGGRO_RADIUS = 8;
 
 const GUARD_LEASH = 22;
 
+/*
+ * 狼怕火。
+ *
+ * ## 改之前：火对狼是**零作用**
+ *
+ * 这个游戏的全部叙事是"守住那堆火"，而在这条改动之前，WolfDirector 里 hearth 和 fire
+ * 的出现次数是 0 —— 狼可以从火里直接穿过去咬人。篝火只是一个温度计。
+ *
+ * 后果是它把玩家钉在一个不设防的地方：夜里体温 −1.05/s，只有火边是 +2.11/s，
+ * 所以你**必须**待在火边；而火边和别处一样危险。实测死亡集中在入夜第 57 秒，
+ * 位置多半就在火堆脚下。玩家被逼着站在那里，然后死在那里。
+ *
+ * ## 改之后：安全但不绝对安全
+ *
+ * 半径内给狼一个向外的转向权重，越靠近火权重越大，但**上限只到 0.75** ——
+ * 也就是说狼在火心处仍保留四分之一的自身意图。它进得来，只是慢、而且走弧线。
+ *
+ * 为什么不做成硬墙：开局口粮送 3 根柴 = 285 秒火，足够盖住 100 秒的第一夜。
+ * 做成进不来的话，最优解立刻变成"点着火站着不动"，整个夜晚消失。
+ * 留 25% 意图 + 减速，换来的是"狼在火光外围绕圈、伺机扑进来"，
+ * 而你仍然必须离开火边去捡柴 —— 火要烧下去，柴在外面。
+ *
+ * 精英狼完全不吃这一套：它是后期压力的来源，也是"守着火苟到天亮"这条路的答案。
+ */
+const FIRE_FEAR_RADIUS = 4.5;
+/**
+ * 火心处的排斥力，单位是"几倍于狼自己的前进意图"。
+ *
+ * 合力 = 意图(单位长) + 背火方向 × 排斥力，**不归一化**，模长直接当速度倍率。
+ * 于是存在一个净合力为零的**驻足距离**：排斥力 = 1 的那一圈。
+ *
+ *     排斥力 = 1.5 × (1 − 距离/4.5)  ⇒  驻足在 4.5 × (1 − 1/1.5) = 1.5 米
+ *
+ * 比这更近，合力朝外，狼会自己退出去；更远则照常扑过来，只是越近越慢。
+ *
+ * ## 为什么必须是"不归一化"
+ *
+ * 第一版写的是 `normalize(意图×(1−w) + 背火×w)`。而在最要紧的那个情形下 ——
+ * 玩家就站在火心、狼正对着扑过来 —— 这两个向量**恰好反向**：
+ *
+ *     (-1,0)×0.8 + (1,0)×0.2 = (-0.6,0) ── normalize ──▶ (-1,0)
+ *
+ * 被抵消掉的那部分，被归一化原样补了回来，狼以全速直冲火心。实测怕火只让它慢了 5%。
+ * 归一化会**丢掉合力的模长**，而排斥这件事的全部信息就在模长里。
+ *
+ * ## 驻足圈必须落在咬击距离**以内**
+ *
+ * 狼的咬击距离是 1.75 米（见 updateWolf 里的 playerDistance 判定）。
+ * 第一版把驻足圈放在 2.75 米，也就是咬击距离**之外** —— 玩家贴着火站就无敌，
+ * 而 tests/wolfPathing 那条"有足够多的攻营犬摸到咬击距离"立刻挂了五个营地。
+ * 那条回归是对的：夜袭必须真的能威胁到人，否则整个夜晚失去意义。
+ *
+ * 1.5 米落在 1.75 米**以内**，于是火的作用变成**拖慢并偏折**而不是挡住：
+ * 狼照样咬得到你，但要花更久、而且是绕着弧线贴上来 —— 那段时间就是你挥刀、
+ * 扔石头、或者干脆退后一步的窗口。
+ *
+ * 换句话说：火边不是一座岛，是一片泥沼。
+ *
+ * ## 半径为什么停在 4.5 而不是更宽
+ *
+ * 试过 6.5 米（排斥力同步降到 1.3，驻足圈仍精确落在 1.5 米，balance 不动）。
+ * **回归立刻挂了四个营地** —— 驻足圈虽然没变，但减速区变宽意味着攻营犬赶路的时间
+ * 大幅拉长，在一夜之内摸不到人。所以这个半径的上限不是由驻足圈定的，是由"夜袭
+ * 还来不来得及"定的。
+ *
+ * 顺带记一个**没解决**的错位：保暖半径是 10 米（FIRE_WARMTH_RADIUS），
+ * 而怕火半径只有 4.5 米。玩家在 10 米内就暖和，没有任何理由贴到 4.5 米里面来，
+ * 所以这份保护多数时候不生效。要让它真正起作用，得先给"贴着火站"一个独立的理由
+ * （比如取暖速度随距离衰减），那是另一笔账。
+ */
+const FIRE_FEAR_PUSH = 1.5;
+
 /**
  * 狼群 AI 需要的外部世界。
  *
@@ -167,6 +239,11 @@ export interface WolfWorld {
   hasMeleeLine(start: Vec2, end: Vec2): boolean;
   distanceToWorldEdge(point: Vec2): number;
   getSteeredDirection(entity: Vec2, desired: Vec2): Vec2;
+  /**
+   * 此刻还燃着的火源（营火 + 玩家搭的火盆）。狼群只要坐标，不关心是谁的火、还剩多少燃料。
+   * 每帧调一次，所以实现侧不要在里面分配新数组以外的东西。
+   */
+  getLitFires(): ReadonlyArray<Vec2>;
   getBarrierDamage(wolf: WolfState, armor: number): number;
   /**
    * 玩家护甲的闪避 / 反伤。狼群只需要这两个数，不该把整张 ARMOR_STATS 表
@@ -328,6 +405,39 @@ export class WolfDirector {
    *
    * 精英狼体型太重，免疫击退；它仍然只是普通狼种，不再拥有独立 BOSS 逻辑。
    */
+  /**
+   * 这只狼此刻有多怕火：0 = 不在任何火的影响里，1 = 站在火心。
+   *
+   * 顺带把"该往哪躲"写进 this.fireAway，**它只在本次返回之后的那几行内有效**。
+   * 用复用暂存而不是给 WolfState 加字段：这是逐帧的中间量，不是狼的状态，
+   * 挂到实体上会让它出现在每一次状态检视里，而它在任何别的时刻都没有意义。
+   *
+   * 只看**最近的那一堆**火，不做叠加：两堆火之间的合力方向没有直觉可言，
+   * 而玩家需要的是"离火越近狗越不敢来"这条简单规则。
+   */
+  /** getFireFear 的输出参数，见那里的注释。只在紧跟其后的几行内有效。 */
+  private readonly fireAway = { x: 0, z: 0 };
+
+  private getFireFear(wolf: WolfState): number {  // 返回排斥力，不是 0~1 的权重
+    // 精英狼不怕火 —— 见 FIRE_FEAR_RADIUS 那段末尾。
+    if (wolf.kind === "elite") return 0;
+    let bestSq = FIRE_FEAR_RADIUS * FIRE_FEAR_RADIUS;
+    let nearest: Vec2 | null = null;
+    for (const fire of this.ctx.getLitFires()) {
+      const value = distanceSquared(wolf, fire);
+      if (value >= bestSq) continue;
+      bestSq = value;
+      nearest = fire;
+    }
+    if (!nearest) return 0;
+    const away = direction(nearest, wolf);
+    this.fireAway.x = away.x;
+    this.fireAway.z = away.z;
+    // 边缘 0、火心 FIRE_FEAR_PUSH，中间线性。驻足圈落在排斥力 = 1 处。
+    const t = 1 - Math.sqrt(bestSq) / FIRE_FEAR_RADIUS;
+    return t * FIRE_FEAR_PUSH;
+  }
+
   applyKnockback(wolf: WolfState, stats: { knockback: number; knockbackStun: number }): void {
     if (stats.knockback <= 0 || wolf.kind === "elite") return;
     wolf.attackCooldown += stats.knockbackStun;
@@ -569,6 +679,41 @@ export class WolfDirector {
 
     let steered = this.ctx.getSteeredDirection(wolf, desired);
     /*
+     * 火光里犹豫一下。见 FIRE_FEAR_RADIUS 那段。
+     *
+     * 排在 getSteeredDirection **之后**：那一步躲的是墙和石头（"过不去"），
+     * 这一步躲的是火（"不想去"）。两者叠加的顺序无所谓物理，但放在后面
+     * 意味着怕火不会把狼推进墙里 —— 下面那道 canStepToward 兜底还会再纠一次。
+     */
+    const push = this.getFireFear(wolf);
+    let firePace = 1;
+    if (push > 0) {
+      /*
+       * 三个分量相加，**不归一化**，模长当速度倍率：
+       *
+       *   意图      单位长，朝它本来想去的地方
+       *   背火      × push，越靠近火越强；push = 1 的那一圈净径向力为零
+       *   切向      × orbit，绕着火转
+       *
+       * 切向这一项不是装饰，它是必需的。没有它，狼会在驻足圈上**完全静止** ——
+       * 而 tests/wolfPathing 里那条"不许有狗长时间钉在原地"的回归会立刻抓住它，
+       * 抓得也对：一只面朝猎物却一步不挪的狼，不论什么原因，看起来都像卡死。
+       *
+       * 加上之后行为变成"在火光外围来回游走、伺机扑进来"，既是想要的画面，
+       * 也天然满足那条回归。转向按 id 奇偶分左右，免得整群狗同向绕成一个圆环。
+       */
+      const orbit = Math.min(push, 1) * 0.9 * (wolf.id % 2 === 0 ? 1 : -1);
+      const blendX = steered.x + this.fireAway.x * push + -this.fireAway.z * orbit;
+      const blendZ = steered.z + this.fireAway.z * push + this.fireAway.x * orbit;
+      const magnitude = Math.hypot(blendX, blendZ);
+      if (magnitude < 1e-4) {
+        firePace = 0;
+      } else {
+        steered = { x: blendX / magnitude, z: blendZ / magnitude };
+        firePace = Math.min(1, magnitude);
+      }
+    }
+    /*
      * 最后一道兜底：选定的方向迈不动，就在它左右张开找一个迈得动的。
      *
      * 巡逻犬**不走流场**（它绕的是自己的锚点，不是玩家），所以一旦被地形卡住
@@ -585,11 +730,13 @@ export class WolfDirector {
       steered = this.ctx.findSteppableDirection(wolf, steered, collideWithItems) ?? steered;
     }
     wolf.facing = steered;
-    const pace = wolf.mode === "retreating"
+    const basePace = wolf.mode === "retreating"
       ? wolf.speed * 1.45
       : wolf.mode === "chase"
         ? wolf.speed * (wolf.role === "guard" ? 1.7 : 1.2)
         : wolf.speed;
+    // 减速和转向来自同一个合力，所以"绕圈"和"变慢"必然同步发生。
+    const pace = basePace * firePace;
     const beforeX = wolf.x;
     const beforeZ = wolf.z;
     /*
