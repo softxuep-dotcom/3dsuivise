@@ -12,6 +12,8 @@ import {
 } from "./geometry";
 import { campGatePosition, campLocalToWorld, isTerrainWalkable, terrainHeightAt, terrainSlopeAt } from "../terrain/TerrainModel";
 import { NavigationGrid } from "./NavigationGrid";
+import { ProjectileCarriedCombatSystem } from "./ProjectileCarriedCombatSystem";
+import type { ProjectileCarriedCombatWorld } from "./ProjectileCarriedCombatSystem";
 import { WolfDirector } from "./WolfDirector";
 import type { WolfWorld } from "./WolfDirector";
 import type {
@@ -39,7 +41,6 @@ import type {
   Phase,
   PlayerState,
   SurvivalCondition,
-  ThrownStone,
   Vec2,
   WolfKind,
   WolfState,
@@ -151,6 +152,17 @@ export interface EquipTier {
   attack?: number;
   /** 装备后的防御力绝对值。护甲线必填。 */
   defense?: number;
+}
+
+/** 卡车随装油进度逐级苏醒；规则状态与 Three.js 表现分开。 */
+export interface TruckPowerState {
+  loaded: number;
+  electrics: boolean;
+  headlights: boolean;
+  horn: boolean;
+  engine: boolean;
+  ready: boolean;
+  hornCooldown: number;
 }
 
 /**
@@ -572,107 +584,6 @@ const STAMINA_REST_REGEN = 7.5;   // 休息中
 const STAMINA_IDLE_REGEN = 1.6;   // 站着不动但没进入休息
 const STAMINA_ACTIVE_REGEN = 1.1; // 移动中：仍只有休息的 1/7，但走路不再是完全的死区
                                   // （0.5 时走满全图 200 秒才回满，而游戏大部分时间在走）
-/*
- * 投石。数值推导见 throwStone() 的头注释。
- * 射程 9 米对照近战 3.1~3.8 米：够到"狗已经看见你但还没扑到"的那一段，
- * 而不是变成一把可以站着点名的远程武器。
- */
-/*
- * 抓狼 / 扔狼。
- *
- * ## 为什么必须有门槛
- *
- * 健康的狼随手就能抓的话，"抓→扔→抓→扔"会直接删掉整个战斗系统。所以只有**此刻
- * 动不了**的狼抓得起来：正在硬直（刚被石头砸中或被击退）、或者血量已经跌破三成半。
- *
- * 这个门槛不是限制，**它是这套玩法的形状** —— 它逼出一条连招：
- *
- *     石头砸中（硬直 0.6 秒） → 冲上去抓起 → 扔向另一只狼
- *
- * 于是投石从"一次性远程"变成了起手技，而被扔的和被砸的**两只都掉血**。
- *
- * ## 抓着不能久
- *
- * 狼在手里挣扎，每秒啃掉 6 点血；加上搬运物本来就有的 0.54× 移速惩罚，
- * 抓起来就得赶紧扔，当不了盾牌。
- */
-/*
- * 扔油桶。
- *
- * ## 它不该是更好的武器
- *
- * 油桶是通关物资 —— 要六个才能走。如果扔桶比扔石头更疼，玩家就会满地乱扔桶，
- * 而它们本该在卡车上。所以数值走的是另一条路：**伤害很低，击退全场最大**。
- *
- *     石头   伤害 60   击退 1.6   射程 9    ← 打人的
- *     油桶   伤害 30   击退 2.4   射程 6    ← 推开的
- *
- * 它是一个**脱身键**，不是输出键：被咬住的时候把桶砸出去，狗被掀飞，你跑掉。
- *
- * ## 代价是自明的
- *
- * 桶落在你身后六米，而卡车在另一个方向 —— 你得回头去捡，而且很可能是在被追的时候。
- * 不需要任何额外惩罚，"我的货飞到反方向去了"本身就是代价。
- */
-/*
- * 油桶砸进火里 = 爆炸。
- *
- * ## 代价本来就在世界里
- *
- * 地图上 10 桶油，通关要 6 桶（见 placeBarrels 与 FUEL_REQUIRED）——
- * **玩家手上正好有 4 次爆炸**。这个弹药预算不是新加的资源，是世界里本来就有的余量。
- * 烧掉一桶就是烧掉四分之一的退路，而且它是不可逆的：placement 变 "spent"，
- * 这一桶从此不存在。
- *
- * ## 为什么这一下值得那个代价
- *
- * 95 点中心伤害一发带走小狼（72 血），大狼（160）掉六成；再加全场最大的击退。
- * 而且它**顺手把营火加满**（+95 秒，一根柴的量）—— 火现在是防御工事
- * （见 WolfDirector 的 FIRE_FEAR_PUSH），所以这一炸既清了场，也把你的阵地续上了。
- *
- * 触发条件只认**扔出去的**桶，不认放在火边的桶：抱着油桶穿过营地不该是个雷区。
- */
-const BARREL_BLAST_TRIGGER = 2.6;
-const BARREL_BLAST_RADIUS = 5.0;
-const BARREL_BLAST_DAMAGE = 95;
-/** 边缘仍有四成伤害 —— 站在圈边不该毫发无伤。 */
-const BARREL_BLAST_EDGE_SCALE = 0.4;
-const BARREL_BLAST_KNOCKBACK = 3.0;
-const BARREL_BLAST_STUN = 1.1;
-/** 爆炸顺手给营火添的秒数，正好一根柴。 */
-const BARREL_BLAST_FIRE_BONUS = 95;
-
-const BARREL_THROW_RANGE = 6;
-const BARREL_THROW_SPEED = 11;
-const BARREL_HIT_RADIUS = 1.05;
-const BARREL_THROW_DAMAGE = 30;
-const BARREL_KNOCKBACK = 2.4;
-const BARREL_KNOCKBACK_STUN = 0.9;
-
-const GRAB_REACH = 2.2;
-/** 血量跌破这个比例就抓得动，不必等硬直。 */
-const GRAB_HEALTH_FRACTION = 0.35;
-/** 挣扎伤害，点/秒。 */
-const GRAB_STRUGGLE_DPS = 6;
-/** 比石头近、比石头慢：一整只狼比一块石头难扔得多。 */
-const BEAST_THROW_RANGE = 7;
-const BEAST_THROW_SPEED = 13;
-const BEAST_HIT_RADIUS = 1.15;
-/** 砸中的那只吃这么多，被扔的那只吃 BEAST_SELF_DAMAGE。 */
-const BEAST_IMPACT_DAMAGE = 45;
-const BEAST_SELF_DAMAGE = 35;
-/** 落地后趴一会儿：这段时间它不追不咬，是玩家的收尾窗口。 */
-const BEAST_LAND_STUN = 1.4;
-
-const STONE_THROW_RANGE = 9;
-const STONE_THROW_SPEED = 15;
-const STONE_THROW_DAMAGE = 60;
-const STONE_HIT_RADIUS = 0.95;
-const STONE_KNOCKBACK = 1.6;
-const STONE_KNOCKBACK_STUN = 0.6;
-/** 比挥砍长一截：搬起一块大石再抡出去，本来就不是能连发的动作。 */
-const STONE_THROW_COOLDOWN = 0.75;
-
 const STAMINA_COST_CACTUS = 10;
 const STAMINA_COST_MINE = 15;
 /**
@@ -790,6 +701,10 @@ const TRUCK_BOARD_REACH = 4.5;
 /** 驶离速度与最长驶离时间（到边界就结算，这个上限只是保险）。 */
 const TRUCK_DEPART_SPEED = 11;
 const TRUCK_DEPART_MAX_SECONDS = 12;
+/** 三桶后，靠近卡车按行动键可用喇叭震退普通狼。 */
+const TRUCK_HORN_REACH = 6.4;
+const TRUCK_HORN_RADIUS = 18;
+const TRUCK_HORN_COOLDOWN = 45;
 
 export class GameSimulation {
   readonly world: WorldDefinition;
@@ -809,6 +724,7 @@ export class GameSimulation {
   readonly structures: PlacedStructure[] = [];
   readonly player: PlayerState;
   private readonly wolfDirector!: WolfDirector;
+  private readonly projectileCombat!: ProjectileCarriedCombatSystem;
   /** 狼群本体现在归 WolfDirector 管；这里保留同名入口，渲染层和 HUD 不用改。 */
   get wolves(): WolfState[] { return this.wolfDirector.wolves; }
   readonly critters: CritterState[] = [];
@@ -876,23 +792,13 @@ export class GameSimulation {
   private duskWarningSent = false;
   /** 胜利结算只跑一次。 */
   private victorySent = false;
-  /** 玩家正扛着的那桶油；放下时要把同一个对象放回地面，而不是新建一桶。 */
-  /** 飞行中的石头。用完的槽位留着复用，不 splice —— 和 items 是同一套写法。 */
-  readonly thrownStones: ThrownStone[] = [];
+  /** 渲染层保留原入口；飞行状态真正归 ProjectileCarriedCombatSystem 所有。 */
+  get thrownStones() { return this.projectileCombat.thrownStones; }
   /** getLitFires 的复用数组，见那里的注释。 */
   private readonly litFireScratch: Vec2[] = [];
-  /** 此刻抓在手里的那只狼。carrying === "beast" 时必定非空。 */
-  private carriedWolf: WolfState | null = null;
-  /**
-   * 飞行中的狼。狼本身留在 this.wolves 里（mode = "airborne"），这里只存飞行参数 ——
-   * 所以渲染层**一行都不用改**：它照常按 wolf.x/z 画，狼飞出去自然就画出来了。
-   */
-  private readonly thrownWolves: { wolf: WolfState; dirX: number; dirZ: number; travelled: number }[] = [];
-  /** 飞行中的油桶。和狼同一个技巧：桶留在 this.barrels 里，这里只存飞行参数。 */
-  private readonly thrownBarrels: { barrel: FuelBarrelState; dirX: number; dirZ: number; travelled: number }[] = [];
-  private carriedBarrel: FuelBarrelState | null = null;
   /** >0 表示卡车正在驶离，玩家已经在车上，只剩结算动画。 */
   private departTimer = 0;
+  private truckHornCooldown = 0;
   // 死因记录，供 UI 显示游戏结束文案
   deathCause: DeathCause | null = null;
   /** 真正补上致命一击的狼种；只有 deathCause === "killed" 时有值。 */
@@ -1005,6 +911,7 @@ export class GameSimulation {
     for (const [kind, count] of STARTING_RATION) this.addInventory(kind, count);
     this.navigation.rebuild(this.player, this.getFlowFieldObstacles());
     this.wolfDirector = new WolfDirector(this.createWolfWorld());
+    this.projectileCombat = new ProjectileCarriedCombatSystem(this.createProjectileCombatWorld());
   }
 
   /** 鹿模型下载完成后一次性启用猎物种群；重复调用不会重复撒怪。 */
@@ -1078,6 +985,41 @@ export class GameSimulation {
     };
   }
 
+  /**
+   * 投射/搬运战斗系统的全部依赖。
+   *
+   * 和 WolfWorld 一样，动态状态全部走 getter；模块可以杀狼、击退、落石，
+   * 但看不到昼夜推进、装备树、胜利结算等无关规则。
+   */
+  private createProjectileCombatWorld(): ProjectileCarriedCombatWorld {
+    const sim = this;
+    return {
+      get player() { return sim.player; },
+      get wolves() { return sim.wolves; },
+      get critters() { return sim.critters; },
+      get barrels() { return sim.barrels; },
+      get items() { return sim.items; },
+      get camps() { return sim.camps; },
+      get campDefinitions() { return sim.world.camps; },
+      random: () => sim.random(),
+      emit: (event) => { sim.events.push(event); },
+      noteActivity: () => sim.noteActivity(),
+      getConditionCooldownScale: () => sim.getConditionCooldownScale(),
+      damagePlayer: (amount, attacker) => {
+        if (amount <= 0) return;
+        sim.player.health -= amount;
+        sim.healthDamageCause = "killed";
+        sim.healthDamageAttacker = attacker.kind;
+      },
+      killWolf: (wolf) => sim.wolfDirector.killWolf(wolf),
+      knockbackWolf: (wolf, knockback, stun) => sim.wolfDirector.applyKnockback(wolf, {
+        knockback,
+        knockbackStun: stun,
+      }),
+      killCritter: (critter) => sim.killCritter(critter),
+    };
+  }
+
 
   start(): void {
     this.running = true;
@@ -1145,6 +1087,7 @@ export class GameSimulation {
     this.reviveGrace = Math.max(0, this.reviveGrace - delta);
     this.coolCooldown = Math.max(0, this.coolCooldown - delta);
     this.warmCooldown = Math.max(0, this.warmCooldown - delta);
+    this.truckHornCooldown = Math.max(0, this.truckHornCooldown - delta);
     if (!isMoving) this.player.idleTime += delta;
     this.navigationCountdown -= delta;
     if (this.navigationCountdown <= 0) {
@@ -1157,10 +1100,7 @@ export class GameSimulation {
     this.updateCacti();
     this.updateWells();
     this.updateStructures(delta);
-    this.updateThrownStones(delta);
-    this.updateCarriedWolf(delta);
-    this.updateThrownWolves(delta);
-    this.updateThrownBarrels(delta);
+    this.projectileCombat.update(delta);
     if (this.crittersEnabled) this.updateCritters(delta);
     if (this.wolvesEnabled) this.wolfDirector.updateWolves(delta);
     this.updateRest(delta);
@@ -1285,7 +1225,7 @@ export class GameSimulation {
 
     // 扛着油桶站在车尾 —— 这一按是装车而不是放地上。装车不可逆，
     // 所以判定半径（4.5）比拾取半径（2.6）宽：对着车找角度不该是玩法的一部分。
-    if (this.player.carrying === "fuel" && this.carriedBarrel
+    if (this.player.carrying === "fuel" && this.projectileCombat.hasCarriedBarrel
       && distance(this.player, this.truck) <= TRUCK_LOAD_REACH) {
       this.loadCarriedBarrel();
       return;
@@ -1304,13 +1244,20 @@ export class GameSimulation {
       && distance(this.player, this.truck) <= TRUCK_BOARD_REACH
       ? null : this.findGrabbableWolf();
     if (grabbable) {
-      this.grabWolf(grabbable);
+      this.projectileCombat.grabWolf(grabbable);
       return;
     }
 
     // 空手站在加满油的车边 = 发车。放在拾取之前，否则车边掉了根柴就永远上不了车。
     if (this.truck.loaded >= FUEL_REQUIRED && distance(this.player, this.truck) <= TRUCK_BOARD_REACH) {
       this.departWithTruck();
+      return;
+    }
+
+    // 三桶油之后，卡车第一次从“目标”变成一件能救场的工具。
+    // 只有附近确实有普通狼时才占 E，冷却期间则继续让出交互键。
+    if (this.canUseTruckHorn()) {
+      this.useTruckHorn();
       return;
     }
 
@@ -1331,10 +1278,7 @@ export class GameSimulation {
 
     const barrel = this.findNearestBarrel(FUEL_PICKUP_REACH);
     if (barrel) {
-      barrel.placement = "carried";
-      this.carriedBarrel = barrel;
-      this.player.carrying = "fuel";
-      this.events.push({ type: "pickup", kind: "fuel" });
+      this.projectileCombat.pickupBarrel(barrel);
       return;
     }
 
@@ -1420,11 +1364,9 @@ export class GameSimulation {
 
   /** 把手上这桶装进车斗。装满即可发车，但发车仍要玩家自己按一下。 */
   private loadCarriedBarrel(): void {
-    const barrel = this.carriedBarrel;
+    const barrel = this.projectileCombat.takeCarriedBarrel();
     if (!barrel) return;
     barrel.placement = "loaded";
-    this.carriedBarrel = null;
-    this.player.carrying = null;
     this.truck.loaded += 1;
     this.events.push({ type: "fuel-loaded", loaded: this.truck.loaded, required: FUEL_REQUIRED });
     this.events.push({
@@ -1432,6 +1374,37 @@ export class GameSimulation {
       key: this.truck.loaded >= FUEL_REQUIRED ? "msg.fuelFull" : "msg.fuelLoaded",
       params: { loaded: this.truck.loaded, required: FUEL_REQUIRED },
     });
+  }
+
+  getTruckPowerState(): TruckPowerState {
+    const loaded = this.truck.loaded;
+    return {
+      loaded,
+      electrics: loaded >= 1,
+      headlights: loaded >= 2,
+      horn: loaded >= 3,
+      engine: loaded >= 5,
+      ready: loaded >= FUEL_REQUIRED,
+      hornCooldown: this.truckHornCooldown,
+    };
+  }
+
+  /** 喇叭只在真有普通狼可震退时占住行动键，不妨碍车边装油和拾取。 */
+  private canUseTruckHorn(): boolean {
+    if (!this.getTruckPowerState().horn || this.truckHornCooldown > 0 || this.player.carrying) return false;
+    if (distance(this.player, this.truck) > TRUCK_HORN_REACH) return false;
+    return this.wolves.some((wolf) => wolf.mode !== "dead" && wolf.mode !== "retreating"
+      && wolf.mode !== "grabbed" && wolf.mode !== "airborne" && wolf.kind !== "elite"
+      && distanceSquared(wolf, this.truck) < TRUCK_HORN_RADIUS * TRUCK_HORN_RADIUS);
+  }
+
+  private useTruckHorn(): void {
+    if (!this.canUseTruckHorn()) return;
+    const affected = this.wolfDirector.repelFrom(this.truck, TRUCK_HORN_RADIUS);
+    this.truckHornCooldown = TRUCK_HORN_COOLDOWN;
+    this.noteActivity();
+    this.events.push({ type: "truck-horn", affected });
+    this.events.push({ type: "message", key: "msg.truckHorn", params: { count: affected } });
   }
 
   /**
@@ -1444,7 +1417,6 @@ export class GameSimulation {
     this.departTimer = TRUCK_DEPART_MAX_SECONDS;
     this.setResting(false);
     this.player.carrying = null;
-    this.carriedBarrel = null;
     this.events.push({ type: "truck-depart" });
     this.events.push({ type: "message", key: "msg.truckDepart" });
   }
@@ -1588,473 +1560,24 @@ export class GameSimulation {
     }
   }
 
-  /**
-   * 把扛着的大石扔出去。
-   *
-   * ## 为什么这颗按钮是空的
-   *
-   * requestAttack 第一行就 `this.player.carrying` 挡掉 —— 双手搬着东西时挥不了刀。
-   * 也就是说**扛着石头时攻击键本来什么都不做**。"扔"正好填进这个空槽：
-   * 不加控件、不加资源，同一块石头从"只能堵门"变成一道二选一。
-   *
-   * ## 数值为什么这么定
-   *
-   * 伤害 60 且**无视护甲** —— 它是一块石头，不是刃，护甲挡不住砸。参照系：
-   *
-   *     初始匕首 攻 30    小狼 72 血 / 防 1 → 29 实伤 → 三刀
-   *                      大狼 160 血 / 防 3 → 27 实伤 → 六刀
-   *     石头     砸 60    小狼砸完剩 12（补一刀就死）
-   *                      大狼砸掉 37%
-   *
-   * 所以它不是"更好的武器"，是**开局唯一能先发制人的手段**：装备为 0 的玩家
-   * 在被咬到之前有了一次出手机会。实测死亡集中在入夜第 57 秒、装备为 0、
-   * 死于 small/large —— 这一手正好落在那个缺口上。
-   *
-   * 击退 1.6 / 硬直 0.6 是全场最高（最好的刀是 0.7 / 0.4）。一块大石砸中就该把狗掀翻，
-   * 而且那 0.6 秒正是你补刀或者转身跑的窗口。精英狼不吃击退（applyKnockback 里挡着），
-   * 但照样吃伤害。
-   *
-   * **不扣劳力。** 战斗不和采集抢劳力预算是这个项目定过的规矩（见 requestAttack
-   * 里那段），扔石头的真实代价是那块石头本身 —— 它落在地上，要走过去才捡得回来。
-   */
-  /**
-   * 够得着、而且此刻动不了的那只狼。见 GRAB_REACH 那段的门槛说明。
-   *
-   * 硬直的判据是 attackCooldown —— 被石头砸中或被刀击退都会把它抬高，
-   * 也就是说"刚被你打了一下"和"抓得起来"是同一件事，玩家不需要另外学一套规则。
-   */
+  /** 够得着且已硬直/重伤的狼；判定与状态归投射战斗系统。 */
   findGrabbableWolf(): WolfState | null {
-    let best: WolfState | null = null;
-    let bestSq = GRAB_REACH * GRAB_REACH;
-    for (const wolf of this.wolves) {
-      if (wolf.mode === "dead" || wolf.mode === "grabbed" || wolf.mode === "airborne") continue;
-      const stunned = wolf.attackCooldown > 0.2;
-      const weak = wolf.health <= wolf.maxHealth * GRAB_HEALTH_FRACTION;
-      if (!stunned && !weak) continue;
-      const value = distanceSquared(this.player, wolf);
-      if (value >= bestSq) continue;
-      bestSq = value;
-      best = wolf;
-    }
-    return best;
+    return this.projectileCombat.findGrabbableWolf();
   }
 
-  private grabWolf(wolf: WolfState): void {
-    wolf.mode = "grabbed";
-    wolf.attackCooldown = Math.max(wolf.attackCooldown, 0.3);
-    this.carriedWolf = wolf;
-    this.player.carrying = "beast";
-    this.events.push({ type: "beast-grabbed", wolfId: wolf.id });
-  }
-
-  /**
-   * 把手里的狼扔出去。索敌口径和投石一致（身前 ±72°），只做转向辅助不做制导。
-   */
-  private throwCarriedWolf(): void {
-    const wolf = this.carriedWolf;
-    if (!wolf) {
-      this.player.carrying = null;
-      return;
-    }
-    const player = this.player;
-    player.attackCooldown = STONE_THROW_COOLDOWN * this.getConditionCooldownScale();
-    player.attackFlash = 0.22;
-
-    const target = this.wolves
-      .filter((other) => other !== wolf && other.mode !== "dead" && other.mode !== "airborne"
-        && distanceSquared(player, other) <= BEAST_THROW_RANGE * BEAST_THROW_RANGE
-        && dot(player.facing, direction(player, other)) >= 0.3)
-      .sort((a, b) => distanceSquared(player, a) - distanceSquared(player, b))[0];
-    if (target) player.facing = direction(player, target);
-
-    wolf.mode = "airborne";
-    wolf.x = player.x + player.facing.x * 0.9;
-    wolf.z = player.z + player.facing.z * 0.9;
-    this.thrownWolves.push({
-      wolf, dirX: player.facing.x, dirZ: player.facing.z, travelled: 0,
-    });
-    this.carriedWolf = null;
-    player.carrying = null;
-    this.noteActivity();
-    this.events.push({ type: "beast-thrown", wolfId: wolf.id });
-  }
-
-  /** 松手：把狼原地放下，它立刻恢复行动（而且很生气）。 */
-  private releaseCarriedWolf(): void {
-    const wolf = this.carriedWolf;
-    this.carriedWolf = null;
-    this.player.carrying = null;
-    if (!wolf) return;
-    wolf.mode = "chase";
-    wolf.provoked = true;
-    wolf.lostTimer = 0;
-    this.events.push({ type: "drop", kind: "beast" });
-  }
-
-  /**
-   * 抓着的那只：跟着玩家走，并且持续啃他。
-   *
-   * 位置直接钉在玩家身前 —— 狼的渲染按 wolf.x/z 画，所以"扛在身上"这件事
-   * 不需要渲染层配合，它自己就跟着走了。
-   */
-  private updateCarriedWolf(delta: number): void {
-    const wolf = this.carriedWolf;
-    if (!wolf) return;
-    if (wolf.mode === "dead") {
-      this.carriedWolf = null;
-      this.player.carrying = null;
-      return;
-    }
-    wolf.x = this.player.x + this.player.facing.x * 0.75;
-    wolf.z = this.player.z + this.player.facing.z * 0.75;
-    wolf.facing = { x: -this.player.facing.x, z: -this.player.facing.z };
-    // 和狼咬人走同一条记账（见构造里的 damagePlayer 闭包）：死因要算在这只狼头上，
-    // 否则结算页会说"体力耗尽"，而玩家明明是被自己手里那只咬死的。
-    this.player.health -= GRAB_STRUGGLE_DPS * delta;
-    this.healthDamageCause = "killed";
-    this.healthDamageAttacker = wolf.kind;
-  }
-
-  /** 飞行中的狼：直线推进，撞到活物两败俱伤，射程走完就摔在地上。 */
-  private updateThrownWolves(delta: number): void {
-    for (let index = this.thrownWolves.length - 1; index >= 0; index -= 1) {
-      const flight = this.thrownWolves[index];
-      const wolf = flight.wolf;
-      if (wolf.mode !== "airborne") {
-        this.thrownWolves.splice(index, 1);
-        continue;
-      }
-      const step = BEAST_THROW_SPEED * delta;
-      wolf.x += flight.dirX * step;
-      wolf.z += flight.dirZ * step;
-      flight.travelled += step;
-
-      let hit = false;
-      for (const other of this.wolves) {
-        if (other === wolf || other.mode === "dead" || other.mode === "airborne") continue;
-        if (distanceSquared(wolf, other) > BEAST_HIT_RADIUS * BEAST_HIT_RADIUS) continue;
-        other.health -= BEAST_IMPACT_DAMAGE;
-        other.hurtFlash = 0.18;
-        other.provoked = true;
-        if (other.health <= 0) { other.mode = "dead"; this.wolfDirector.killWolf(other); }
-        this.events.push({ type: "wolf-hit", wolfId: other.id });
-        hit = true;
-        break;
-      }
-      if (!hit && flight.travelled < BEAST_THROW_RANGE) continue;
-
-      // 被扔的那只无论砸没砸到都要摔一下 —— 空手扔出去也得付出代价，
-      // 否则"抓起来丢开"就是零成本的脱身手段。
-      wolf.health -= BEAST_SELF_DAMAGE;
-      wolf.hurtFlash = 0.18;
-      this.events.push({ type: "wolf-hit", wolfId: wolf.id });
-      if (wolf.health <= 0) {
-        wolf.mode = "dead";
-        this.wolfDirector.killWolf(wolf);
-      } else {
-        wolf.mode = "chase";
-        wolf.provoked = true;
-        wolf.lostTimer = 0;
-        wolf.attackCooldown = Math.max(wolf.attackCooldown, BEAST_LAND_STUN);
-      }
-      this.events.push({ type: "beast-landed", wolfId: wolf.id, hit });
-      this.thrownWolves.splice(index, 1);
-    }
-  }
-
-  /**
-   * 把扛着的油桶扔出去。索敌口径和投石、扔狼一致（身前 ±72°）。
-   *
-   * 落地后 placement 回到 "ground"，走过去就能重新扛起 —— 桶不会丢，只会跑到不该去的地方。
-   */
-  private throwCarriedBarrel(): void {
-    const barrel = this.carriedBarrel;
-    if (!barrel) {
-      this.player.carrying = null;
-      return;
-    }
-    const player = this.player;
-    player.attackCooldown = STONE_THROW_COOLDOWN * this.getConditionCooldownScale();
-    player.attackFlash = 0.22;
-
-    /*
-     * **火优先于狗。**
-     *
-     * 自动索敌本来会把桶甩向最近的那只狼 —— 而玩家面朝火站着的时候，
-     * 他想要的显然是那一炸。让索敌先看火，玩家就能用"朝哪边站"来选：
-     * 面朝火 = 炸，面朝狗 = 砸。这是这套自动索敌里唯一一处需要玩家能推翻它的地方。
-     */
-    const blastTarget = this.getBarrelBlastTarget();
-    const target = blastTarget ?? this.wolves
-      .filter((wolf) => wolf.mode !== "dead" && wolf.mode !== "airborne"
-        && distanceSquared(player, wolf) <= BARREL_THROW_RANGE * BARREL_THROW_RANGE
-        && dot(player.facing, direction(player, wolf)) >= 0.3)
-      .sort((a, b) => distanceSquared(player, a) - distanceSquared(player, b))[0];
-    if (target) player.facing = direction(player, target);
-
-    barrel.placement = "airborne";
-    barrel.x = player.x + player.facing.x * 0.9;
-    barrel.z = player.z + player.facing.z * 0.9;
-    this.thrownBarrels.push({
-      barrel, dirX: player.facing.x, dirZ: player.facing.z, travelled: 0,
-    });
-    this.carriedBarrel = null;
-    player.carrying = null;
-    this.noteActivity();
-    this.events.push({ type: "barrel-thrown" });
-  }
-
-  /** 飞行中的油桶：撞到狼就把它掀开，射程走完落地变回可捡的桶。 */
-  private updateThrownBarrels(delta: number): void {
-    for (let index = this.thrownBarrels.length - 1; index >= 0; index -= 1) {
-      const flight = this.thrownBarrels[index];
-      const barrel = flight.barrel;
-      if (barrel.placement !== "airborne") {
-        this.thrownBarrels.splice(index, 1);
-        continue;
-      }
-      const step = BARREL_THROW_SPEED * delta;
-      barrel.x += flight.dirX * step;
-      barrel.z += flight.dirZ * step;
-      flight.travelled += step;
-
-      // 先看火：飞过火塘上方就炸，不必等落地。瞄准的是火，不是狗。
-      const fire = this.findLitFireNear(barrel, BARREL_BLAST_TRIGGER);
-      if (fire) {
-        this.detonateBarrel(barrel, fire);
-        this.thrownBarrels.splice(index, 1);
-        continue;
-      }
-
-      let hit = false;
-      for (const wolf of this.wolves) {
-        if (wolf.mode === "dead" || wolf.mode === "grabbed" || wolf.mode === "airborne") continue;
-        if (distanceSquared(barrel, wolf) > BARREL_HIT_RADIUS * BARREL_HIT_RADIUS) continue;
-        wolf.health -= BARREL_THROW_DAMAGE;
-        wolf.hurtFlash = 0.18;
-        wolf.provoked = true;
-        wolf.lostTimer = 0;
-        if (wolf.health <= 0) {
-          wolf.mode = "dead";
-          this.wolfDirector.killWolf(wolf);
-        } else {
-          if (wolf.mode !== "retreating") wolf.mode = "chase";
-          this.wolfDirector.applyKnockback(wolf, {
-            knockback: BARREL_KNOCKBACK, knockbackStun: BARREL_KNOCKBACK_STUN,
-          });
-        }
-        this.events.push({ type: "wolf-hit", wolfId: wolf.id });
-        hit = true;
-        break;
-      }
-      if (!hit && flight.travelled < BARREL_THROW_RANGE) continue;
-      barrel.placement = "ground";
-      barrel.rotation = this.random() * Math.PI * 2;
-      this.thrownBarrels.splice(index, 1);
-    }
-  }
-
-  /**
-   * 扛着油桶、面朝一堆够得着的火 —— 这一下按下去会炸。
-   *
-   * **这个方法的存在只为一件事：让按钮说出来。** HUD 拿它把攻击键的字从"投掷"换成"爆破"
-   * （见 HudController），于是玩家在**正好用得上的那一刻**看见这个技能，
-   * 而不需要有人教、也不需要自己想到"把油桶砸进火里会怎样"。
-   *
-   * 没有这一条，这就是个这辈子都不会被发现的技能。
-   *
-   * 要求面朝（dot ≥ 0.35）而不是只看距离：营火半径 10 米几乎盖住整座营地，
-   * 只看距离的话，玩家在营地里扛着桶走动时按钮会一直闪"爆破"，那就成噪音了。
-   */
+  /** 面朝可爆破火源时的目标；预算耗尽后返回 null，HUD 不再承诺“爆破”。 */
   getBarrelBlastTarget(): CampDefinition | null {
-    if (this.player.carrying !== "fuel") return null;
-    let best: CampDefinition | null = null;
-    let bestSq = BARREL_THROW_RANGE * BARREL_THROW_RANGE;
-    for (const camp of this.world.camps) {
-      if (this.camps[camp.id].fuel <= 0) continue;
-      const value = distanceSquared(this.player, camp);
-      if (value >= bestSq) continue;
-      if (dot(this.player.facing, direction(this.player, camp)) < 0.35) continue;
-      bestSq = value;
-      best = camp;
-    }
-    return best;
+    return this.projectileCombat.getBarrelBlastTarget();
   }
 
-  /** 某个点附近有没有燃着的火塘。爆炸判定用，和玩家取暖那套查询分开（这里查的是任意点）。 */
-  private findLitFireNear(point: Vec2, maxDistance: number): CampDefinition | null {
-    let best: CampDefinition | null = null;
-    let bestSq = maxDistance * maxDistance;
-    for (const camp of this.world.camps) {
-      if (this.camps[camp.id].fuel <= 0) continue;
-      const value = distanceSquared(point, camp);
-      if (value >= bestSq) continue;
-      bestSq = value;
-      best = camp;
-    }
-    return best;
+  /** 地图上仍可安全消耗的额外油桶数。 */
+  getFuelBlastBudget(): number {
+    return this.projectileCombat.getFuelBlastBudget();
   }
-
-  /**
-   * 轰。
-   *
-   * 伤害按距离从中心的 100% 衰减到边缘的 40%，不做遮挡判定 —— 爆炸绕得过石头。
-   * 击退借用刀线那套 applyKnockback（它按"离玩家的方向"推），在爆炸这个场景里
-   * 方向略有偏差，但玩家和火塘此刻几乎总是重叠的，肉眼看不出来，不值得再写一套。
-   */
-  private detonateBarrel(barrel: FuelBarrelState, camp: CampDefinition): void {
-    barrel.placement = "spent";
-    this.camps[camp.id].fuel = clamp(this.camps[camp.id].fuel + BARREL_BLAST_FIRE_BONUS, 0, 300);
-    for (const wolf of this.wolves) {
-      if (wolf.mode === "dead" || wolf.mode === "grabbed") continue;
-      const away = Math.sqrt(distanceSquared(camp, wolf));
-      if (away > BARREL_BLAST_RADIUS) continue;
-      const falloff = 1 - (1 - BARREL_BLAST_EDGE_SCALE) * (away / BARREL_BLAST_RADIUS);
-      wolf.health -= BARREL_BLAST_DAMAGE * falloff;
-      wolf.hurtFlash = 0.25;
-      wolf.provoked = true;
-      if (wolf.health <= 0) {
-        wolf.mode = "dead";
-        this.wolfDirector.killWolf(wolf);
-        continue;
-      }
-      // 空中的那只被炸下来，回到地面继续追。
-      if (wolf.mode === "airborne") wolf.mode = "chase";
-      this.wolfDirector.applyKnockback(wolf, {
-        knockback: BARREL_BLAST_KNOCKBACK, knockbackStun: BARREL_BLAST_STUN,
-      });
-      this.events.push({ type: "wolf-hit", wolfId: wolf.id });
-    }
-    // 震屏由渲染层接 barrel-blast 事件自己做 —— 模拟层不认识相机。
-    this.events.push({ type: "barrel-blast", x: camp.x, z: camp.z });
-  }
-
-  private throwStone(): void {
-    const player = this.player;
-    player.attackCooldown = STONE_THROW_COOLDOWN * this.getConditionCooldownScale();
-    player.attackFlash = 0.22;
-
-    /*
-     * 索敌和刀一样只做**转向辅助**，不做制导：石头出手之后就沿直线飞，
-     * 狗跑开了就砸空。锥角比刀宽（dot ≥ 0.3，约 ±72°），因为扔比砍容错高，
-     * 但仍然要求目标在身前 —— 背后的狗砸不到。
-     */
-    const inCone = <T extends Vec2>(list: T[], alive: (item: T) => boolean): T | undefined => list
-      .filter((item) => alive(item)
-        && distanceSquared(player, item) <= STONE_THROW_RANGE * STONE_THROW_RANGE
-        && dot(player.facing, direction(player, item)) >= 0.3)
-      .sort((a, b) => distanceSquared(player, a) - distanceSquared(player, b))[0];
-    const target = inCone(this.wolves, (wolf) => wolf.mode !== "dead")
-      ?? inCone(this.critters, (critter) => critter.mode !== "dead");
-    if (target) player.facing = direction(player, target);
-
-    const slot = this.thrownStones.find((stone) => !stone.active);
-    const stone: ThrownStone = slot ?? {
-      id: this.thrownStones.length, x: 0, z: 0, dirX: 0, dirZ: 0,
-      travelled: 0, progress: 0, active: true,
-    };
-    // 从身前一点出手，免得第一帧就判定成"砸中脚边的自己人"。
-    stone.x = player.x + player.facing.x * 0.8;
-    stone.z = player.z + player.facing.z * 0.8;
-    stone.dirX = player.facing.x;
-    stone.dirZ = player.facing.z;
-    stone.travelled = 0;
-    stone.progress = 0;
-    stone.active = true;
-    if (!slot) this.thrownStones.push(stone);
-
-    player.carrying = null;
-    this.noteActivity();
-    this.events.push({ type: "stone-thrown" });
-  }
-
-  /** 飞行中的石头：直线推进，撞到活物就结算，射程走完就落地。 */
-  private updateThrownStones(delta: number): void {
-    for (const stone of this.thrownStones) {
-      if (!stone.active) continue;
-      const step = STONE_THROW_SPEED * delta;
-      stone.x += stone.dirX * step;
-      stone.z += stone.dirZ * step;
-      stone.travelled += step;
-      stone.progress = Math.min(1, stone.travelled / STONE_THROW_RANGE);
-
-      let hit = false;
-      for (const wolf of this.wolves) {
-        if (wolf.mode === "dead") continue;
-        if (distanceSquared(stone, wolf) > STONE_HIT_RADIUS * STONE_HIT_RADIUS) continue;
-        // 无视护甲：石头不是刃。
-        wolf.health -= STONE_THROW_DAMAGE;
-        wolf.hurtFlash = 0.18;
-        wolf.provoked = true;
-        wolf.lostTimer = 0;
-        if (wolf.health <= 0) {
-          wolf.mode = "dead";
-          this.wolfDirector.killWolf(wolf);
-        } else {
-          if (wolf.mode !== "retreating") wolf.mode = "chase";
-          this.wolfDirector.applyKnockback(wolf, {
-            knockback: STONE_KNOCKBACK, knockbackStun: STONE_KNOCKBACK_STUN,
-          });
-        }
-        this.events.push({ type: "wolf-hit", wolfId: wolf.id });
-        hit = true;
-        break;
-      }
-      if (!hit) {
-        for (const critter of this.critters) {
-          if (critter.mode === "dead") continue;
-          if (distanceSquared(stone, critter) > STONE_HIT_RADIUS * STONE_HIT_RADIUS) continue;
-          critter.health -= STONE_THROW_DAMAGE;
-          if (critter.health <= 0) this.killCritter(critter);
-          hit = true;
-          break;
-        }
-      }
-      if (!hit && stone.travelled < STONE_THROW_RANGE) continue;
-      stone.active = false;
-      this.landStone(stone);
-      this.events.push({ type: "stone-landed", hit });
-    }
-  }
-
-  /**
-   * 石头落地变回地上的散石。
-   *
-   * `placed: false` 而不是 true —— 扔出去的是**散石**，不是垒好的路障。
-   * 两者的区别在拾取：placed 的石头要先拆才能动，散石走过去就能捡。
-   * 这一条是"堵门 vs 砸狗"这个选择可逆的全部原因。
-   */
-  private landStone(stone: ThrownStone): void {
-    const existing = this.items.find((item) => !item.active);
-    const item: GroundItem = existing ?? {
-      id: this.items.length, x: stone.x, z: stone.z, kind: "stone",
-      hp: 1, placed: false, active: true, rotation: 0,
-    };
-    item.x = stone.x;
-    item.z = stone.z;
-    item.kind = "stone";
-    item.hp = BARRIER_STATS.stone.hp;
-    item.placed = false;
-    item.active = true;
-    item.rotation = this.random() * Math.PI * 2;
-    if (!existing) this.items.push(item);
-  }
-
   requestAttack(): void {
     if (!this.running || this.departTimer > 0 || this.player.attackCooldown > 0) return;
-    // 扛着大石 / 扛着狼时这颗键都是"扔"。油桶和木桩仍然挥不了刀。
-    if (this.player.carrying === "stone") {
-      this.throwStone();
-      return;
-    }
-    if (this.player.carrying === "beast") {
-      this.throwCarriedWolf();
-      return;
-    }
-    if (this.player.carrying === "fuel") {
-      this.throwCarriedBarrel();
-      return;
-    }
+    // 石头、活狼和油桶的投掷、飞行与命中都由独立系统结算。
+    if (this.projectileCombat.tryAttack()) return;
     if (this.player.carrying) return;
     this.noteActivity();
     const stats = WEAPON_STATS[this.player.weapon];
@@ -2630,6 +2153,7 @@ export class GameSimulation {
     }
     // 和 requestInteraction 同序：发车之后、拾取之前。
     if (this.findGrabbableWolf()) return { action: "grab", text: loc("hint.grabWolf") };
+    if (this.canUseTruckHorn()) return { action: "horn", text: loc("hint.horn") };
     // 与 requestInteraction 同一套优先级：火塘只在比脚边的东西更近时才占住 E。
     if (this.getInventoryCount("wood") > 0) {
       const hearth = this.findNearestHearth(FIRE_WARMTH_RADIUS);
@@ -2779,7 +2303,7 @@ export class GameSimulation {
     nearest: { distance: number; bearing: number; guarded: boolean } | null;
   } {
     let nearest: { distance: number; bearing: number; guarded: boolean } | null = null;
-    if (!this.carriedBarrel) {
+    if (!this.projectileCombat.hasCarriedBarrel) {
       for (const barrel of this.barrels) {
         if (barrel.placement !== "ground") continue;
         const value = distance(this.player, barrel);
@@ -2797,7 +2321,7 @@ export class GameSimulation {
     return {
       loaded: this.truck.loaded,
       required: FUEL_REQUIRED,
-      carrying: this.carriedBarrel !== null,
+      carrying: this.projectileCombat.hasCarriedBarrel,
       truckDistance: distance(this.player, this.truck),
       nearest,
     };
@@ -3943,7 +3467,7 @@ export class GameSimulation {
     if (!kind) return;
     // 活狼没法"放在地上"，只能松手 —— 它落地就恢复行动。
     if (kind === "beast") {
-      this.releaseCarriedWolf();
+      this.projectileCombat.releaseCarriedWolf();
       return;
     }
     const dropPosition = {
@@ -3951,18 +3475,13 @@ export class GameSimulation {
       z: this.player.z + this.player.facing.z * 2.05,
     };
     if (kind === "fuel") {
-      const barrel = this.carriedBarrel;
-      if (!barrel) {
+      const dropped = this.projectileCombat.dropCarriedBarrel(
+        dropPosition,
+        Math.atan2(this.player.facing.z, this.player.facing.x),
+      );
+      if (!dropped) {
         this.player.carrying = null;
-        return;
       }
-      barrel.x = dropPosition.x;
-      barrel.z = dropPosition.z;
-      barrel.rotation = Math.atan2(this.player.facing.z, this.player.facing.x);
-      barrel.placement = "ground";
-      this.carriedBarrel = null;
-      this.player.carrying = null;
-      this.events.push({ type: "drop", kind });
       return;
     }
     if (kind === "stake") {

@@ -12,6 +12,7 @@ import { TutorialStage } from "./ui/TutorialStage";
 import { bumpRunIndex, loadDifficulty, loadRunIndex, saveDifficulty } from "./ui/Settings";
 import { normalizeDifficulty } from "./game/simulation/difficulty";
 import type { Difficulty } from "./game/simulation/difficulty";
+import { FUEL_REQUIRED } from "./game/simulation/types";
 import { createPlatform } from "./platform";
 
 /**
@@ -82,9 +83,18 @@ async function bootstrap(): Promise<void> {
   // 每局构造时读一次；通关页可以在软重开时把下一局切到另一档。
   let difficulty = loadDifficulty();
   let simulation = new GameSimulation(world, difficulty);
-  if (import.meta.env.DEV && new URLSearchParams(window.location.search).get("night") === "1") {
-    simulation.phase = "night";
-    simulation.phaseTime = 105;
+  if (import.meta.env.DEV) {
+    const previewParams = new URLSearchParams(window.location.search);
+    if (previewParams.get("night") === "1") {
+      simulation.phase = "night";
+      simulation.phaseTime = 105;
+    }
+    // 视觉回归入口：不用手搬六趟就能检查卡车 0/1/2/3/5/6 桶的苏醒阶段。
+    const previewFuel = Number(previewParams.get("fuel"));
+    if (Number.isInteger(previewFuel) && previewFuel >= 0 && previewFuel <= FUEL_REQUIRED) {
+      simulation.truck.loaded = previewFuel;
+      for (let index = 0; index < previewFuel; index += 1) simulation.barrels[index].placement = "loaded";
+    }
   }
   const audio = new SynthAudio(boot?.audioContext ?? null);
   /*
@@ -488,6 +498,7 @@ async function bootstrap(): Promise<void> {
         // 全场最大的一次震屏：这一下要让人从椅子上弹一下。
         if (event.type === "barrel-blast") renderer.barrelBlast(event.x, event.z);
         if (event.type === "fuel-loaded") renderer.fuelLoaded(event.loaded);
+        if (event.type === "truck-horn") renderer.truckHorn();
         if (event.type === "barrier-hit") {
           renderer.impact(0.035);
           renderer.barrierHit(event.itemId);
@@ -503,6 +514,7 @@ async function bootstrap(): Promise<void> {
         simulation.camps,
         world.camps,
         started && simulation.running && !hud.isGameplayBlocked(),
+        simulation.truck,
       );
       hud.update(delta);
       // 教学走在 HUD 之后：它要读背包的开合状态，也要按最新的一帧投影去挖亮洞。

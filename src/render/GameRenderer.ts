@@ -10,6 +10,7 @@ import { BARRIER_STATS, CRITTER_SPECS, FUEL_REQUIRED } from "../game/simulation/
 import { distanceToCampApproach, terrainHeightAt, terrainMoistureAt, terrainSaltAt, terrainSlopeAt } from "../game/terrain/TerrainModel";
 import { instantiateAnimal, loadAnimal, type AnimalAsset, type AnimalInstance } from "./AnimalModels";
 import { createCritterMesh } from "./CritterModels";
+import { CombatFeedbackView } from "./CombatFeedbackView";
 
 interface CampView {
   flame: THREE.Group;
@@ -536,43 +537,6 @@ function createBarrelView(): THREE.Group {
   return group;
 }
 
-/*
- * 开局指路的浮动箭头。
- *
- * **做成几何体而不是贴图**：场景里每一件道具都是这么搭起来的（锥、胶囊、盒子 +
- * 平直着色），一张外来的箭头贴图会是整个 3D 场景里唯一一处纹理 —— 风格上对不上，
- * 还得为一个开局十几秒就退场的东西背一张图的体积和授权。
- *
- * 尺寸和"不发光柱"这两条是照着 buildTruckBeacon 那段定的：那里拆掉过一根 26 米的
- * 加色光柱，理由是"网游任务标记那一套，和低多边形沙漠不搭，而且注定挡视野"。
- * 所以这根箭头做得小（总高 1.68 米，和人一般高）、贴着目标浮、正常参与深度测试，
- * 不做任何穿墙显示。
- *
- * 这个高度是量出来的，不是estimate：竖屏一屏见 15.6 米、375 CSS px，1 米 ≈ 24 px，
- * 而等距相机压着看，竖向还要再乘 cos(41.8°) ≈ 0.75 —— 1.68 米落到屏幕上约 30 px。
- * 上一版做 1.32 米（约 24 px），在开局那一屏里读起来像地上插了根小钉子。
- *
- * 四棱锥的头配四棱柱的柄 —— 段数取 4 是为了和仙人掌刺那些四面锥同一档面数，
- * 而且两者的顶点相位一致，接缝处不会错开。两段合成一个几何，整根一次 draw call。
- *
- * **尖端在 y=0，往上长**：摆的时候直接把"要指的那个点"交给它，不用再减半高。
- */
-function createGuideArrowGeometry(): THREE.BufferGeometry {
-  // 头**比自己高还宽**（半径 0.58 对高 0.66）：等距相机压着看，竖向本来就只剩
-  // cos(41.8°) ≈ 0.75，头做瘦了从画面上读出来是一根钉子，不是箭头。
-  const head = new THREE.ConeGeometry(0.72, 0.84, 4);
-  head.rotateX(Math.PI);
-  head.translate(0, 0.42, 0);
-  const shaft = new THREE.CylinderGeometry(0.24, 0.24, 0.84, 4);
-  // 0.84 是锥底，柄从那里接着往上长，所以中心在 0.84 + 0.84/2。
-  shaft.translate(0, 1.26, 0);
-  const merged = mergeGeometries([head, shaft]);
-  head.dispose();
-  shaft.dispose();
-  if (!merged) throw new Error("guide arrow geometry merge failed");
-  return merged;
-}
-
 interface BladeVisual {
   name: string;
   /** 刃宽倍率，基准是求生匕首的 0.25。 */
@@ -786,17 +750,18 @@ export class GameRenderer {
   private readonly carriedFuel: THREE.Object3D;
   private readonly truckGroup: THREE.Group;
   private truckRing: THREE.Mesh | null = null;
-  /** 开局指路箭头。状态每帧从模拟层现算，见 syncGuideArrow。 */
-  private readonly guideArrow: THREE.Mesh;
-  /** 箭头的上下浮动与自转共用这一个相位，秒。 */
-  private guidePhase = 0;
-  /** 飞石自转的相位，秒。 */
-  private stoneSpin = 0;
-  /** 油桶爆炸的火球。第一次炸的时候才建，之后复用。 */
-  private blastMesh: THREE.Mesh | null = null;
-  private blastTime = 0;
-  /** 算车头世界坐标用的暂存，避免每帧 new 一个 Vector3。 */
-  private readonly guideAnchor = new THREE.Vector3();
+  /** 装油里程碑的车体反馈：电路、车灯、喇叭灯与排气均由模拟层状态驱动。 */
+  private truckDashboardMaterial: THREE.MeshStandardMaterial | null = null;
+  private truckHeadlightMaterial: THREE.MeshStandardMaterial | null = null;
+  private truckHeadlight: THREE.PointLight | null = null;
+  private truckBeacon: THREE.Mesh | null = null;
+  private readonly truckExhaust: THREE.Mesh[] = [];
+  private truckHornFlashTime = 0;
+  /**
+   * 指路箭头、飞行中的石头、爆炸火球 —— 全部的一次性视觉反馈。
+   * 抽出去的理由见 CombatFeedbackView 的头注释：这些东西和"世界长什么样"无关。
+   */
+  private readonly feedback: CombatFeedbackView;
   /** 车斗上那一排已装的油桶，按 loaded 逐个点亮。 */
   private readonly truckLoadViews: THREE.Object3D[] = [];
   /** 新装油桶的落位反馈；只属于渲染层，不参与装车判定。 */
@@ -849,11 +814,6 @@ export class GameRenderer {
   private readonly cactusPlacements = new Map<number, CactusPlacement>();
   /** 上一次写进实例的显隐状态，用来避免每帧重写矩阵。 */
   private readonly cactusVisible = new Map<number, boolean>();
-  /*
-   * 飞行中的石头。池子而不是按需 new：一次最多只可能有一块在天上
-   * （玩家一次只扛得动一块），留 3 个纯粹是给"砸完立刻捡起来再砸"留余量。
-   */
-  private readonly stoneFlightViews: THREE.Mesh[] = [];
   private readonly ironViews = new Map<number, THREE.Object3D>();
   private readonly wellViews = new Map<number, THREE.Object3D>();
   private readonly wellPips = new Map<number, THREE.Object3D[]>();
@@ -1030,8 +990,9 @@ export class GameRenderer {
     this.buildWells();
     this.truckGroup = this.buildTruck();
     this.buildBarrels();
-    this.guideArrow = this.buildGuideArrow();
-    this.buildStoneFlights();
+    this.feedback = new CombatFeedbackView(
+      this.scene, (x, z) => this.worldHeight(x, z), STONE_ITEM_GEOMETRY, STONE_COLOR,
+    );
     this.playerBodyMaterial = makeMaterial(0x2f7b8d, 0.75);
     const player = this.buildPlayer();
     this.playerGroup = player.group;
@@ -1080,10 +1041,8 @@ export class GameRenderer {
     this.blobShadowCount = 0;
     this.syncPlayer(delta);
     this.syncItems(delta);
-    this.syncStoneFlights(delta);
-    this.syncBarrelBlast(delta);
+    this.feedback.update(delta, this.simulation, this.truckGroup);
     this.syncBarrels(delta);
-    this.syncGuideArrow(delta);
     this.syncCacti();
     this.syncIronNodes();
     this.syncTrees();
@@ -1235,42 +1194,12 @@ export class GameRenderer {
   }
 
   /**
-   * 油桶炸了：一圈迅速扩张又淡出的火球 + 全场最重的一次震屏。
-   *
-   * 只有一个球，复用 —— 同一时刻不可能炸两桶（玩家只扛得动一个）。
-   * 用加色混合（AdditiveBlending）而不是普通透明：爆炸要"发光"，
-   * 压在夜色和火光上要更亮，而不是像一层灰布。
+   * 油桶炸了：全场最重的一次震屏。
+   * 火球交给 CombatFeedbackView —— 相机归这里管，场景里的物件归它管。
    */
   barrelBlast(x: number, z: number): void {
     this.cameraShake = Math.max(this.cameraShake, 0.34);
-    if (!this.blastMesh) {
-      this.blastMesh = new THREE.Mesh(
-        new THREE.SphereGeometry(1, 16, 12),
-        new THREE.MeshBasicMaterial({
-          color: 0xffb347, transparent: true, opacity: 0.9,
-          blending: THREE.AdditiveBlending, depthWrite: false,
-        }),
-      );
-      this.scene.add(this.blastMesh);
-    }
-    this.blastMesh.position.set(x, this.worldHeight(x, z) + 1.1, z);
-    this.blastMesh.visible = true;
-    this.blastTime = 0;
-  }
-
-  /** 火球每帧涨大并淡出，0.5 秒走完。 */
-  private syncBarrelBlast(delta: number): void {
-    const mesh = this.blastMesh;
-    if (!mesh || !mesh.visible) return;
-    this.blastTime += delta;
-    const t = this.blastTime / 0.5;
-    if (t >= 1) {
-      mesh.visible = false;
-      return;
-    }
-    // 前段猛涨后段收尾：sqrt 让扩张一开始就快，符合"炸开"而不是"吹气球"。
-    mesh.scale.setScalar(0.6 + Math.sqrt(t) * 5.0);
-    (mesh.material as THREE.MeshBasicMaterial).opacity = 0.9 * (1 - t) * (1 - t);
+    this.feedback.blast(x, z);
   }
 
   /**
@@ -1285,6 +1214,12 @@ export class GameRenderer {
     }
     this.fuelLoadFeedbackTime = 0.52;
     this.impact(0.065);
+  }
+
+  /** 喇叭的瞬时表现；震退与冷却都已经在模拟层结算。 */
+  truckHorn(): void {
+    this.truckHornFlashTime = 0.82;
+    if (!matchMedia("(prefers-reduced-motion: reduce)").matches) this.impact(0.085);
   }
 
   private readonly resize = (): void => {
@@ -1351,6 +1286,7 @@ export class GameRenderer {
     this.cameraShake = 0;
     this.fuelLoadFeedbackTime = 0;
     this.fuelLoadFeedbackIndex = -1;
+    this.truckHornFlashTime = 0;
     const player = simulation.player;
     this.previousPlayerPosition.set(player.x, player.z);
     this.cameraFocus.set(player.x, this.worldHeight(player.x, player.z), player.z);
@@ -1991,6 +1927,69 @@ export class GameRenderer {
     windscreen.position.set(2.86, 2.15, 0);
     group.add(windscreen);
 
+    // 第一桶：仪表与示宽灯通电。它贴在前窗下沿，白天也能看到一道琥珀色横线。
+    this.truckDashboardMaterial = new THREE.MeshStandardMaterial({
+      color: 0x392d19,
+      emissive: 0xff9d32,
+      emissiveIntensity: 0,
+      roughness: 0.5,
+      flatShading: true,
+    });
+    const dashboard = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 1.68), this.truckDashboardMaterial);
+    dashboard.position.set(2.94, 1.84, 0);
+    group.add(dashboard);
+    const electricMarkers: THREE.Mesh[] = [];
+    for (const z of [-1.2, 1.2]) {
+      const marker = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.2, 0.1), this.truckDashboardMaterial);
+      marker.position.set(1.72, 1.54, z);
+      group.add(marker);
+      electricMarkers.push(marker);
+    }
+
+    // 第二桶：两只灯罩加一盏不投影的近距光。夜里它会真正照亮车头周围，而非只换颜色。
+    this.truckHeadlightMaterial = new THREE.MeshStandardMaterial({
+      color: 0x5d5941,
+      emissive: 0xffefb0,
+      emissiveIntensity: 0,
+      roughness: 0.28,
+      flatShading: true,
+    });
+    const headlightMeshes: THREE.Mesh[] = [];
+    for (const z of [-0.72, 0.72]) {
+      const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.42, 0.58), this.truckHeadlightMaterial);
+      lamp.position.set(3.03, 1.62, z);
+      group.add(lamp);
+      headlightMeshes.push(lamp);
+    }
+    this.truckHeadlight = new THREE.PointLight(0xffe4a0, 0, 14, 1.7);
+    this.truckHeadlight.position.set(3.35, 1.65, 0);
+    this.truckHeadlight.castShadow = false;
+    group.add(this.truckHeadlight);
+
+    // 第三桶：车顶警示灯既显示喇叭已经可用，也在鸣笛瞬间给出闪光反馈。
+    const beaconMaterial = new THREE.MeshStandardMaterial({
+      color: 0x6b3511,
+      emissive: 0xff7b18,
+      emissiveIntensity: 0,
+      roughness: 0.38,
+      flatShading: true,
+    });
+    this.truckBeacon = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.24, 0.34, 8), beaconMaterial);
+    this.truckBeacon.position.set(1.75, 2.88, 0);
+    this.truckBeacon.visible = false;
+    group.add(this.truckBeacon);
+
+    // 第五桶：发动机持续运转。三团错相排气只改局部坐标和缩放，不进入模拟层。
+    for (let index = 0; index < 3; index += 1) {
+      const puff = new THREE.Mesh(
+        new THREE.DodecahedronGeometry(0.22, 0),
+        new THREE.MeshBasicMaterial({ color: 0x6c6d69, transparent: true, opacity: 0, depthWrite: false }),
+      );
+      puff.visible = false;
+      group.add(puff);
+      this.truckExhaust.push(puff);
+    }
+
     // 车斗四面挡板：装了几桶油要从外面看得见，所以侧板留矮。
     for (const [dx, dz, sx, sz] of [[-3.05, 0, 0.16, 2.4], [0.85, 0, 0.16, 2.4],
       [-1.1, 1.2, 4, 0.16], [-1.1, -1.2, 4, 0.16]] as const) {
@@ -2029,6 +2028,11 @@ export class GameRenderer {
      */
     const truckDynamic = new Set<THREE.Object3D>(this.truckLoadViews);
     if (this.truckRing) truckDynamic.add(this.truckRing);
+    truckDynamic.add(dashboard);
+    for (const marker of electricMarkers) truckDynamic.add(marker);
+    for (const lamp of headlightMeshes) truckDynamic.add(lamp);
+    if (this.truckBeacon) truckDynamic.add(this.truckBeacon);
+    for (const puff of this.truckExhaust) truckDynamic.add(puff);
     mergeStaticGroup(group, truckDynamic);
     this.scene.add(group);
     return group;
@@ -2062,131 +2066,6 @@ export class GameRenderer {
     this.truckRing = ring;
   }
 
-  /** 三个飞行石头的网格，共享散石的几何与颜色，建好就不再增减。 */
-  private buildStoneFlights(): void {
-    const material = makeMaterial(STONE_COLOR, 0.95);
-    for (let index = 0; index < 3; index += 1) {
-      const mesh = new THREE.Mesh(STONE_ITEM_GEOMETRY, material);
-      mesh.castShadow = false;
-      mesh.visible = false;
-      this.scene.add(mesh);
-      this.stoneFlightViews.push(mesh);
-    }
-  }
-
-  /**
-   * 飞行中的石头：水平位置由模拟层给，**高度和自转纯粹是表现**。
-   *
-   * 抛物线用 sin(progress×π)：起点落点都贴地，中途拱起 1.7 米。
-   * 模拟层是平面直线判定（见 updateThrownStones），所以这条弧不参与命中 ——
-   * 它只是让"扔"这个动作读起来像扔，而不像一颗贴地滑行的子弹。
-   * 高度不影响判定这件事是有意的：一块石头砸不砸得中，玩家该只用平面距离去估。
-   */
-  private syncStoneFlights(delta: number): void {
-    this.stoneSpin += delta;
-    /*
-     * 逐个数**在飞的**，不能按下标取。
-     *
-     * 模拟层那个池子是"找一个 active 为 false 的槽复用"，所以在飞的那块可能是
-     * thrownStones[4] 而 [0..2] 全是用过的空槽。按下标配对的话，那一块永远不显示。
-     * 现实里同时最多一块（一次只扛得动一个，冷却 0.75 秒比 0.6 秒的飞行还长），
-     * 但这种"现实里碰不到"的错最难查，不如一开始就写对。
-     */
-    let slot = 0;
-    for (const stone of this.simulation.thrownStones) {
-      if (!stone.active) continue;
-      const view = this.stoneFlightViews[slot];
-      if (!view) break;
-      slot += 1;
-      const ground = this.worldHeight(stone.x, stone.z);
-      view.visible = true;
-      view.position.set(stone.x, ground + 0.42 + Math.sin(stone.progress * Math.PI) * 1.7, stone.z);
-      view.rotation.set(this.stoneSpin * 5.2, this.stoneSpin * 3.7, this.stoneSpin * 4.4);
-    }
-    for (let index = slot; index < this.stoneFlightViews.length; index += 1) {
-      this.stoneFlightViews[index].visible = false;
-    }
-  }
-
-  private buildGuideArrow(): THREE.Mesh {
-    /*
-     * 颜色跟卡车走，不跟油桶走。
-     *
-     * 地环是 0x36d9cc、HUD 那枚卡车指示牌的字是 0x8ff0e6 —— 这一族青绿在这个游戏里
-     * 已经固定表示"通关路线上的东西"。箭头先指的虽然是个红油桶，但它说的仍是
-     * 同一句话（"往这儿走"），所以用同一族颜色，而不是跟着被指的东西变。
-     *
-     * 带自发光：白天它靠主光就够亮，但这根箭头在夜里也可能还在（玩家磨蹭到入夜），
-     * 而夜里环境光压得很低，纯漫反射会整根沉进背景。
-     */
-    const mesh = new THREE.Mesh(
-      createGuideArrowGeometry(),
-      new THREE.MeshStandardMaterial({
-        color: 0x2fe0cf,
-        emissive: 0x0f9c90,
-        roughness: 0.45,
-        metalness: 0,
-        // 和场上所有道具同一档：平直着色，四个面各自一个色阶，轮廓才咬得住沙子。
-        flatShading: true,
-      }),
-    );
-    // 它是"指路的"，不是场上的实体：不投影，免得地上多出一道解释不了的影子。
-    mesh.castShadow = false;
-    mesh.receiveShadow = false;
-    mesh.visible = false;
-    this.scene.add(mesh);
-    return mesh;
-  }
-
-  /**
-   * 开局那一趟的指路箭头：先浮在第一桶油上，扛起来之后挪到车头，装进车里就退场。
-   *
-   * **不留状态机**，每帧从模拟层现算：中途把桶放下箭头就自己飞回桶上，再扛起来又回车头。
-   * 一个 latch 都不需要，软重开也不用清 —— resetRun 换掉 simulation 之后它自然接着新的一局。
-   *
-   * 退场判据是 `loaded >= 1`：第一桶进了车，这段引导就干完了。剩下五桶不再指 ——
-   * 否则它就从"开局教一次"变成一个常驻任务标记，正是 buildTruckBeacon 拆光柱时否掉的东西。
-   * 退场只关 visible 不 dispose：软重开复用同一个渲染器，下一局还要用它。
-   */
-  private syncGuideArrow(delta: number): void {
-    const arrow = this.guideArrow;
-    const fuel = this.simulation.getFuelProgress();
-    if (fuel.loaded >= 1) {
-      arrow.visible = false;
-      return;
-    }
-
-    if (fuel.carrying) {
-      // 车头顶上。cab 在 buildTruck 里是 local (1.9, 1.95, 0)、高 1.5，顶面因此在 2.7，
-      // 再留 0.35 的净空。localToWorld 会自己把 truckGroup 的世界矩阵更到最新。
-      this.guideAnchor.set(1.9, 3.05, 0);
-      this.truckGroup.localToWorld(this.guideAnchor);
-    } else {
-      /*
-       * 第一桶 = createWorld 最后压进去的那一桶（出生点 2.2 米外那桶，见 placeBarrels
-       * 末尾）。按下标取而不是记 id：软重开会换一整套 world，下标每局都对，记下来的 id 不一定。
-       */
-      const barrels = this.simulation.barrels;
-      const first = barrels[barrels.length - 1];
-      if (!first || first.placement !== "ground") {
-        arrow.visible = false;
-        return;
-      }
-      // 桶身 1.18 高、中心抬到地面 +0.62，顶盖到 +1.31；再留 0.24 净空。
-      this.guideAnchor.set(first.x, this.worldHeight(first.x, first.z) + 1.55, first.z);
-    }
-
-    this.guidePhase += delta;
-    arrow.visible = true;
-    arrow.position.set(
-      this.guideAnchor.x,
-      this.guideAnchor.y + Math.sin(this.guidePhase * 2.6) * 0.19,
-      this.guideAnchor.z,
-    );
-    // 固定朝向的等距相机不跟人转，所以慢转一圈就能保证四个面轮流对着玩家。
-    arrow.rotation.y = this.guidePhase * 1.15;
-  }
-
   private buildBarrels(): void {
     for (const barrel of this.simulation.barrels) {
       const view = createBarrelView();
@@ -2215,6 +2094,34 @@ export class GameRenderer {
     const truck = this.simulation.truck;
     this.truckGroup.position.set(truck.x, this.worldHeight(truck.x, truck.z), truck.z);
     this.truckGroup.rotation.y = -truck.rotation;
+    const power = this.simulation.getTruckPowerState();
+    const powerPulse = 0.5 + 0.5 * Math.sin(this.time * (power.ready ? 5.2 : 2.4));
+    const hornFlash = clamp(this.truckHornFlashTime / 0.82, 0, 1);
+    if (this.truckDashboardMaterial) {
+      this.truckDashboardMaterial.emissiveIntensity = power.electrics ? 1.8 + powerPulse * 0.9 : 0;
+    }
+    if (this.truckHeadlightMaterial) {
+      this.truckHeadlightMaterial.emissiveIntensity = power.headlights ? 5.2 + hornFlash * 2.8 : 0;
+    }
+    if (this.truckHeadlight) {
+      const nightBoost = 1 - this.simulation.getDaylight();
+      this.truckHeadlight.intensity = power.headlights ? 6 + nightBoost * 12 + hornFlash * 5 : 0;
+    }
+    if (this.truckBeacon) {
+      this.truckBeacon.visible = power.horn && !this.simulation.isDeparting();
+      const material = this.truckBeacon.material as THREE.MeshStandardMaterial;
+      material.emissiveIntensity = power.horn ? 1.2 + powerPulse * 1.5 + hornFlash * 5 : 0;
+      const beaconScale = 1 + hornFlash * 0.42 + (power.ready ? powerPulse * 0.08 : 0);
+      this.truckBeacon.scale.setScalar(beaconScale);
+    }
+    this.truckExhaust.forEach((puff, index) => {
+      puff.visible = power.engine && !this.simulation.isDeparting();
+      if (!puff.visible) return;
+      const phase = (this.time * 0.72 + index / this.truckExhaust.length) % 1;
+      puff.position.set(-3.28 - phase * 1.65, 1.02 + phase * 1.35, index % 2 ? -1.04 : 1.04);
+      puff.scale.setScalar(0.85 + phase * 1.55);
+      (puff.material as THREE.MeshBasicMaterial).opacity = (1 - phase) * 0.56;
+    });
     const feedbackDuration = 0.52;
     const feedbackActive = this.fuelLoadFeedbackTime > 0;
     const feedbackProgress = feedbackActive
@@ -2256,6 +2163,7 @@ export class GameRenderer {
       this.truckRing.visible = !this.simulation.isDeparting();
     }
     this.fuelLoadFeedbackTime = Math.max(0, this.fuelLoadFeedbackTime - delta);
+    this.truckHornFlashTime = Math.max(0, this.truckHornFlashTime - delta);
     // 驶离时玩家在车里。模拟层把人的坐标锁在车心，所以直接把人藏掉 ——
     // 否则最后 5 秒会看到一个人站在车斗中央被拖出地图。
     this.playerGroup.visible = !this.simulation.isDeparting();
@@ -3482,10 +3390,30 @@ export class GameRenderer {
       const movementBlend = 1 - Math.exp(-delta * (movingNow ? 18 : 14));
       view.moveAmount = lerp(view.moveAmount, targetMoveAmount, movementBlend);
       view.lastPosition.set(wolf.x, wolf.z);
-      view.group.position.set(wolf.x, this.worldHeight(wolf.x, wolf.z) + (wolf.mode === "dead" ? 0.2 : 0), wolf.z);
+      /*
+       * 被扔出去的那只：抛起来，并且**翻跟头**。
+       *
+       * 没有这一段的话它是贴着地面平移过去的 —— 机制对了，但看起来像滑冰，
+       * 而"把一只狗抡出去"这个动作的全部快感就在那道弧和那几圈翻滚上。
+       *
+       * 弧和翻滚都只是表现：命中判定始终在平面上（见 ProjectileCarriedCombatSystem），
+       * 和石头是同一条规矩 —— 玩家该只用平面距离去估砸不砸得中。
+       *
+       * 翻滚绕的是**身体的横轴**（rotation.x），也就是头尾翻，不是打转；
+       * 12 rad/s 大约在 0.5 秒的飞行里翻一圈，够看清是在翻，又不至于糊成一团。
+       */
+      const airborne = wolf.mode === "airborne";
+      const lift = airborne ? Math.sin(Math.min(1, wolf.airTime / 0.55) * Math.PI) * 2.2 : 0;
+      view.group.position.set(
+        wolf.x,
+        this.worldHeight(wolf.x, wolf.z) + (wolf.mode === "dead" ? 0.2 : 0) + lift,
+        wolf.z,
+      );
       // 尸体不画影子：它平躺在地上，圆斑压在身下只会看着脏。
-      if (wolf.mode !== "dead") this.pushBlobShadow(wolf.x, wolf.z, 0.46 * wolfBarScale(wolf));
+      // 飞在天上的也不画 —— 影子该留在地上，跟着它一起飞就穿帮了。
+      if (wolf.mode !== "dead" && !airborne) this.pushBlobShadow(wolf.x, wolf.z, 0.46 * wolfBarScale(wolf));
       view.group.rotation.y = view.visualHeading;
+      view.group.rotation.x = airborne ? wolf.airTime * 12 : 0;
       view.group.scale.setScalar(wolfScale(wolf));
       view.animal?.mixer.update(delta);
       if (view.animal) {

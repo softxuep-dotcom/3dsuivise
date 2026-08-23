@@ -398,6 +398,10 @@ function placeBarrels(
  */
 const BARREL_STREAM_DRAWS = 71;
 
+/** 投石成为战斗动作后追加的远野石头；单独随机流，绝不挪动既有资源与地标。 */
+const THROWABLE_STONE_COUNT = 10;
+const THROWABLE_STONE_STREAM_SALT = 0x51f15e;
+
 /** 见下面挡门石那段：这一座的门边石头是它夜间可攻性的支点，暂时动不得。 */
 const LOAD_BEARING_GATE_STONE_CAMP = 0;
 
@@ -515,7 +519,7 @@ export function createWorld(seed = 71291, startCampId = BLUEPRINT.startCampId): 
   }
 
   const initialItems: GroundItem[] = [];
-  const addItem = (kind: GroundItem["kind"], x: number, z: number): void => {
+  const addItem = (kind: GroundItem["kind"], x: number, z: number, rotation = random() * TAU): void => {
     initialItems.push({
       id: initialItems.length,
       kind,
@@ -524,7 +528,7 @@ export function createWorld(seed = 71291, startCampId = BLUEPRINT.startCampId): 
       hp: BARRIER_STATS[kind].hp,
       placed: false,
       active: true,
-      rotation: random() * TAU,
+      rotation,
     });
   };
 
@@ -639,7 +643,7 @@ export function createWorld(seed = 71291, startCampId = BLUEPRINT.startCampId): 
    * 而能搬的那种是有用的：封营地缺口靠它，野狗会先去拆挡路的东西。
    *
    * 石头是**实体障碍**（isBlockingGroundItem 对未放置的石头也返回 true），
-   * 所以加的量要克制：35 块散在 220×220 上仍然很稀，狼群寻路的回归测试兜着。
+   * 所以这批保持克制；投石需要的额外供给由下面独立随机流的 10 块承担。
    */
   for (let id = 0; id < 88; id += 1) {
     const kind: GroundItem["kind"] = random() < 0.60 ? "wood" : "stone";
@@ -651,6 +655,25 @@ export function createWorld(seed = 71291, startCampId = BLUEPRINT.startCampId): 
       if (clearsWalls && clearsHills) break;
     }
     addItem(kind, point.x, point.z);
+  }
+
+  /*
+   * 额外的 10 块投掷石头。
+   *
+   * 不从原来的 88 件里拿木头来换：自动回放证明那会让部分出生点第一夜更容易因
+   * 体力耗尽而死。也不能继续吃主 random()，否则后面的仙人掌、井和地标会全部换位。
+   * 因此用 seed 派生一条独立流，只在远离营地、墙体和既有物件的可走平地上落点。
+   */
+  const stoneRandom = mulberry32(seed ^ THROWABLE_STONE_STREAM_SALT);
+  let throwableStonesPlaced = 0;
+  for (let guard = 0; guard < 600 && throwableStonesPlaced < THROWABLE_STONE_COUNT; guard += 1) {
+    const point = { x: (stoneRandom() - 0.5) * 196, z: (stoneRandom() - 0.5) * 196 };
+    if (!awayFromCamps(point, camps, 2)) continue;
+    if (!isTerrainWalkable(terrainWorld, point)) continue;
+    if (walls.some((wall) => distance(point, wall) < wall.radius + STONE_COLLIDE_RADIUS + 0.8)) continue;
+    if (initialItems.some((item) => distance(point, item) < STONE_COLLIDE_RADIUS * 2 + 1)) continue;
+    addItem("stone", point.x, point.z, stoneRandom() * TAU);
+    throwableStonesPlaced += 1;
   }
 
   const initialCacti: CactusPatch[] = [

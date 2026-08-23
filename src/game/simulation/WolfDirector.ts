@@ -448,6 +448,32 @@ export class WolfDirector {
     this.ctx.emit({ type: "knockback", wolfId: wolf.id });
   }
 
+  /**
+   * 卡车喇叭的冲击圈。普通狼被惊退并短暂失去咬击机会，精英狼完全不吃。
+   *
+   * 和武器击退不同，方向从卡车算，不从玩家算；也不逐只发 knockback 事件，
+   * 否则一声喇叭会叠出十几记击退音效。表现统一由 truck-horn 事件承担。
+   */
+  repelFrom(origin: Vec2, radius: number): number {
+    let affected = 0;
+    for (const wolf of this.wolves) {
+      if (wolf.mode === "dead" || wolf.mode === "retreating" || wolf.mode === "grabbed"
+        || wolf.mode === "airborne" || wolf.kind === "elite") continue;
+      const gap = distance(origin, wolf);
+      if (gap >= radius) continue;
+      const angle = gap < 0.001 ? (wolf.id * 2.399963229728653) % TAU : Math.atan2(wolf.z - origin.z, wolf.x - origin.x);
+      const away = { x: Math.cos(angle), z: Math.sin(angle) };
+      const strength = 2.4 + (1 - gap / radius) * 2.2;
+      this.ctx.moveEntity(wolf, away.x * strength, away.z * strength, WOLF_RADIUS, true);
+      wolf.attackCooldown = Math.max(wolf.attackCooldown, 2.2);
+      wolf.provoked = true;
+      wolf.lostTimer = 0;
+      wolf.mode = "chase";
+      affected += 1;
+    }
+    return affected;
+  }
+
   updateWolves(delta: number): void {
     this.updateWildWolves(delta);
     const livingCount = this.wolves.filter((wolf) => wolf.mode !== "dead").length;
@@ -1111,6 +1137,7 @@ export class WolfDirector {
       id: this.wolfId++,
       kind,
       role,
+      airTime: 0,
       ...spawn,
       facing: direction(spawn, anchor),
       health: maxHealth,

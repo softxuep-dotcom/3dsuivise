@@ -490,6 +490,15 @@ export interface WolfState extends Vec2 {
   attack: number;
   defense: number;
   mode: WolfMode;
+  /**
+   * 被扔出去之后飞了多久，秒。落地清零。
+   *
+   * 模拟层只管推进它，**高度和翻滚全在渲染层**（见 GameRenderer.syncWolves）——
+   * 和石头的抛物线是同一条规矩：弧线只是表现，命中判定始终在平面上。
+   * 放在 WolfState 上而不是藏在飞行记录里，是因为渲染层需要逐狼读它，
+   * 而它确实是这只狼此刻的状态，不是中间量。
+   */
+  airTime: number;
   raider: boolean;
   /**
    * 第一夜第一只、写死数值的那只教学犬（28 血 / 5 咬伤 / 0 防）。
@@ -603,6 +612,8 @@ export type GameEvent =
   | { type: "critter-killed"; critterId: number; kind: CritterKind }
   /** 一桶油进了车斗。 */
   | { type: "fuel-loaded"; loaded: number; required: number }
+  /** 三桶油后解锁的卡车喇叭；affected 是被震退的普通狼数量。 */
+  | { type: "truck-horn"; affected: number }
   /** 油加满、玩家上车，卡车开始驶离。之后只剩结算动画。 */
   | { type: "truck-depart" }
   | { type: "player-hit"; amount: number }
@@ -618,7 +629,7 @@ export type GameEvent =
   | { type: "game-over"; cause: DeathCause; condition: SurvivalCondition; killer: WolfKind | null };
 
 export interface InteractionHint {
-  action: "pickup" | "drop" | "ignite" | "feed" | "cactus" | "mine" | "chop" | "well" | "load" | "board" | "grab" | "none";
+  action: "pickup" | "drop" | "ignite" | "feed" | "cactus" | "mine" | "chop" | "well" | "load" | "board" | "grab" | "horn" | "none";
   text: LocalizedText;
 }
 

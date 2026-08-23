@@ -65,4 +65,15 @@ describe("出生营地轮换", () => {
       expect(d(spawn, world.truck), `${where} 的卡车离出生点太远`).toBeLessThan(20);
     }
   });
+
+  it("投石成为战斗动作后，五张出生轮换都保有足够石头和柴", () => {
+    for (const run of [0, 1, 2, 3, 4]) {
+      const camp = pickStartCamp(run);
+      const items = createWorld(undefined, camp).initialItems;
+      const stones = items.filter((item) => item.kind === "stone").length;
+      const wood = items.filter((item) => item.kind === "wood").length;
+      expect(stones, `营地 #${camp} 的投石供给不足`).toBeGreaterThanOrEqual(45);
+      expect(wood, `营地 #${camp} 的生火资源被换得太少`).toBeGreaterThanOrEqual(40);
+    }
+  });
 });

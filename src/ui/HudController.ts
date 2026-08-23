@@ -69,6 +69,7 @@ const ACTION_ICON: Record<InteractionHint["action"], string> = {
   well: "water",
   load: "load",
   board: "drive",
+  horn: "drive",
   none: "action",
 };
 

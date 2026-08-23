@@ -50,6 +50,8 @@ export class SynthAudio {
   private ambienceBus: GainNode | null = null;
   private fireGain: GainNode | null = null;
   private fireSource: AudioBufferSourceNode | null = null;
+  private engineGain: GainNode | null = null;
+  private engineSource: OscillatorNode | null = null;
   /** 每个音色上次播放的时刻，供 playSample 的节流用。 */
   private readonly lastSampleAt = new Map<SampleKey, number>();
   /** 闷响的节流表，按截止频率分桶，见 thudThrottled。 */
@@ -122,9 +124,11 @@ export class SynthAudio {
     camps: readonly CampState[],
     campDefinitions: readonly CampDefinition[],
     movementActive: boolean,
+    truck: { x: number; z: number; loaded: number },
   ): void {
     this.updateFootsteps(player, movementActive);
     this.updateCampfire(player, camps, campDefinitions);
+    this.updateTruckEngine(player, truck);
   }
 
   /**
@@ -200,6 +204,23 @@ export class SynthAudio {
       case "fuel-loaded":
         this.thud(0.12, 0.3, 560);
         window.setTimeout(() => this.playSample("confirm", 0.42, 0.95 + event.loaded * 0.035), 80);
+        if (event.loaded === 1) this.tone(440, 0.13, "square", 0.2, 1.8);
+        if (event.loaded === 2) {
+          this.tone(620, 0.16, "sine", 0.24, 1.18);
+          window.setTimeout(() => this.tone(760, 0.12, "sine", 0.2, 1.08), 90);
+        }
+        if (event.loaded === 3) {
+          this.tone(155, 0.34, "square", 0.3, 0.86);
+          window.setTimeout(() => this.tone(132, 0.3, "square", 0.24, 0.92), 105);
+        }
+        if (event.loaded === 5) this.tone(48, 0.75, "sawtooth", 0.4, 1.7);
+        if (event.loaded >= event.required) {
+          window.setTimeout(() => this.tone(330, 0.34, "triangle", 0.34, 1.5), 160);
+        }
+        break;
+      case "truck-horn":
+        this.tone(148, 0.46, "square", 0.54, 0.86);
+        window.setTimeout(() => this.tone(124, 0.4, "square", 0.4, 0.94), 95);
         break;
       case "truck-depart":
         this.tone(70, 1.1, "sawtooth", 0.9, 1.35);
@@ -416,6 +437,31 @@ export class SynthAudio {
     this.fireSource.loop = true;
     this.fireSource.connect(this.fireGain);
     this.fireSource.start();
+  }
+
+  /** 第五桶后发动机成为一条近场环境音；距离衰减，不把全地图变成持续低鸣。 */
+  private updateTruckEngine(player: PlayerState, truck: { x: number; z: number; loaded: number }): void {
+    if (!this.context || !this.ambienceBus) return;
+    const distance = Math.hypot(player.x - truck.x, player.z - truck.z);
+    const target = truck.loaded >= 5 ? Math.max(0, Math.min(1, 1 - (distance - 3) / 24)) * 0.2 : 0;
+    if (target > 0.001) this.ensureEngineLoop();
+    if (this.engineGain) this.engineGain.gain.setTargetAtTime(target, this.context.currentTime, 0.32);
+  }
+
+  private ensureEngineLoop(): void {
+    if (this.engineSource || !this.context || !this.ambienceBus) return;
+    const filter = this.context.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.value = 170;
+    filter.Q.value = 1.4;
+    this.engineGain = this.context.createGain();
+    this.engineGain.gain.value = 0;
+    this.engineGain.connect(this.ambienceBus);
+    this.engineSource = this.context.createOscillator();
+    this.engineSource.type = "sawtooth";
+    this.engineSource.frequency.value = 54;
+    this.engineSource.connect(filter).connect(this.engineGain);
+    this.engineSource.start();
   }
 
   private tone(frequency: number, duration: number, type: OscillatorType, volume: number, endRatio: number): void {
