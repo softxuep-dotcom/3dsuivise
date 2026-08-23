@@ -129,6 +129,15 @@ export class HudController {
     ["warmth", required<HTMLElement>("warmth-meter")],
   ];
   private readonly attackButton = required<HTMLButtonElement>("attack-button");
+  /**
+   * 攻击键的文字。扛着大石时这颗键做的是"扔"而不是"砍"，标签必须跟着变 ——
+   * 按钮上写着"攻击"、按下去却飞出一块石头，是最廉价也最伤的一类困惑。
+   *
+   * 用 querySelector 而不是给它一个 id：这个 span 在 index.html 里带
+   * data-i18n="hud.attack.label"，换语言时 applyStaticText 会把它刷回"攻击"，
+   * 所以每一拍都要重新写一次（见 update 里那两行），给不给 id 都一样。
+   */
+  private readonly attackLabel = this.attackButton.querySelector<HTMLElement>(".button-label");
   private readonly actionButton = required<HTMLButtonElement>("action-button");
   /*
    * "这颗键现在按有用" 的搏动提示，替掉了原来那段门禁式的开场教学。
@@ -535,6 +544,11 @@ export class HudController {
     const action = !teaching && !this.actionHintUsed && this.simulation.running
       && hint.action !== "none";
     this.attackButton.classList.toggle("hint-pulse", attack);
+    // 扛着大石时改写成"投掷"。每拍都写，因为切语言会把它刷回静态文案。
+    if (this.attackLabel) {
+      const throwing = this.simulation.player.carrying === "stone";
+      this.attackLabel.textContent = t(throwing ? "hud.throw.label" : "hud.attack.label");
+    }
     this.actionButton.classList.toggle("hint-pulse", action);
   }
 

@@ -440,6 +440,27 @@ export interface PlayerState extends Vec2 {
   kills: number;
 }
 
+/**
+ * 飞行中的石头。
+ *
+ * 扛在手里的大石本来只有一个用途——堵住营地缺口。加上"扔"之后它变成一道二选一，
+ * 而且**不需要任何新资源**：同一块石头，要么堵门，要么砸狗。
+ *
+ * 落地后它变回地上的散石（placed 为 false），可以再捡起来 ——
+ * 所以这个选择是可逆的，代价是跑一趟去捡。
+ */
+export interface ThrownStone extends Vec2 {
+  id: number;
+  /** 单位方向，水平面上的。 */
+  dirX: number;
+  dirZ: number;
+  /** 已经飞了多远，用来判定射程耗尽。 */
+  travelled: number;
+  /** 起手时的抛物线用得到：0→1 走完全程。 */
+  progress: number;
+  active: boolean;
+}
+
 export interface WolfState extends Vec2 {
   id: number;
   kind: WolfKind;
@@ -533,6 +554,10 @@ export type GameEvent =
   | { type: "combo"; stacks: number }
   /** 刀线击退：把狼推开并延后它的咬击。 */
   | { type: "knockback"; wolfId: number }
+  /** 扔出一块石头。 */
+  | { type: "stone-thrown" }
+  /** 石头落地（砸中或飞完全程都会发）。hit 为 true 表示砸到了活物。 */
+  | { type: "stone-landed"; hit: boolean }
   /** 皮甲线闪避掉一次咬击。 */
   | { type: "dodge" }
   /** 铁甲线把伤害弹回给狼。 */

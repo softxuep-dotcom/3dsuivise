@@ -39,6 +39,7 @@ import type {
   Phase,
   PlayerState,
   SurvivalCondition,
+  ThrownStone,
   Vec2,
   WolfKind,
   WolfState,
@@ -571,6 +572,20 @@ const STAMINA_REST_REGEN = 7.5;   // 休息中
 const STAMINA_IDLE_REGEN = 1.6;   // 站着不动但没进入休息
 const STAMINA_ACTIVE_REGEN = 1.1; // 移动中：仍只有休息的 1/7，但走路不再是完全的死区
                                   // （0.5 时走满全图 200 秒才回满，而游戏大部分时间在走）
+/*
+ * 投石。数值推导见 throwStone() 的头注释。
+ * 射程 9 米对照近战 3.1~3.8 米：够到"狗已经看见你但还没扑到"的那一段，
+ * 而不是变成一把可以站着点名的远程武器。
+ */
+const STONE_THROW_RANGE = 9;
+const STONE_THROW_SPEED = 15;
+const STONE_THROW_DAMAGE = 60;
+const STONE_HIT_RADIUS = 0.95;
+const STONE_KNOCKBACK = 1.6;
+const STONE_KNOCKBACK_STUN = 0.6;
+/** 比挥砍长一截：搬起一块大石再抡出去，本来就不是能连发的动作。 */
+const STONE_THROW_COOLDOWN = 0.75;
+
 const STAMINA_COST_CACTUS = 10;
 const STAMINA_COST_MINE = 15;
 /**
@@ -775,6 +790,8 @@ export class GameSimulation {
   /** 胜利结算只跑一次。 */
   private victorySent = false;
   /** 玩家正扛着的那桶油；放下时要把同一个对象放回地面，而不是新建一桶。 */
+  /** 飞行中的石头。用完的槽位留着复用，不 splice —— 和 items 是同一套写法。 */
+  readonly thrownStones: ThrownStone[] = [];
   private carriedBarrel: FuelBarrelState | null = null;
   /** >0 表示卡车正在驶离，玩家已经在车上，只剩结算动画。 */
   private departTimer = 0;
@@ -1041,6 +1058,7 @@ export class GameSimulation {
     this.updateCacti();
     this.updateWells();
     this.updateStructures(delta);
+    this.updateThrownStones(delta);
     if (this.crittersEnabled) this.updateCritters(delta);
     if (this.wolvesEnabled) this.wolfDirector.updateWolves(delta);
     this.updateRest(delta);
@@ -1456,8 +1474,154 @@ export class GameSimulation {
     }
   }
 
+  /**
+   * 把扛着的大石扔出去。
+   *
+   * ## 为什么这颗按钮是空的
+   *
+   * requestAttack 第一行就 `this.player.carrying` 挡掉 —— 双手搬着东西时挥不了刀。
+   * 也就是说**扛着石头时攻击键本来什么都不做**。"扔"正好填进这个空槽：
+   * 不加控件、不加资源，同一块石头从"只能堵门"变成一道二选一。
+   *
+   * ## 数值为什么这么定
+   *
+   * 伤害 60 且**无视护甲** —— 它是一块石头，不是刃，护甲挡不住砸。参照系：
+   *
+   *     初始匕首 攻 30    小狼 72 血 / 防 1 → 29 实伤 → 三刀
+   *                      大狼 160 血 / 防 3 → 27 实伤 → 六刀
+   *     石头     砸 60    小狼砸完剩 12（补一刀就死）
+   *                      大狼砸掉 37%
+   *
+   * 所以它不是"更好的武器"，是**开局唯一能先发制人的手段**：装备为 0 的玩家
+   * 在被咬到之前有了一次出手机会。实测死亡集中在入夜第 57 秒、装备为 0、
+   * 死于 small/large —— 这一手正好落在那个缺口上。
+   *
+   * 击退 1.6 / 硬直 0.6 是全场最高（最好的刀是 0.7 / 0.4）。一块大石砸中就该把狗掀翻，
+   * 而且那 0.6 秒正是你补刀或者转身跑的窗口。精英狼不吃击退（applyKnockback 里挡着），
+   * 但照样吃伤害。
+   *
+   * **不扣劳力。** 战斗不和采集抢劳力预算是这个项目定过的规矩（见 requestAttack
+   * 里那段），扔石头的真实代价是那块石头本身 —— 它落在地上，要走过去才捡得回来。
+   */
+  private throwStone(): void {
+    const player = this.player;
+    player.attackCooldown = STONE_THROW_COOLDOWN * this.getConditionCooldownScale();
+    player.attackFlash = 0.22;
+
+    /*
+     * 索敌和刀一样只做**转向辅助**，不做制导：石头出手之后就沿直线飞，
+     * 狗跑开了就砸空。锥角比刀宽（dot ≥ 0.3，约 ±72°），因为扔比砍容错高，
+     * 但仍然要求目标在身前 —— 背后的狗砸不到。
+     */
+    const inCone = <T extends Vec2>(list: T[], alive: (item: T) => boolean): T | undefined => list
+      .filter((item) => alive(item)
+        && distanceSquared(player, item) <= STONE_THROW_RANGE * STONE_THROW_RANGE
+        && dot(player.facing, direction(player, item)) >= 0.3)
+      .sort((a, b) => distanceSquared(player, a) - distanceSquared(player, b))[0];
+    const target = inCone(this.wolves, (wolf) => wolf.mode !== "dead")
+      ?? inCone(this.critters, (critter) => critter.mode !== "dead");
+    if (target) player.facing = direction(player, target);
+
+    const slot = this.thrownStones.find((stone) => !stone.active);
+    const stone: ThrownStone = slot ?? {
+      id: this.thrownStones.length, x: 0, z: 0, dirX: 0, dirZ: 0,
+      travelled: 0, progress: 0, active: true,
+    };
+    // 从身前一点出手，免得第一帧就判定成"砸中脚边的自己人"。
+    stone.x = player.x + player.facing.x * 0.8;
+    stone.z = player.z + player.facing.z * 0.8;
+    stone.dirX = player.facing.x;
+    stone.dirZ = player.facing.z;
+    stone.travelled = 0;
+    stone.progress = 0;
+    stone.active = true;
+    if (!slot) this.thrownStones.push(stone);
+
+    player.carrying = null;
+    this.noteActivity();
+    this.events.push({ type: "stone-thrown" });
+  }
+
+  /** 飞行中的石头：直线推进，撞到活物就结算，射程走完就落地。 */
+  private updateThrownStones(delta: number): void {
+    for (const stone of this.thrownStones) {
+      if (!stone.active) continue;
+      const step = STONE_THROW_SPEED * delta;
+      stone.x += stone.dirX * step;
+      stone.z += stone.dirZ * step;
+      stone.travelled += step;
+      stone.progress = Math.min(1, stone.travelled / STONE_THROW_RANGE);
+
+      let hit = false;
+      for (const wolf of this.wolves) {
+        if (wolf.mode === "dead") continue;
+        if (distanceSquared(stone, wolf) > STONE_HIT_RADIUS * STONE_HIT_RADIUS) continue;
+        // 无视护甲：石头不是刃。
+        wolf.health -= STONE_THROW_DAMAGE;
+        wolf.hurtFlash = 0.18;
+        wolf.provoked = true;
+        wolf.lostTimer = 0;
+        if (wolf.health <= 0) {
+          wolf.mode = "dead";
+          this.wolfDirector.killWolf(wolf);
+        } else {
+          if (wolf.mode !== "retreating") wolf.mode = "chase";
+          this.wolfDirector.applyKnockback(wolf, {
+            knockback: STONE_KNOCKBACK, knockbackStun: STONE_KNOCKBACK_STUN,
+          });
+        }
+        this.events.push({ type: "wolf-hit", wolfId: wolf.id });
+        hit = true;
+        break;
+      }
+      if (!hit) {
+        for (const critter of this.critters) {
+          if (critter.mode === "dead") continue;
+          if (distanceSquared(stone, critter) > STONE_HIT_RADIUS * STONE_HIT_RADIUS) continue;
+          critter.health -= STONE_THROW_DAMAGE;
+          if (critter.health <= 0) this.killCritter(critter);
+          hit = true;
+          break;
+        }
+      }
+      if (!hit && stone.travelled < STONE_THROW_RANGE) continue;
+      stone.active = false;
+      this.landStone(stone);
+      this.events.push({ type: "stone-landed", hit });
+    }
+  }
+
+  /**
+   * 石头落地变回地上的散石。
+   *
+   * `placed: false` 而不是 true —— 扔出去的是**散石**，不是垒好的路障。
+   * 两者的区别在拾取：placed 的石头要先拆才能动，散石走过去就能捡。
+   * 这一条是"堵门 vs 砸狗"这个选择可逆的全部原因。
+   */
+  private landStone(stone: ThrownStone): void {
+    const existing = this.items.find((item) => !item.active);
+    const item: GroundItem = existing ?? {
+      id: this.items.length, x: stone.x, z: stone.z, kind: "stone",
+      hp: 1, placed: false, active: true, rotation: 0,
+    };
+    item.x = stone.x;
+    item.z = stone.z;
+    item.kind = "stone";
+    item.hp = BARRIER_STATS.stone.hp;
+    item.placed = false;
+    item.active = true;
+    item.rotation = this.random() * Math.PI * 2;
+    if (!existing) this.items.push(item);
+  }
+
   requestAttack(): void {
-    if (!this.running || this.departTimer > 0 || this.player.attackCooldown > 0 || this.player.carrying) return;
+    if (!this.running || this.departTimer > 0 || this.player.attackCooldown > 0) return;
+    // 扛着大石时这颗键改成"扔"。其余搬运物（油桶、木桩）仍然挥不了刀。
+    if (this.player.carrying === "stone") {
+      this.throwStone();
+      return;
+    }
+    if (this.player.carrying) return;
     this.noteActivity();
     const stats = WEAPON_STATS[this.player.weapon];
     /*

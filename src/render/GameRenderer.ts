@@ -790,6 +790,8 @@ export class GameRenderer {
   private readonly guideArrow: THREE.Mesh;
   /** 箭头的上下浮动与自转共用这一个相位，秒。 */
   private guidePhase = 0;
+  /** 飞石自转的相位，秒。 */
+  private stoneSpin = 0;
   /** 算车头世界坐标用的暂存，避免每帧 new 一个 Vector3。 */
   private readonly guideAnchor = new THREE.Vector3();
   /** 车斗上那一排已装的油桶，按 loaded 逐个点亮。 */
@@ -844,6 +846,11 @@ export class GameRenderer {
   private readonly cactusPlacements = new Map<number, CactusPlacement>();
   /** 上一次写进实例的显隐状态，用来避免每帧重写矩阵。 */
   private readonly cactusVisible = new Map<number, boolean>();
+  /*
+   * 飞行中的石头。池子而不是按需 new：一次最多只可能有一块在天上
+   * （玩家一次只扛得动一块），留 3 个纯粹是给"砸完立刻捡起来再砸"留余量。
+   */
+  private readonly stoneFlightViews: THREE.Mesh[] = [];
   private readonly ironViews = new Map<number, THREE.Object3D>();
   private readonly wellViews = new Map<number, THREE.Object3D>();
   private readonly wellPips = new Map<number, THREE.Object3D[]>();
@@ -1021,6 +1028,7 @@ export class GameRenderer {
     this.truckGroup = this.buildTruck();
     this.buildBarrels();
     this.guideArrow = this.buildGuideArrow();
+    this.buildStoneFlights();
     this.playerBodyMaterial = makeMaterial(0x2f7b8d, 0.75);
     const player = this.buildPlayer();
     this.playerGroup = player.group;
@@ -1069,6 +1077,7 @@ export class GameRenderer {
     this.blobShadowCount = 0;
     this.syncPlayer(delta);
     this.syncItems(delta);
+    this.syncStoneFlights(delta);
     this.syncBarrels(delta);
     this.syncGuideArrow(delta);
     this.syncCacti();
@@ -2008,6 +2017,52 @@ export class GameRenderer {
     ring.position.y = 0.09;
     group.add(ring);
     this.truckRing = ring;
+  }
+
+  /** 三个飞行石头的网格，共享散石的几何与颜色，建好就不再增减。 */
+  private buildStoneFlights(): void {
+    const material = makeMaterial(STONE_COLOR, 0.95);
+    for (let index = 0; index < 3; index += 1) {
+      const mesh = new THREE.Mesh(STONE_ITEM_GEOMETRY, material);
+      mesh.castShadow = false;
+      mesh.visible = false;
+      this.scene.add(mesh);
+      this.stoneFlightViews.push(mesh);
+    }
+  }
+
+  /**
+   * 飞行中的石头：水平位置由模拟层给，**高度和自转纯粹是表现**。
+   *
+   * 抛物线用 sin(progress×π)：起点落点都贴地，中途拱起 1.7 米。
+   * 模拟层是平面直线判定（见 updateThrownStones），所以这条弧不参与命中 ——
+   * 它只是让"扔"这个动作读起来像扔，而不像一颗贴地滑行的子弹。
+   * 高度不影响判定这件事是有意的：一块石头砸不砸得中，玩家该只用平面距离去估。
+   */
+  private syncStoneFlights(delta: number): void {
+    this.stoneSpin += delta;
+    /*
+     * 逐个数**在飞的**，不能按下标取。
+     *
+     * 模拟层那个池子是"找一个 active 为 false 的槽复用"，所以在飞的那块可能是
+     * thrownStones[4] 而 [0..2] 全是用过的空槽。按下标配对的话，那一块永远不显示。
+     * 现实里同时最多一块（一次只扛得动一个，冷却 0.75 秒比 0.6 秒的飞行还长），
+     * 但这种"现实里碰不到"的错最难查，不如一开始就写对。
+     */
+    let slot = 0;
+    for (const stone of this.simulation.thrownStones) {
+      if (!stone.active) continue;
+      const view = this.stoneFlightViews[slot];
+      if (!view) break;
+      slot += 1;
+      const ground = this.worldHeight(stone.x, stone.z);
+      view.visible = true;
+      view.position.set(stone.x, ground + 0.42 + Math.sin(stone.progress * Math.PI) * 1.7, stone.z);
+      view.rotation.set(this.stoneSpin * 5.2, this.stoneSpin * 3.7, this.stoneSpin * 4.4);
+    }
+    for (let index = slot; index < this.stoneFlightViews.length; index += 1) {
+      this.stoneFlightViews[index].visible = false;
+    }
   }
 
   private buildGuideArrow(): THREE.Mesh {
