@@ -64,10 +64,17 @@ describe("难度 · 五轴与狼群压力", () => {
   });
 
   it("前三夜攻营配额只做小幅阶梯，而不是近乎翻倍", () => {
+    // 基数 EARLY_NIGHT_RAID_TARGETS = [4, 9, 14]，各难度乘 tuning.raid 后四舍五入：
+    //   easy   ×1.0 → 4 / 9 / 14
+    //   normal ×1.2 → 5 / 11 / 17
+    //   insane ×1.4 → 6 / 13 / 20
+    // 第一夜从 5 降到 4 是因为夜长缩到了 100 秒而配额和夜长解耦，
+    // 见 WolfDirector 里 EARLY_NIGHT_RAID_TARGETS 那段。这条测试钉的是
+    // "阶梯要小幅"，不是这几个数本身 —— 改配额时同步更新即可。
     const expected: Record<Difficulty, number[]> = {
-      easy: [5, 9, 14],
-      normal: [6, 11, 17],
-      insane: [7, 13, 20],
+      easy: [4, 9, 14],
+      normal: [5, 11, 17],
+      insane: [6, 13, 20],
     };
     for (const difficulty of DIFFICULTIES) {
       for (const [offset, quota] of expected[difficulty].entries()) {
