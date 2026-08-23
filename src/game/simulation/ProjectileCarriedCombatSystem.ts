@@ -315,10 +315,13 @@ export class ProjectileCarriedCombatSystem {
     this.armThrow();
     const player = this.world.player;
     const blastTarget = this.getBarrelBlastTarget();
-    const target = blastTarget ?? this.world.wolves
-      .filter((wolf) => wolf.mode !== "dead" && wolf.mode !== "airborne"
-        && distanceSquared(player, wolf) <= BARREL_THROW_RANGE * BARREL_THROW_RANGE
-        && dot(player.facing, direction(player, wolf)) >= 0.3)
+    const barrelTargets: Vec2[] = [
+      ...this.world.wolves.filter((wolf) => wolf.mode !== "dead" && wolf.mode !== "airborne"),
+      ...this.world.critters.filter((critter) => critter.mode !== "dead"),
+    ];
+    const target = blastTarget ?? barrelTargets
+      .filter((animal) => distanceSquared(player, animal) <= BARREL_THROW_RANGE * BARREL_THROW_RANGE
+        && dot(player.facing, direction(player, animal)) >= 0.3)
       .sort((a, b) => distanceSquared(player, a) - distanceSquared(player, b))[0];
     if (target) player.facing = direction(player, target);
 
@@ -374,6 +377,16 @@ export class ProjectileCarriedCombatSystem {
         this.world.emit({ type: "wolf-hit", wolfId: wolf.id });
         hit = true;
         break;
+      }
+      if (!hit) {
+        for (const critter of this.world.critters) {
+          if (critter.mode === "dead") continue;
+          if (distanceSquared(barrel, critter) > BARREL_HIT_RADIUS * BARREL_HIT_RADIUS) continue;
+          critter.health -= BARREL_THROW_DAMAGE;
+          if (critter.health <= 0) this.world.killCritter(critter);
+          hit = true;
+          break;
+        }
       }
       if (!hit && flight.travelled < BARREL_THROW_RANGE) continue;
       barrel.placement = "ground";

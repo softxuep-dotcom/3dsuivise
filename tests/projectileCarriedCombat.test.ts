@@ -85,6 +85,34 @@ describe("ProjectileCarriedCombatSystem", () => {
     expect(sim.items.filter((item) => item.active)).toHaveLength(activeItemsBefore);
     expect(sim.thrownStones.every((flight) => !flight.active)).toBe(true);
   });
+
+  it("油桶会自动瞄准斜前方猎物并造成撞击伤害", () => {
+    const sim = build();
+    sim.enableCritters();
+    const critter = sim.critters[0];
+    for (const other of sim.critters) if (other !== critter) other.mode = "dead";
+    critter.mode = "graze";
+    critter.x = sim.player.x + 3;
+    critter.z = sim.player.z + 2;
+    critter.health = 100;
+    critter.maxHealth = 100;
+    sim.player.facing = { x: 1, z: 0 };
+    const barrel = sim.barrels[sim.barrels.length - 1];
+    for (const other of sim.barrels) other.placement = "loaded";
+    barrel.x = sim.player.x;
+    barrel.z = sim.player.z;
+    barrel.placement = "ground";
+
+    sim.requestInteraction();
+    expect(sim.player.carrying).toBe("fuel");
+    sim.requestAttack();
+    for (let step = 0; step < 20; step += 1) sim.update(STEP, { x: 0, z: 0 });
+    const events = sim.drainEvents();
+
+    expect(events.some((event) => event.type === "barrel-thrown")).toBe(true);
+    expect(critter.health).toBe(70);
+    expect(barrel.placement).toBe("ground");
+  });
 });
 
 describe("卡车逐桶苏醒", () => {
