@@ -151,6 +151,7 @@ export const fr: Record<string, string> = {
   "hud.act.aria": "Action contextuelle",
   "hud.act.label": "Agir",
   "hud.attack.label": "Attaquer",
+  "hud.blast.label": "Exploser",
   "hud.drain.blocked": "Santé en baisse · {reason}",
   "hud.drain.hint": "Santé en baisse · mangez ou restez immobile 3 s pour vous reposer",
   "hud.joystick.aria": "Manette de déplacement",

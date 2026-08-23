@@ -328,7 +328,14 @@ export interface FuelBarrelDefinition extends Vec2 {
   guarded: boolean;
 }
 
-export type FuelBarrelPlacement = "ground" | "carried" | "loaded";
+/**
+ * "spent" = 砸进火里炸掉了，这一桶从此不存在（既捡不起来，也不算进通关计数）。
+ * "airborne" = 被玩家扔出去、正在空中的那一拍。
+ *
+ * 和狼的 WolfMode "airborne" 是同一个技巧：桶仍然留在 simulation.barrels 里，
+ * 位置由抛物线写，于是渲染层只要把它算进"可见"就行，不需要另一套飞行渲染。
+ */
+export type FuelBarrelPlacement = "ground" | "carried" | "loaded" | "airborne" | "spent";
 
 export interface FuelBarrelState extends Vec2 {
   id: number;
@@ -572,6 +579,10 @@ export type GameEvent =
   | { type: "beast-thrown"; wolfId: number }
   /** 被扔的狼落地或砸中东西。hit 为 true 表示砸到了另一只活物。 */
   | { type: "beast-landed"; wolfId: number; hit: boolean }
+  /** 把扛着的油桶扔出去。 */
+  | { type: "barrel-thrown" }
+  /** 油桶砸进火里炸了。位置给渲染层画火球用。 */
+  | { type: "barrel-blast"; x: number; z: number }
   /** 扔出一块石头。 */
   | { type: "stone-thrown" }
   /** 石头落地（砸中或飞完全程都会发）。hit 为 true 表示砸到了活物。 */

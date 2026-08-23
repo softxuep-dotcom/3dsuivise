@@ -165,6 +165,7 @@ export const ja: Record<string, string> = {
   "hud.act.aria": "状況に応じた操作",
   "hud.act.label": "使う",
   "hud.attack.label": "攻撃",
+  "hud.blast.label": "爆破",
   "hud.drain.blocked": "体力が減っている · {reason}",
   "hud.drain.hint": "体力が減っている · 何か食べるか、3秒立ち止まって休め",
   "hud.joystick.aria": "移動スティック",

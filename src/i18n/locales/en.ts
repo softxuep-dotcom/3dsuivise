@@ -154,6 +154,7 @@ export const en: Record<string, string> = {
   "hud.act.aria": "Context action",
   "hud.act.label": "Act",
   "hud.attack.label": "Attack",
+  "hud.blast.label": "Blast",
   "hud.drain.blocked": "Health draining · {reason}",
   "hud.drain.hint": "Health draining · eat, or stand still 3s to rest",
   "hud.joystick.aria": "Move stick",

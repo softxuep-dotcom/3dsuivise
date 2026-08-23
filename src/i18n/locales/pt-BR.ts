@@ -151,6 +151,7 @@ export const ptBR: Record<string, string> = {
   "hud.act.aria": "Ação contextual",
   "hud.act.label": "Agir",
   "hud.attack.label": "Atacar",
+  "hud.blast.label": "Explodir",
   "hud.drain.blocked": "Vida diminuindo · {reason}",
   "hud.drain.hint": "Vida diminuindo · coma ou fique parado por 3 s para descansar",
   "hud.joystick.aria": "Controle de movimento",

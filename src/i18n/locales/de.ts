@@ -151,6 +151,7 @@ export const de: Record<string, string> = {
   "hud.act.aria": "Kontextaktion",
   "hud.act.label": "Handeln",
   "hud.attack.label": "Angriff",
+  "hud.blast.label": "Sprengen",
   "hud.drain.blocked": "Gesundheit sinkt · {reason}",
   "hud.drain.hint": "Gesundheit sinkt · essen oder 3 s stillstehen zum Ausruhen",
   "hud.joystick.aria": "Bewegungsstick",

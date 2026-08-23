@@ -792,6 +792,9 @@ export class GameRenderer {
   private guidePhase = 0;
   /** 飞石自转的相位，秒。 */
   private stoneSpin = 0;
+  /** 油桶爆炸的火球。第一次炸的时候才建，之后复用。 */
+  private blastMesh: THREE.Mesh | null = null;
+  private blastTime = 0;
   /** 算车头世界坐标用的暂存，避免每帧 new 一个 Vector3。 */
   private readonly guideAnchor = new THREE.Vector3();
   /** 车斗上那一排已装的油桶，按 loaded 逐个点亮。 */
@@ -1078,6 +1081,7 @@ export class GameRenderer {
     this.syncPlayer(delta);
     this.syncItems(delta);
     this.syncStoneFlights(delta);
+    this.syncBarrelBlast(delta);
     this.syncBarrels(delta);
     this.syncGuideArrow(delta);
     this.syncCacti();
@@ -1228,6 +1232,45 @@ export class GameRenderer {
 
   impact(strength: number): void {
     this.cameraShake = Math.max(this.cameraShake, strength);
+  }
+
+  /**
+   * 油桶炸了：一圈迅速扩张又淡出的火球 + 全场最重的一次震屏。
+   *
+   * 只有一个球，复用 —— 同一时刻不可能炸两桶（玩家只扛得动一个）。
+   * 用加色混合（AdditiveBlending）而不是普通透明：爆炸要"发光"，
+   * 压在夜色和火光上要更亮，而不是像一层灰布。
+   */
+  barrelBlast(x: number, z: number): void {
+    this.cameraShake = Math.max(this.cameraShake, 0.34);
+    if (!this.blastMesh) {
+      this.blastMesh = new THREE.Mesh(
+        new THREE.SphereGeometry(1, 16, 12),
+        new THREE.MeshBasicMaterial({
+          color: 0xffb347, transparent: true, opacity: 0.9,
+          blending: THREE.AdditiveBlending, depthWrite: false,
+        }),
+      );
+      this.scene.add(this.blastMesh);
+    }
+    this.blastMesh.position.set(x, this.worldHeight(x, z) + 1.1, z);
+    this.blastMesh.visible = true;
+    this.blastTime = 0;
+  }
+
+  /** 火球每帧涨大并淡出，0.5 秒走完。 */
+  private syncBarrelBlast(delta: number): void {
+    const mesh = this.blastMesh;
+    if (!mesh || !mesh.visible) return;
+    this.blastTime += delta;
+    const t = this.blastTime / 0.5;
+    if (t >= 1) {
+      mesh.visible = false;
+      return;
+    }
+    // 前段猛涨后段收尾：sqrt 让扩张一开始就快，符合"炸开"而不是"吹气球"。
+    mesh.scale.setScalar(0.6 + Math.sqrt(t) * 5.0);
+    (mesh.material as THREE.MeshBasicMaterial).opacity = 0.9 * (1 - t) * (1 - t);
   }
 
   /**
@@ -2162,7 +2205,9 @@ export class GameRenderer {
     for (const barrel of this.simulation.barrels) {
       const view = this.barrelViews.get(barrel.id);
       if (!view) continue;
-      view.visible = barrel.placement === "ground";
+      // "airborne" 也要画 —— 被扔出去的桶仍然留在 simulation.barrels 里，
+      // 位置由抛物线写（见 GameSimulation.updateThrownBarrels），这里只管让它可见。
+      view.visible = barrel.placement === "ground" || barrel.placement === "airborne";
       if (!view.visible) continue;
       view.position.set(barrel.x, this.worldHeight(barrel.x, barrel.z) + 0.62, barrel.z);
       view.rotation.y = barrel.rotation;

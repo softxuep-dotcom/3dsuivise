@@ -549,8 +549,18 @@ export class HudController {
     // 扛着大石时改写成"投掷"。每拍都写，因为切语言会把它刷回静态文案。
     if (this.attackLabel) {
       const carried = this.simulation.player.carrying;
-      const throwing = carried === "stone" || carried === "beast";
-      this.attackLabel.textContent = t(throwing ? "hud.throw.label" : "hud.attack.label");
+      // 石头、活狼、油桶都能扔；木桩不能（它是建造物，放下才有意义）。
+      const throwing = carried === "stone" || carried === "beast" || carried === "fuel";
+      /*
+       * 扛着油桶面朝火时改说"爆破"。
+       *
+       * 这一行是那个技能唯一的入口 —— 没有它，"把油桶砸进火里会炸"是个
+       * 这辈子都不会被发现的机制。按钮在**正好用得上的那一刻**自己说出来，
+       * 是这个游戏一直在用的教法（行动键的十一种文案走的是同一套）。
+       */
+      const key = this.simulation.getBarrelBlastTarget() ? "hud.blast.label"
+        : throwing ? "hud.throw.label" : "hud.attack.label";
+      this.attackLabel.textContent = t(key);
     }
     this.actionButton.classList.toggle("hint-pulse", action);
   }

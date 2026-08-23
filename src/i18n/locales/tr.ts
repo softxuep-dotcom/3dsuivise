@@ -169,6 +169,7 @@ export const tr: Record<string, string> = {
   "hud.act.aria": "Duruma göre eylem",
   "hud.act.label": "Kullan",
   "hud.attack.label": "Saldır",
+  "hud.blast.label": "Patlat",
   "hud.drain.blocked": "Can azalıyor · {reason}",
   "hud.drain.hint": "Can azalıyor · yemek ye, ya da 3 sn hareketsiz durup dinlen",
   "hud.joystick.aria": "Hareket kolu",

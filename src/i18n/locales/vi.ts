@@ -150,6 +150,7 @@ export const vi: Record<string, string> = {
   "hud.act.aria": "Thao tác theo ngữ cảnh",
   "hud.act.label": "Thao tác",
   "hud.attack.label": "Tấn công",
+  "hud.blast.label": "Nổ tung",
   "hud.drain.blocked": "Đang mất máu · {reason}",
   "hud.drain.hint": "Đang mất máu · ăn hoặc đứng yên 3 giây để nghỉ",
   "hud.joystick.aria": "Cần điều khiển di chuyển",

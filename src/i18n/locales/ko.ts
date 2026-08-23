@@ -148,6 +148,7 @@ export const ko: Record<string, string> = {
   "hud.act.aria": "상황별 행동",
   "hud.act.label": "행동",
   "hud.attack.label": "공격",
+  "hud.blast.label": "폭파",
   "hud.drain.blocked": "생명력 감소 중 · {reason}",
   "hud.drain.hint": "생명력 감소 중 · 먹거나 3초간 멈춰 서서 쉬세요",
   "hud.joystick.aria": "이동 스틱",

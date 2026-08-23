@@ -170,6 +170,7 @@ export const ru: Record<string, string> = {
   "hud.act.aria": "Контекстное действие",
   "hud.act.label": "Действие",
   "hud.attack.label": "Атака",
+  "hud.blast.label": "Взорвать",
   "hud.drain.blocked": "Здоровье убывает · {reason}",
   "hud.drain.hint": "Здоровье убывает · поешьте или стойте 3 с, чтобы отдохнуть",
   "hud.joystick.aria": "Джойстик движения",

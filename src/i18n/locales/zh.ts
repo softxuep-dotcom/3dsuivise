@@ -153,6 +153,7 @@ export const zh: Record<string, string> = {
   "hud.act.aria": "上下文行动",
   "hud.act.label": "行动",
   "hud.attack.label": "攻击",
+  "hud.blast.label": "爆破",
   "hud.drain.blocked": "体力持续消耗 · {reason}",
   "hud.drain.hint": "体力持续消耗 · 进食或站定 3 秒休息",
   "hud.joystick.aria": "移动摇杆",

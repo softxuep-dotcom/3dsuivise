@@ -485,6 +485,8 @@ async function bootstrap(): Promise<void> {
         nightIntro.handle(event);
         if (event.type === "player-hit") renderer.impact(0.22);
         if (event.type === "wolf-hit") renderer.impact(0.09);
+        // 全场最大的一次震屏：这一下要让人从椅子上弹一下。
+        if (event.type === "barrel-blast") renderer.barrelBlast(event.x, event.z);
         if (event.type === "fuel-loaded") renderer.fuelLoaded(event.loaded);
         if (event.type === "barrier-hit") {
           renderer.impact(0.035);

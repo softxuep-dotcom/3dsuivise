@@ -151,6 +151,7 @@ export const it: Record<string, string> = {
   "hud.act.aria": "Azione contestuale",
   "hud.act.label": "Agisci",
   "hud.attack.label": "Attacca",
+  "hud.blast.label": "Fai esplodere",
   "hud.drain.blocked": "Salute in calo · {reason}",
   "hud.drain.hint": "Salute in calo · mangia o resta fermo 3 s per riposare",
   "hud.joystick.aria": "Levetta di movimento",
