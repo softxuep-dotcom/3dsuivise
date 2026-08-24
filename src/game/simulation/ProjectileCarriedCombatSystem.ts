@@ -433,16 +433,40 @@ export class ProjectileCarriedCombatSystem {
     this.world.emit({ type: "barrel-blast", x: camp.x, z: camp.z });
   }
 
-  private throwStone(): void {
-    this.armThrow();
+  /**
+   * 这一掷会锁住谁：射程 9 米、身前 ±72° 锥内最近的活物，狼优先于猎物。
+   *
+   * 抽出来是为了让 {@link hasStoneTarget} 和真正的投掷用**同一份判据** ——
+   * 射程和锥角抄成两份，改一处忘一处的时候没有任何东西会报错，
+   * 只会让"按钮说能扔"和"扔出去打不中"悄悄分家。
+   */
+  private findStoneTarget(): Vec2 | null {
     const player = this.world.player;
     const inCone = <T extends Vec2>(list: T[], alive: (item: T) => boolean): T | undefined => list
       .filter((item) => alive(item)
         && distanceSquared(player, item) <= STONE_THROW_RANGE * STONE_THROW_RANGE
         && dot(player.facing, direction(player, item)) >= 0.3)
       .sort((a, b) => distanceSquared(player, a) - distanceSquared(player, b))[0];
-    const target = inCone(this.world.wolves, (wolf) => wolf.mode !== "dead")
-      ?? inCone(this.world.critters, (critter) => critter.mode !== "dead");
+    return inCone(this.world.wolves, (wolf) => wolf.mode !== "dead")
+      ?? inCone(this.world.critters, (critter) => critter.mode !== "dead")
+      ?? null;
+  }
+
+  /**
+   * 手里这块石头此刻扔不扔得中。纯只读，给自动机判断"该扔还是该走近了砍"。
+   *
+   * 注意它和 hasAttackTargetInRange() 是**互斥**的一对：后者在 carrying 非空时
+   * 恒为假（扛着东西不能挥刀），于是只看那一个判据的调用方，扛起石头之后
+   * 就再也不会按攻击键 —— 自动机正是这么瞎了一整周。
+   */
+  hasStoneTarget(): boolean {
+    return this.world.player.carrying === "stone" && this.findStoneTarget() !== null;
+  }
+
+  private throwStone(): void {
+    this.armThrow();
+    const player = this.world.player;
+    const target = this.findStoneTarget();
     if (target) player.facing = direction(player, target);
 
     const slot = this.thrownStones.find((stone) => !stone.active);

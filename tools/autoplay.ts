@@ -13,6 +13,11 @@
  *
  * ## 它能答什么、不能答什么
  *
+ * ⚠️ 2026-08-24：策略补上投掷之后，机器人明显变强了 —— 活过第一夜从 55% 跳到
+ *    **100%**（饱和了，这个指标暂时不能再用来量第一夜难度），平均单局 6m27s，
+ *    已经**高于真人中位**（Poki 实测约 3 分钟）。它不再是"机械下界"，
+ *    绝对值只当同一策略下的相对刻度用，见文件末尾 runBatch 的注释。
+ *
  * ✅ 能答：能不能活过第一夜、几点到黎明、单局时长分布、死因分布、材料够不够、
  *         剪刀差有没有被填平。
  * ❌ 不能答：**愿不愿留、愿不愿按"再来一局"、看不看得懂。**
@@ -129,6 +134,21 @@ interface Policy {
   moveJitter: number;
   /** 每帧放弃一次攻击的概率 —— 模拟反应不及时，不是模拟手残。 */
   attackMiss: number;
+  /**
+   * 会不会用「投掷」这个动作：捡石头当弹药、抓起晕倒的狼砸出去。
+   *
+   * 加这一条是因为 2026-08-23 那次复盘：投石、抓狼扔狼是 1.0.30 加的，
+   * 而这份策略最后一次改动在 8-21 —— 机器人**根本不会用这些动词**。
+   * 更糟的是 `hasAttackTargetInRange()` 在 carrying 非空时恒为假（扛东西不能挥刀），
+   * 于是它捡起一块石头之后就再也不按攻击键，扛着走完一整局：
+   * 承担了"不能近战"的全部代价，拿不到投掷的任何好处。读出来的
+   * 「击杀 4→1、装备升级 60%→45%」因此是**纯代价**，不是这个机制的净值。
+   *
+   * 这一条量的是"用好了值不值钱"，不是"有多少人会发现它" —— 后者是另一个问题
+   * （投掷藏在一个会变形的攻击键后面，而中位会话只有三分钟），要另外量。
+   * 所以取值偏高，读出来的是**上界**。
+   */
+  usesThrow: boolean;
 }
 
 function rollPolicy(seed: number): Policy {
@@ -139,6 +159,10 @@ function rollPolicy(seed: number): Policy {
     fireRadius: 6 + r() * 4,
     moveJitter: r() * 0.25,
     attackMiss: r() * 0.15,
+    // **必须追加在最后。** rollPolicy 是顺序消费同一条随机流的，
+    // 在中间插一次 r() 会把它后面每一个参数全部换掉 —— 那样新旧两份报表
+    // 比的就不是"多了投掷"，而是"换了一批玩家"，A/B 直接作废。
+    usesThrow: r() < 0.75,
   };
 }
 
@@ -147,6 +171,20 @@ const norm = (v: Vec2): Vec2 => {
   return m < 1e-6 ? { x: 0, z: 0 } : { x: v.x / m, z: v.z / m };
 };
 const dist = (a: Vec2, b: Vec2): number => Math.hypot(a.x - b.x, a.z - b.z);
+
+/**
+ * 多远之内有狼就值得手里攥块石头。
+ *
+ * 这是**策略**数字，不是引擎数字，所以不去 import STONE_THROW_RANGE（那是 9）——
+ * 14 比射程远，是为了在狼扑到之前就把石头准备好；扛石头期间不能挥刀，
+ * 所以这个提前量买的是"第一下先砸中"，代价是这几秒不能近战。
+ */
+const STONE_AMMO_LOOKAHEAD = 14;
+
+/** 半径内还有活狼吗。 */
+function wolfWithin(sim: GameSimulation, radius: number): boolean {
+  return sim.wolves.some((w) => w.mode !== "dead" && dist(sim.player, w) <= radius);
+}
 
 /**
  * 升一阶。
@@ -259,6 +297,20 @@ function decide(sim: GameSimulation, homeCamp: Vec2, pol: Policy, rand: () => nu
   // 1. 打得着就打。攻击不打断移动，所以这一条不 return。
   if (sim.hasAttackTargetInRange() && rand() >= pol.attackMiss) sim.requestAttack();
 
+  /*
+   * 1b. 手里有石头、身前锥内又有活物 —— 扔。
+   *
+   * **必须和上一条分开判。** hasAttackTargetInRange() 在 carrying 非空时恒为假，
+   * 只看它的话，捡起石头之后攻击键就再也不会被按到。石头伤害 60，
+   * 是初始匕首近战（30）的两倍，射程 9 米还带击退和硬直 —— 白扛着是纯亏。
+   */
+  if (pol.usesThrow && sim.hasThrowTargetInRange() && rand() >= pol.attackMiss) {
+    sim.requestAttack();
+  }
+
+  // 1c. 抓在手里的晕狼：直接砸出去，别扛着走。它本身就是一件武器。
+  if (pol.usesThrow && p.carrying === "beast" && rand() >= pol.attackMiss) sim.requestAttack();
+
   // 2. 五轴告急：能就地解决的先就地解决，解决不了的走过去。
   if (p.water < pol.needLow && drinkSomething(sim)) return { x: 0, z: 0 };
   if (p.hunger < pol.needLow && eatSomething(sim)) return { x: 0, z: 0 };
@@ -269,6 +321,25 @@ function decide(sim: GameSimulation, homeCamp: Vec2, pol: Policy, rand: () => nu
   if (p.carrying === "fuel") {
     if (hint.action === "load") { sim.requestInteraction(); return { x: 0, z: 0 }; }
     return sim.directionToClickTarget(sim.truck) ?? { x: 0, z: 0 };
+  }
+
+  /*
+   * 3b. 攥着石头但眼下没得扔（天亮了、狼散了）：**放下**。
+   *
+   * 不放下的话近战一整天都是失效的，而白天正是打猎换兽皮的时段 ——
+   * 兽皮断了，装备线跟着断，第二夜就扛不住。这一条是 1.0.30 那次
+   * 长尾塌陷的直接对症。
+   */
+  if (p.carrying === "stone" && !sim.hasThrowTargetInRange()
+    && !wolfWithin(sim, STONE_AMMO_LOOKAHEAD)) {
+    sim.requestInteraction();
+    return { x: 0, z: 0 };
+  }
+
+  // 3c. 脚边有只被打晕的狼 —— 抓起来，下一帧就当武器砸向别的狼。
+  if (pol.usesThrow && hint.action === "grab") {
+    sim.requestInteraction();
+    return { x: 0, z: 0 };
   }
 
   // 4. 脚边就能做的事：捡柴（够了就不捡）、添柴点火、打水、扛桶。
@@ -282,10 +353,25 @@ function decide(sim: GameSimulation, homeCamp: Vec2, pol: Policy, rand: () => nu
     return { x: 0, z: 0 };
   }
   if (hint.action === "pickup") {
-    // 柴够了就不再捡，免得背包被木头占满、装不下肉和皮。
-    const isWood = sim.getInventoryCount("wood") < pol.woodStock;
-    if (isWood || sim.getFuelProgress().nearest !== null) sim.requestInteraction();
-    return { x: 0, z: 0 };
+    /*
+     * 石头单独判：**扛起来就等于把武器收了**（见 hasAttackTargetInRange）。
+     *
+     * 旧版这里只问"还有桶没装完吗"，而那个条件几乎恒为真，于是 E 键底下是什么
+     * 就捡什么 —— 包括 1.0.30 撒进野外的那 10 块投掷石。白天在猎场顺手捡一块，
+     * 那一趟猎就白打了。所以只在**马上要打架**时才捡：附近确实有狼。
+     * 不想捡也不能 return，否则会站在石头边上发呆，得让它继续往下走。
+     */
+    if (sim.getPickupCandidate()?.kind === "stone") {
+      if (pol.usesThrow && wolfWithin(sim, STONE_AMMO_LOOKAHEAD)) {
+        sim.requestInteraction();
+        return { x: 0, z: 0 };
+      }
+    } else {
+      // 柴够了就不再捡，免得背包被木头占满、装不下肉和皮。
+      const isWood = sim.getInventoryCount("wood") < pol.woodStock;
+      if (isWood || sim.getFuelProgress().nearest !== null) sim.requestInteraction();
+      return { x: 0, z: 0 };
+    }
   }
 
   // 5. 材料够就升一阶。

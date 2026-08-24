@@ -74,6 +74,7 @@ import {
   FIRST_DAY_DURATION,
   FIRST_NIGHT_DURATION,
   FUEL_PICKUP_REACH,
+  ITEM_PICKUP_REACH,
   HEALTH_DECAY,
   HEALTH_PASSIVE_NEED,
   HEALTH_PASSIVE_REGEN,
@@ -769,7 +770,7 @@ export class GameSimulation {
       return;
     }
 
-    const item = this.findNearestItem(2.5);
+    const item = this.findNearestItem(ITEM_PICKUP_REACH);
     if (item) {
       if (item.kind === "wood") {
         if (!this.spendStamina(STAMINA_COST_WOOD, "labour.wood")) return;
@@ -939,7 +940,7 @@ export class GameSimulation {
   private hasNearerTarget(hearthDistance: number): boolean {
     const barrel = this.findNearestBarrel(FUEL_PICKUP_REACH);
     if (barrel && distance(this.player, barrel) < hearthDistance) return true;
-    const item = this.findNearestItem(2.5);
+    const item = this.findNearestItem(ITEM_PICKUP_REACH);
     if (item && distance(this.player, item) < hearthDistance) return true;
     const structure = this.findNearestStructure(2.7);
     if (structure && distance(this.player, structure) < hearthDistance) return true;
@@ -1050,6 +1051,22 @@ export class GameSimulation {
   /** 够得着且已硬直/重伤的狼；判定与状态归投射战斗系统。 */
   findGrabbableWolf(): WolfState | null {
     return this.projectileCombat.findGrabbableWolf();
+  }
+
+  /**
+   * 此刻按行动键会捡起哪件地上物（够不着返回 null）。只读，不产生任何副作用。
+   *
+   * 给自动机用：`getInteractionHint()` 只说"这一下是 pickup"，不说捡的是什么，
+   * 而"要不要捡"恰恰取决于是什么 —— 扛起石头会让近战整个失效（见
+   * hasAttackTargetInRange），在猎场里顺手捡一块的代价是那一趟猎白打。
+   */
+  getPickupCandidate(): GroundItem | null {
+    return this.findNearestItem(ITEM_PICKUP_REACH);
+  }
+
+  /** 扛着的石头此刻扔不扔得中。见 hasAttackTargetInRange —— 那一条在扛东西时恒为假。 */
+  hasThrowTargetInRange(): boolean {
+    return this.projectileCombat.hasStoneTarget();
   }
 
   /** 面朝可爆破火源时的目标；预算耗尽后返回 null，HUD 不再承诺“爆破”。 */
@@ -1653,7 +1670,7 @@ export class GameSimulation {
     if (this.findNearestBarrel(FUEL_PICKUP_REACH)) {
       return { action: "pickup", text: loc("hint.liftFuel", { loaded: this.truck.loaded, required: FUEL_REQUIRED }) };
     }
-    const item = this.findNearestItem(2.5);
+    const item = this.findNearestItem(ITEM_PICKUP_REACH);
     if (item) {
       return item.kind === "wood"
         ? { action: "pickup", text: loc("hint.takeWood", { cost: STAMINA_COST_WOOD }) }
