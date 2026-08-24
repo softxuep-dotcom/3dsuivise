@@ -7,10 +7,9 @@ import {
   mulberry32,
   normalize,
   rotateToward,
-  segmentIntersectsCircle,
   TAU,
 } from "./geometry";
-import { campGatePosition, campLocalToWorld, isTerrainWalkable, terrainHeightAt, terrainSlopeAt } from "../terrain/TerrainModel";
+import { campGatePosition, campLocalToWorld, isTerrainWalkable } from "../terrain/TerrainModel";
 import { NavigationGrid } from "./NavigationGrid";
 import { ProjectileCarriedCombatSystem } from "./ProjectileCarriedCombatSystem";
 import type { ProjectileCarriedCombatWorld } from "./ProjectileCarriedCombatSystem";
@@ -50,6 +49,103 @@ import type {
 import { PLAYER_RADIUS, STONE_COLLIDE_RADIUS, WOLF_RADIUS, BARRIER_STATS, CRITTER_SPECS, FUEL_REQUIRED, INVENTORY_CAPACITY, INVENTORY_STACK_LIMITS, STRUCTURE_SPECS } from "./types";
 import type { Difficulty, DifficultyTuning } from "./difficulty";
 import { DEFAULT_DIFFICULTY, tuningFor } from "./difficulty";
+import {
+  canStepToward,
+  canTraverseTerrain,
+  findSteppableDirection,
+  getFlowFieldObstacles,
+  getSteeredDirection,
+  hasMeleeLine,
+  isBlockingGroundItem,
+  lineOfSightBlocked,
+  moveEntity,
+  stepCrossesCollision,
+} from "./collision";
+import {
+  COOKED_HEALTH,
+  COOKED_HUNGER,
+  COOKED_WATER,
+  COOL_ACTION_COOLDOWN,
+  COOL_ACTION_WARMTH,
+  CRITTER_LOD_DISTANCE,
+  CRITTER_LOD_STRIDE,
+  DROP_LIFETIME,
+  EXHAUSTED_DAMAGE_SCALE,
+  FIRE_WARMTH_RADIUS,
+  FIRST_DAY_DURATION,
+  FIRST_NIGHT_DURATION,
+  FUEL_PICKUP_REACH,
+  HEALTH_DECAY,
+  HEALTH_PASSIVE_NEED,
+  HEALTH_PASSIVE_REGEN,
+  HUNGER_DECAY,
+  JUICE_HUNGER,
+  JUICE_WARMTH,
+  JUICE_WATER,
+  LATER_DAY_DURATION,
+  LATER_NIGHT_DURATION,
+  RAW_HEALTH,
+  RAW_HUNGER,
+  RAW_WATER,
+  REST_IDLE_SECONDS,
+  REVIVE_CLEAR_RADIUS,
+  REVIVE_GRACE_SECONDS,
+  SECOND_NIGHT_DURATION,
+  STAMINA_ACTIVE_REGEN,
+  STAMINA_COST_CACTUS,
+  STAMINA_COST_CHOP,
+  STAMINA_COST_DRAW,
+  STAMINA_COST_MINE,
+  STAMINA_COST_WOOD,
+  STAMINA_IDLE_REGEN,
+  STAMINA_MAX,
+  STAMINA_REST_REGEN,
+  STARTING_RATION,
+  STRAIGHT_WALK_MAX,
+  THERMAL_COMFORT_HIGH,
+  THERMAL_COMFORT_LOW,
+  TREE_REACH,
+  TREE_WOOD,
+  TRUCK_BOARD_REACH,
+  TRUCK_DEPART_MAX_SECONDS,
+  TRUCK_DEPART_SPEED,
+  TRUCK_HORN_COOLDOWN,
+  TRUCK_HORN_RADIUS,
+  TRUCK_HORN_REACH,
+  TRUCK_LOAD_REACH,
+  TUTORIAL_PREY,
+  TUTORIAL_PREY_COUNT,
+  TUTORIAL_PREY_RADIUS,
+  TUTORIAL_PREY_SPREAD,
+  TUTORIAL_WOOD_RADIUS,
+  TUTORIAL_WOOD_SPREAD,
+  WARMTH_COLD_ENTER,
+  WARMTH_COLD_EXIT,
+  WARMTH_DAY_BASE,
+  WARMTH_DAY_FLOOR,
+  WARMTH_FIRE_GAIN,
+  WARMTH_HEAT_ENTER,
+  WARMTH_HEAT_EXIT,
+  WARMTH_INITIAL,
+  WARMTH_MAX,
+  WARMTH_MIN,
+  WARMTH_NIGHT_CEILING,
+  WARMTH_NIGHT_LOSS,
+  WARM_ACTION_COOLDOWN,
+  WARM_ACTION_WARMTH,
+  WATER_DECAY,
+  WATER_RESTORE,
+  WATER_URGENT,
+  WATER_WARMTH_COST,
+  WELL_CHARGES_INITIAL,
+  WELL_CHARGES_MAX,
+  WELL_REACH,
+  WELL_REFILL_SECONDS,
+  WOOD_ATTACK_BONUS,
+  WOOD_ATTACK_CAP,
+} from "./balance";
+import type { EquipTier, WeaponStat } from "./equipment";
+import { ARMOR_STATS, ARMOR_TIERS, ATTACK_COOLDOWN, COMBO_WINDOW, WEAPON_STATS, WEAPON_TIERS } from "./equipment";
 
 /**
  * 造一条待渲染文案。模拟层所有面向玩家的字符串都经这里出去 ——
@@ -75,85 +171,6 @@ function screenBearing(from: Vec2, to: Vec2): number {
   return Math.atan2(right, up);
 }
 
-/*
- * 第一天 90 → 40 秒。
- *
- * Poki 实测 11 场会话时长中位数 **52 秒**，而入夜原本在第 90 秒 —— 也就是
- * **73% 的玩家从没见过夜**，而夜袭是这个游戏的全部。四条装备线、体温双向夹逼、
- * 井的回蓄、狗巢，全都住在他们看不到的地方。
- *
- * 40 而不是 35：出生点脚边就有 4 根枯木，捡 3 根 + 添柴实测要十几秒，
- * 再留一点给"囤水"那步，35 秒会把引导链压得没法完成。40 秒下中位玩家
- * 仍然能在离开前看到天黑。
- *
- * 这条只缩白天，第一昼夜因此从 240 秒降到 190 秒，
- * 而开局口粮是按 240 秒配的（见 STARTING_RATION 那段），所以只会更宽松，不会饿死人。
- *
- * ## 第一夜 150 → 100
- *
- * 150 秒**没有解**。模拟层拿七种打法的画像各跑一遍，**没有一种活到黎明，全部死于狗咬**；
- * 同一画像抖动六次也只活一次。不是失温、不是狼太多 —— 装备为 0、100 点血、一把初始匕首，
- * 硬扛 150 秒本来就走不通（见 docs/游戏测试-交接.md）：
- *
- *     第一夜      黎明落在        活到黎明    整夜贴身次数
- *     150s        190s / 3m10s      1/6         3~5
- *     110s        150s / 2m30s      3/6         1~4
- *      90s        130s / 2m10s      5/6         1~4
- *
- * 而中位会话约 1m38s —— **绝大多数玩家从没完整走完一个昼夜循环**，
- * 而"熬过夜、天亮再来"正是这个游戏的核心。这和当年"一半玩家在 19 帧下玩"是同一类问题：
- * 不是难度曲线陡，是有一整段体验多数人根本到不了。
- *
- * 取 100 秒：黎明落在 140s / 2m20s，压在中位玩家的耐心线附近，
- * 存活率介于上表的 3/6 与 5/6 之间。机器人不守火，绝对值偏悲观，A/B 的差值才是有效信息。
- */
-const FIRST_DAY_DURATION = 40;
-const FIRST_NIGHT_DURATION = 100;
-const LATER_DAY_DURATION = 180;
-const SECOND_NIGHT_DURATION = 180;
-const LATER_NIGHT_DURATION = 180;
-/** 地形拒绝整步移动时依次尝试的缩短比例，见 stepAxis()。 */
-const MOVE_STEP_FALLBACKS = [1, 0.5, 0.25];
-/** 挨打后多少秒内不能休息（原本是"附近有狼"，夜里几乎恒为真）。 */
-/**
- * 站定多久开始休息。5 → 4 → 3 秒。
- *
- * 这个门槛是"休息"这件事的全部成本 —— 它换来的是劳力和生命的快速回复，
- * 而战斗封锁（REST_COMBAT_LOCK = 6 秒）本来就挡住了"边打边回"。
- * 5 秒在实战里常常等不到：夜里几乎每 6 秒就会被摸一下，等于永远进不去。
- *
- * 降到 3 秒还有个手感上的理由：站定是移动端玩家**唯一放开摇杆的时刻**，
- * 门槛越高，手就被按得越久。文案里写死了这个秒数（hud.drain.hint，六个语言），
- * 改这里记得一起改。
- */
-const REST_IDLE_SECONDS = 3;
-
-/** 猎物降频更新的距离与步长，和狼一套口径，见 WolfDirector 的 LOD_DISTANCE。 */
-const CRITTER_LOD_DISTANCE = 50;
-const CRITTER_LOD_STRIDE = 4;
-
-/**
- * 一阶装备。
- *
- * `attack` / `defense` 是**这件装备自己的绝对属性**，不是相对上一阶的增量。
- * 增量口径只在"装备是一条直线"时说得清；一旦分叉成多条线，"+18" 是相对谁的 +18
- * 就没有答案了。绝对值还顺带修掉一处口径不一致：HUD 上写的是累计值（狼牙重矛
- * "攻击+34"），配方表的 blurb 写的是增量（"攻击+16"），同一件装备两个数字。
- */
-export interface EquipTier {
-  id: string;
-  /** 所属分线；阶 0 是 "none"，四条线各自三阶。 */
-  line: EquipLine;
-  /** 0~3。只能沿同一条线逐阶推进，跨线必须从一阶重来。 */
-  tier: number;
-  cost: Array<[InventoryItemKind, number]>;
-  needsFire: boolean;
-  /** 装备后的攻击力绝对值。武器线必填。 */
-  attack?: number;
-  /** 装备后的防御力绝对值。护甲线必填。 */
-  defense?: number;
-}
-
 /** 卡车随装油进度逐级苏醒；规则状态与 Three.js 表现分开。 */
 export interface TruckPowerState {
   loaded: number;
@@ -165,546 +182,7 @@ export interface TruckPowerState {
   hornCooldown: number;
 }
 
-/**
- * 武器：共用阶 0 + 两条各三阶的线，**从一阶就分叉**。
- *
- * 两条线抢的不是同一个资源池，这比数值上的强弱更能拉开差别：
- *   刀线吃**铁矿** —— 全图 14 个矿点 × 2~3 块，不再生，且没有第二个用途。
- *                     走满一条刀线要 12 块，配上铁甲就是 21 块，吃掉全图一半到四分之三。
- *   剑线吃**枯木** —— 而枯木同时是唯一的燃料（1 根 = 篝火 +95 秒）。
- *                     走满剑线要 8 根，等于拿今晚的火换明天的剑。
- *
- * 剑一阶是全部 12 件里仅有的两件 `needsFire: false` 之一 —— 轻线因此是唯一
- * 能在远征途中变强的线，也是唯一第一天日落前就拿得到的线。
- *
- * 三阶统一卡在**狼牙**上：只有白天的大狼掉，而大狼占比是
- * `min(0.58, 0.22 + (天数−1)×0.09)`，这把三阶自动锁到第 3 天以后，
- * 不需要写任何天数判定。
- *
- * ## 一阶**不再全都要兽皮**
- *
- * 原先四件一阶（砍刀Ⅰ / 剑Ⅰ / 铁甲Ⅰ / 皮甲Ⅰ）**每一件都要兽皮**，而兽皮只从
- * 白天的野狗和长角羚身上来 —— 于是"能不能开始变强"这件事被一条线卡死了：
- * 没打到猎物之前，挖再多矿、捡再多柴，四件里一件也造不出来。玩家手里攒着材料
- * 却什么都点不了，那是最难受的一种卡关，而且它卡的正是第一天。
- *
- * 现在每个槽位各有一条**不要兽皮**的路：
- *
- *   武器  砍刀Ⅰ = 铁矿 ×4          剑Ⅰ   = 兽皮 ×1 + 枯木 ×2
- *   护甲  铁甲Ⅰ = 铁矿 ×4          皮甲Ⅰ = 兽皮 ×4
- *
- * 换掉的兽皮按 1:1 折成铁矿（砍刀 3+1皮 → 4，铁甲 2+2皮 → 4），
- * 所以铁线的总成本没变松，只是把"要打猎"换成了"要挖矿"——
- * 而挖矿是随时能做的事。二三阶不动：那时候你早该出过门了。
- */
-const WEAPON_TIERS: EquipTier[] = [
-  { id: "survival-knife", line: "none", tier: 0, cost: [], needsFire: false, attack: 30 },
 
-  { id: "saber-1", line: "saber", tier: 1, needsFire: true, attack: 34,
-    cost: [["iron-ore", 4]] },
-  { id: "saber-2", line: "saber", tier: 2, needsFire: true, attack: 42,
-    cost: [["iron-ore", 4], ["hide", 2], ["wood", 2]] },
-  { id: "saber-3", line: "saber", tier: 3, needsFire: true, attack: 50,
-    cost: [["iron-ore", 5], ["hide", 2], ["wolf-fang", 3]] },
-
-  { id: "sword-1", line: "sword", tier: 1, needsFire: false, attack: 38,
-    cost: [["hide", 1], ["wood", 2]] },
-  { id: "sword-2", line: "sword", tier: 2, needsFire: true, attack: 45,
-    cost: [["hide", 3], ["wood", 3]] },
-  { id: "sword-3", line: "sword", tier: 3, needsFire: true, attack: 55,
-    cost: [["hide", 4], ["wood", 3], ["wolf-fang", 3]] },
-];
-
-/**
- * 护甲：共用阶 0 + 两条各三阶的线。
- *
- * 铁甲堆减法防御，皮甲堆百分比闪避。减法吃"多而弱"的咬伤，百分比吃"少而重"的，
- * 两条曲线必然交叉 —— 解 `A − D铁 = (A − D皮)(1 − 闪避)` 得交叉点在原始攻击
- * 30.0 / 35.2 / 35.9（逐阶）。后期精英狼的攻击已经过线，普通狼群则更适合用重甲扛。
- * 所以**重甲是守夜的甲，皮甲是扛精英重击的甲**，这不是平衡说辞，是公式的形状。
- */
-const ARMOR_TIERS: EquipTier[] = [
-  { id: "none", line: "none", tier: 0, cost: [], needsFire: false, defense: 2 },
-
-  { id: "scale-1", line: "scale", tier: 1, needsFire: true, defense: 8,
-    cost: [["iron-ore", 4]] },
-  { id: "scale-2", line: "scale", tier: 2, needsFire: true, defense: 13,
-    cost: [["iron-ore", 3], ["hide", 3]] },
-  { id: "scale-3", line: "scale", tier: 3, needsFire: true, defense: 18,
-    cost: [["iron-ore", 4], ["hide", 3], ["wolf-fang", 2]] },
-
-  { id: "hide-1", line: "hide", tier: 1, needsFire: false, defense: 5,
-    cost: [["hide", 4]] },
-  { id: "hide-2", line: "hide", tier: 2, needsFire: true, defense: 6,
-    cost: [["hide", 4], ["wood", 2]] },
-  { id: "hide-3", line: "hide", tier: 3, needsFire: true, defense: 7,
-    cost: [["hide", 4], ["wood", 3], ["wolf-fang", 3]] },
-];
-
-/**
- * 全线统一的攻击冷却。
- *
- * 只有一个攻击动画可用（`Melee_1H_Attack_Chop`），而动画的播放速度是按
- * `clip.duration / 0.22` 缩放到攻击闪光时长的。冷却一旦逐阶不同，同一个动作
- * 在不同武器上就会以不同倍率被拉伸 —— 那看起来不像"重武器挥得慢"，
- * 看起来像 bug。攻速这条轴因此让位给攻程、扇形、劳力等不依赖动画的轴。
- */
-const ATTACK_COOLDOWN = 0.55;
-
-interface WeaponStat {
-  range: number;
-  /**
-   * 扇形的 `dot` 阈值 = cos(扇形角 / 2)。命中面积 = (扇形角/360) × π × 攻程²，
-   * 而命中数量**不设上限**（沿用现状）—— 所以面积就是群体能力本身，
-   * 不需要一个凭空的"最多打 N 个"。
-   *
-   *   100° → +0.643    110° → +0.574    160° → +0.174
-   *   197°（改造前写死的值）→ −0.148
-   *   220° → −0.342    250° → −0.574    280° → −0.766
-   */
-  arcDot: number;
-  /** 每次挥砍的劳力。夜里回不了劳力，这一列才是真正的战斗上限。 */
-  stamina: number;
-  /** 破甲：`有效护甲 = max(0, 目标护甲 − 破甲)`。只有刀线有。 */
-  pierce: number;
-  critChance: number;
-  critMult: number;
-  moveScale: number;
-  /** 刀线击退：推开的米数。精英狼免疫。 */
-  knockback: number;
-  /** 刀线击退真正值钱的部分：把目标的咬击往后推多少秒。 */
-  knockbackStun: number;
-  /** 剑线连击：每段加多少伤害。0 表示这把武器吃不到连击。 */
-  comboStep: number;
-  comboMax: number;
-  /** 一次挥砍只要命中至少一个目标，就恢复固定体力；群攻不会按目标数叠加。 */
-  healthOnHit: number;
-}
-
-/**
- * 武器属性表。冷却全线统一（见 ATTACK_COOLDOWN），分化靠下面这些不依赖动画的轴。
- *
- * 刀线与剑线的关系不是强弱，是两个方向各自约两倍：
- *   被围（6 只均匀分布）——  刀三扫到 77.8%，剑三只扫到 30.6%，刀线领先 1.75×
- *   单体持久战          ——  剑三满层 228 DPS 对刀三 104.5，剑线领先 2.18×
- *
- * 早先的版本让刀线**同时**拥有大面积、低劳力、破甲与击退，剑线只有 +33% 单击，
- * 而单击优势只在"面前恰好一个目标"时兑现 —— 主要用于大狼与精英狼。
- * 于是刀线全面压制。修正有两处：劳力两线拉平（刀一次打好几个还收费更低等于白送），
- * 以及给剑线一个**刀线结构上吃不到**的机制 —— 连击。刀每一刀都换目标，永远停在 0 段。
- */
-const WEAPON_STATS: Record<WeaponKind, WeaponStat> = {
-  "survival-knife": { range: 3.1, arcDot: 0.174, stamina: 4, pierce: 0, critChance: 0, critMult: 1, moveScale: 1.00, knockback: 0, knockbackStun: 0, comboStep: 0, comboMax: 0, healthOnHit: 0 },
-
-  "saber-1": { range: 3.4, arcDot: -0.342, stamina: 5, pierce: 2, critChance: 0, critMult: 1, moveScale: 0.98, knockback: 0.35, knockbackStun: 0.20, comboStep: 0, comboMax: 0, healthOnHit: 3 },
-  "saber-2": { range: 3.6, arcDot: -0.574, stamina: 6, pierce: 5, critChance: 0.12, critMult: 1.8, moveScale: 0.95, knockback: 0.50, knockbackStun: 0.30, comboStep: 0, comboMax: 0, healthOnHit: 5 },
-  "saber-3": { range: 3.8, arcDot: -0.766, stamina: 7, pierce: 8, critChance: 0.15, critMult: 2.0, moveScale: 0.92, knockback: 0.70, knockbackStun: 0.40, comboStep: 0, comboMax: 0, healthOnHit: 10 },
-
-  "sword-1": { range: 3.2, arcDot: 0.643, stamina: 5, pierce: 0, critChance: 0.20, critMult: 1.8, moveScale: 1.00, knockback: 0, knockbackStun: 0, comboStep: 0.10, comboMax: 3, healthOnHit: 3 },
-  "sword-2": { range: 3.3, arcDot: 0.643, stamina: 6, pierce: 0, critChance: 0.30, critMult: 2.0, moveScale: 1.03, knockback: 0, knockbackStun: 0, comboStep: 0.12, comboMax: 4, healthOnHit: 5 },
-  "sword-3": { range: 3.4, arcDot: 0.574, stamina: 7, pierce: 0, critChance: 0.40, critMult: 2.2, moveScale: 1.06, knockback: 0, knockbackStun: 0, comboStep: 0.15, comboMax: 4, healthOnHit: 10 },
-};
-
-interface ArmorStat {
-  /** 命中判定前掷骰，闪掉整次咬击。只有皮甲线有。 */
-  dodge: number;
-  /** 把狼**未经防御削减**的原始攻击力的这个比例弹回去。只有铁甲线有。 */
-  thorns: number;
-  moveScale: number;
-  /** 乘在三档劳力回复上。皮甲提供加成，铁甲保持基础回复速度。 */
-  staminaScale: number;
-}
-
-const ARMOR_STATS: Record<ArmorKind, ArmorStat> = {
-  none: { dodge: 0, thorns: 0, moveScale: 1.00, staminaScale: 1.00 },
-
-  "scale-1": { dodge: 0, thorns: 0.12, moveScale: 0.97, staminaScale: 1.00 },
-  "scale-2": { dodge: 0, thorns: 0.22, moveScale: 0.93, staminaScale: 1.00 },
-  "scale-3": { dodge: 0, thorns: 0.35, moveScale: 0.88, staminaScale: 1.00 },
-
-  "hide-1": { dodge: 0.12, thorns: 0, moveScale: 1.02, staminaScale: 1.12 },
-  "hide-2": { dodge: 0.24, thorns: 0, moveScale: 1.05, staminaScale: 1.22 },
-  "hide-3": { dodge: 0.38, thorns: 0, moveScale: 1.09, staminaScale: 1.35 },
-};
-
-/**
- * 连击窗口：换目标、或这么久没有命中，层数清零。
- * 冷却是 0.55 秒，正常连打够用；被打断走位一次就断 —— 这正是"咬住一个目标"的代价。
- */
-const COMBO_WINDOW = 1.2;
-
-/*
- * 精英狼登场的夜数**跟着难度走**（简单 3 / 普通 2 / 令人发狂 1），
- * 见 difficulty.ts 的 eliteMinDay。之后逐日提高出现率，但永远只是少数。
- */
-
-// 肉的两级。生肉顶饿不回体力，烤肉才回 —— 烤肉的价值全在体力那一条上。
-const RAW_HUNGER: readonly [number, number] = [12, 18];
-const RAW_WATER: readonly [number, number] = [2, 6];
-const COOKED_HUNGER: readonly [number, number] = [26, 38];
-const COOKED_WATER: readonly [number, number] = [5, 10];
-/**
- * 熟肉回的体力，14 → 26。
- *
- * 这一刀是在给"休息"让路。体力原先只有一条真正管用的回复途径 —— 站定 3 秒进入
- * 休息，净 +2.6/s。但**站着不动本身不是玩法**：这是个动作游戏，静止的那 38 秒里
- * 玩家什么也没在做，还得盯着别被狗打断（挨一口就锁 6 秒）。实际结果是大部分人
- * 根本不用这条路，于是他们的体力只出不进，被 HEALTH_DECAY 慢慢磨死。
- *
- * 26 点 ≈ 108 秒的恒定流失，一块熟肉从"够撑一分钟"变成"够撑两分钟"。
- * 打猎 → 烤肉 → 回体力这条主动循环因此变成体力的**主路**，休息退成一个
- * 安全时才用得上的加速手段。上限仍然是 100，所以囤肉不会变成囤血。
- */
- // 导出：烤肉按钮上要写"回体力多少"，而那个数**只能有一个来源**。
- // 曾经在 HudController 里另抄了一份字面量 14，这次把 14 改成 26 时它没跟着动，
- // 背包里于是出现一句和实际收益对不上的说明 —— 那种错正是玩家最信不过的一类。
-export const COOKED_HEALTH = 26;
-/**
- * 生肉回的体力，取熟肉的一半。
- *
- * 原先是 0 —— "生肉完全不回体力"。那条设计的意图是让烤肉有存在理由，但它把
- * 生肉变成了一个几乎没有反馈的物品：吃下去只有饥饿条动，而饥饿是五条轴里
- * 最不容易要命的一条（中位玩家 75 秒阵亡时饱食还有 52）。
- *
- * 改成一半之后取舍还在 —— 走一趟火边仍然能把收益翻倍 —— 但生吞至少是一个
- * 看得见效果的动作，而"看得见效果"正是新玩家判断一个物品有没有用的唯一依据。
- */
-const RAW_HEALTH = Math.round(COOKED_HEALTH / 2);
-
-
-// --- 体温调节动作 ---
-// 降温的主力从来不该是喝水（饮品只给 -5~12），而是这类**零资源消耗**的动作。
-// 它们的存在保证了玩家再穷也有自救手段，不会被锁死在中暑/失温里。
-//
-// 冷却 40 → 120 秒。基准版本用**劳力成本**（10 / 15）限制它们，我们改成零消耗 +
-// 长冷却，那冷却就必须真的长：40 秒时一个白天能按三次，把中暑线从 123 秒推到 188 秒，
-// 而白天只有 180 秒 —— 等于零代价地抹掉了"白天必定中暑"这条压力，喝水降温也
-// 失去存在理由。120 秒把它压回**每相位一次**的自救阀门：白天中暑推迟到 145 秒、
-// 夜里失温推迟到 95 秒，两者都仍然会在相位内发生。
-//
-// 90 秒以上其实结果相同（舒适区门槛卡着，第二次永远来不及按），取 120 是为了留出余量，
-// 又不像 180 那样让白天用掉的那次连夜里也一起锁死。
-const COOL_ACTION_WARMTH = 15;    // 就地降温：固定 -15
-const COOL_ACTION_COOLDOWN = 120;
-const WARM_ACTION_WARMTH = 25;    // 就地取暖：固定 +25
-const WARM_ACTION_COOLDOWN = 120;
-/** 落在这个区间内两个方向都不给按，避免玩家在舒适区里空转 CD。 */
-const THERMAL_COMFORT_LOW = 35;
-const THERMAL_COMFORT_HIGH = 62;
-
-// --- 仙人掌汁：随机区间而不是固定值 ---
-// 补水 8~16 → 11~20、降温 5~10 → 8~14。仙人掌是满地都有的散装水源，
-// 但一趟只回一格多水的话，玩家宁可绕远路去井；抬一点让"顺手割一根"真的顶用。
-const JUICE_WATER: readonly [number, number] = [11, 20];
-const JUICE_HUNGER: readonly [number, number] = [1, 5];
-const JUICE_WARMTH: readonly [number, number] = [8, 14];
-const DROP_LIFETIME = 180;
-
-/**
- * 教学猎物：拾骨鸦，三只，出生点前方 5.5~7.0 米。
- *
- * 为什么是拾骨鸦而不是铠甲虫：它是除长角羚外体型最大的一种（scale 1.15 对
- * 铠甲虫 0.68），而长角羚太快、不能当教学目标。个头是这一步的全部意义 ——
- * 玩家要在第一眼就看见"那儿有个东西可以砍"，一个半米高的色块做不到这件事。
- *
- * 它的逃速 / 游荡 / 警觉都为此重配过（见 CRITTER_SPECS.corvid），所以站得住。
- * 顺带一提，教学期间世界是冻结的（updateCritters 在时钟闸之后），它连动都不会动；
- * 调慢是为了教学**结束之后**玩家回头还找得到它。
- *
- * 落点半径 6.3~7.8：**必须真的留出余量**，不能贴着警觉半径 5.5 摆。
- * 第一版取 5.5，实测最近那只落在 5.4999…，正好压线 —— 开局它就处在将逃未逃的状态，
- * 玩家一挪脚它就开始跑。现在最近的一只留 0.8 米余量，最远的留 2.3 米。
- * 上限受相机约束：拉近后横屏焦点平面横向可见 43 米，7.8 米还在画面正中。
- */
-export const TUTORIAL_PREY: CritterKind = "corvid";
-const TUTORIAL_PREY_COUNT = 3;
-const TUTORIAL_PREY_SPREAD: readonly number[] = [0.08, -0.58, 0.66];
-const TUTORIAL_PREY_RADIUS: readonly number[] = [6.3, 7.8, 7.0];
-
-/**
- * 教学枯木：教「行动键」用的那一根，撒在出生点侧后方 6.5 米。
- *
- * 为什么非得新加一根：全图 53 根枯木最近的一根在 18 米外，而教学的四个目标
- * 都该在一屏之内。角度特意岔开甲虫那三只（它们在 −0.55~+0.62 弧度），
- * 于是"打虫"和"捡柴"是两个方向，玩家不会一次站定就把两步都做完。
- *
- * 选枯木而不是别的：枯木 → 生火 → 活过第一夜是唯一一条真救命的链，而且教学一结束，
- * objectiveStage 因为背包里有柴会直接跳到第 1 阶「走到篝火旁添柴」，交接是无缝的。
- */
-const TUTORIAL_WOOD_SPREAD = 1.15;
-const TUTORIAL_WOOD_RADIUS = 6.5;
-
-// ============================================================================
-// 五轴生存模型
-//
-//   体力(health)  恒定流失，是"该吃饭了"的硬心跳
-//   劳力(stamina) 采集与攻击的预算，休息回得快、行动回得慢
-//   体温(warmth)  白天有地板、夜晚有天花板 ⇒ 中暑只在白天、失温只在夜晚
-//   水分(water)   归零立即死亡
-//   饥饿(hunger)  归零立即死亡
-//
-// 基准版本昼夜周期 750 秒，我们是 240~255 秒，所以速率不是简单等比缩放，
-// 而是按"在一个昼夜内应该发生几次危机"重新配平，偏离处见下方注释。
-// ============================================================================
-
-// --- 体温 ---
-const WARMTH_MIN = 0;
-const WARMTH_MAX = 100;
-const WARMTH_INITIAL = 22;
-/** 白天地板：低于此值会被拉回，所以白天冻不死。（基准值 15） */
-const WARMTH_DAY_FLOOR = 15;
-/** 夜晚天花板：高于此值会被压回，所以夜晚中不了暑。（基准值 80） */
-const WARMTH_NIGHT_CEILING = 80;
-/** 中暑触发/解除阈值，迟滞避免在边界反复横跳。（基准值 100 / 95） */
-const WARMTH_HEAT_ENTER = 100;
-const WARMTH_HEAT_EXIT = 92;
-/** 失温触发/解除阈值。（基准值 5 / 5，我们放宽解除以免瞬间反复） */
-const WARMTH_COLD_ENTER = 5;
-const WARMTH_COLD_EXIT = 14;
-// 昼夜各 180 秒，与基准的 375/375 同为对称结构，所以时间压缩系数是全局统一的
-// ×2.083（= 750/360）。下面三条体温速率都是基准值 ×2.083 得来，
-// 结果是各阶段占相位的比例与基准完全一致。
-/** 白天 +0.69/s：从白天地板 15 爬到中暑线 100 需 123 秒，占白天的 68% —— 白天必定中暑。 */
-const WARMTH_DAY_BASE = 0.69;
-/**
- * 夜间 -1.05/s：从天花板 80 掉到失温线 5 需 71 秒，占夜晚的 40%。
- *
- * 这一条**故意偏离** ×2.083 的等比换算（严格换算是 1.39）。原因是时间压缩保住了
- * 比例却保不住手感：基准夜损 0.667 给玩家 118 秒的外出窗口，等比压缩后只剩 54 秒 ——
- * 比例同样是三成，但人做决策、导航、应对突发所需要的是**绝对秒数**，它不随游戏时钟缩放。
- * 54 秒的窗口玩家根本不敢出门，夜晚就退化成"蹲在火边发呆"。
- * 所以换算规则在这里有例外：凡是玩家必须在其内做出反应的时长，都要额外放宽。
- */
-const WARMTH_NIGHT_LOSS = 1.05;
-// 劳作产热已移除。基准版本根本没有这一项，而我们曾把它设成 +0.9/s
-// —— 是白天基线的 2.7 倍，直接导致"正常采集必然中暑且无法自救"。
-/** 篝火 +3.16/s：夜晚静止净 +1.77/s，约 45 秒从 0 回满到天花板 80。 */
-const WARMTH_FIRE_GAIN = 3.16;
-/**
- * 篝火有效半径 10.0。
- * 基准版本里火堆光环半径是 320 游戏单位；按移速换算（基准主角 240 / 我们 8.2，
- * 约 29.3 单位 = 1 米）折合 **10.9 米**，我们此前只有 5.5，不到一半。
- * 放大之后语义从"必须贴着火站"变成"待在营地里就算烤着火" —— 这正是基准版本的行为，
- * 也让添柴、烤肉、升级装备这些营地事务不必再挤在火堆脚下完成。
- */
-const FIRE_WARMTH_RADIUS = 10.0;
-
-// --- 体力：恒定流失（基准 600HP / -0.7/s ≈ 857 秒） ---
-const HEALTH_DECAY = 0.24; // 100 / 0.24 ≈ 417 秒 ≈ 1.16 个昼夜（基准 857/750 = 1.14）
-
-/**
- * 吃饱喝足时的自然回复。0.30 → 0.60。
- *
- * 原来是**止损**而不是回血：净 0.30 − 0.24 = +0.06/s，回满要 1000 秒，
- * 也就是玩家永远看不见它动。现在净 +0.36/s，回满 278 秒 ≈ 一个半白天 ——
- * 慢得不可能拿来当战斗续航，但"我一直吃饱喝足"这件事终于有了看得见的回报。
- *
- * 门槛仍然卡在饱食**和**水分都高于 70，而两条轴都按 0.42/s 掉：从满值掉到 70
- * 只要 71 秒。所以这不是"什么都不做就回血"，而是"持续维持双满才回血"，
- * 它奖励的正是那个一直在找水找肉的玩家。任一掉下去立刻回到净流失。
- *
- * 刻意不做成随时间递增或按比例回复：那会变成真正的自动回血，
- * 把打猎→烤肉→回体力整条循环的压力抽掉。
- */
-const HEALTH_PASSIVE_REGEN = 0.60;
-const HEALTH_PASSIVE_NEED = 70;
-
-/**
- * 开局口粮。**这是新手能不能活过第一夜的分水岭**，不是送温暖。
- *
- * 把两条时间轴对齐就明白了 —— 开局饱食 82、水分 90，两者都按 0.42/s 掉，
- * 且**归零即死**（见 update() 里的结算）：
- *
- *   饿死 195s · 渴死 214s · 而第二天黎明在 90 + 150 = 240s
- *
- * 也就是说背包空着出门的玩家，算术上撑不到第二个黎明。而第一个白天只有 90 秒，
- * 这 90 秒里 getObjective() 的引导链正把他按在"捡枯木→添柴→封门"上，
- * "去囤水"（sim.29）排在这三步**全部做完之后**；入夜之后游戏又明确让他守着火别出门
- * （sim.20 / sim.nightHold）。照着游戏自己的指引走，第一夜必死。
- *
- * 2 水 + 1 熟肉刚好把人送过那道线。注意**两条需求轴都封顶 100**，所以口粮值多少
- * 不看给了几份，只看**什么时候吃** —— 按提示在预警线（饱食<18，t≈152s）吃下熟肉：
- *
- *   饱食 18 → 44~56（COOKED_HUNGER 是 26~38 的随机） → 黎明 240s 时剩 7~19
- *
- * 也就是天亮那一刻饱食条正在闪红：玩家不是被送过关，是被准点推到
- * "天亮了我得去弄吃的"这个认知上。水那一路更宽松（渴死推到 337s）。
- *
- * 顺带逼他开一次背包 —— 那是吃、烤、造装备的总入口，不开就什么都学不会。
- *
- * **没有被这份口粮解决的事**：满值 100 ÷ 0.42 = 238s，而第一昼夜是 90+150 = 240s。
- * 也就是说哪怕开局两条轴都是满的、中途一口不吃，也差 2 秒撑不到黎明。
- * 开局就把口粮一次吃光的玩家（浪费掉溢出部分）仍然会在 238s 倒下。
- * 真要堵死这个口子得动 FIRST_NIGHT_DURATION 或衰减率，那是另一笔账。
- */
-const STARTING_RATION: ReadonlyArray<readonly [InventoryItemKind, number]> = [
-  ["water", 2],
-  ["cooked-meat", 1],
-  /*
-   * 一根枯木。**这不是补给，是第一夜教学的道具。**
-   *
-   * 入夜那一段教学的第二拍是"走到火塘边点火"，而它是整段里唯一可能做不到的一拍 ——
-   * 第一个白天只有 40 秒，捡一根柴要 30 劳力、还得先找到，玩家很可能天黑时两手空空。
-   * 那时这一拍只能换成一句"白天要先捡枯木"然后跳过，等于最该教的那件事没教成。
-   *
-   * 送一根之后，"点火 → 火边取暖"这条链在第一夜必定走得通；而它也只够烧 95 秒，
-   * 第一夜有 150 秒 —— 火仍然会在天亮前灭一次，"柴要自己囤"这一课半点没松。
-   *
-   * ---
-   *
-   * **2026-08-21：1 → 3 根。**
-   *
-   * 上面那段的假设是"玩家会去点火"。自动机实测推翻了它：五座起始营地
-   * 第一夜「有火可烤」占比全部是 **0%**，营地燃料全程为 0，体温 50 → 0。
-   * 而 getRestBlocker() 在第一夜的命中里，失温占 54~72%、体温≤30 再占 16~26%，
-   * "刚挨过打"连前两名都进不去 —— 也就是 **70~88% 的第一夜完全无法回血，
-   * 闸门全压在体温上**，跟狼没关系。
-   *
-   * 更要命的是白天 40 秒里备柴和搬桶是二选一：让自动机主动采柴之后，
-   * 活过第一夜纹丝不动（60% → 60%），装车进度却从 4/6 掉到 1/6。
-   * 这正是节奏表 §3 说的"保底那一列缺失"——保温是可选、操作驱动，
-   * 失温是必然、时间驱动，剪刀差的锋面在体温轴上。
-   *
-   * 3 根 = 285 秒火，把 100 秒的第一夜整个盖住，还剩一大截给天亮后。
-   * "柴要自己囤"这一课挪到第二夜（180 秒）去上 —— 那时玩家已经见过火灭一次
-   * 是什么后果，而不是在还没搞懂规则的时候先冻死。
-   */
-  ["wood", 3],
-];
-
-// --- 水分与饥饿（基准两者都是 -0.2/s，满值 500 秒） ---
-const WATER_DECAY = 0.42;  // 238 秒 ≈ 0.66 个昼夜（基准 500/750 = 0.67）
-const HUNGER_DECAY = 0.42; // 238 秒 ≈ 0.66 个昼夜（同水分，两轴等速）
-/** 水分低于此值时，取水会抢占所有其它交互，避免玩家被拾取挡着渴死。 */
-const WATER_URGENT = 32;
-
-// --- 劳力（基准 225 上限、几乎不回复，靠睡觉补） ---
-const STAMINA_MAX = 100;
-const STAMINA_REST_REGEN = 7.5;   // 休息中
-const STAMINA_IDLE_REGEN = 1.6;   // 站着不动但没进入休息
-const STAMINA_ACTIVE_REGEN = 1.1; // 移动中：仍只有休息的 1/7，但走路不再是完全的死区
-                                  // （0.5 时走满全图 200 秒才回满，而游戏大部分时间在走）
-const STAMINA_COST_CACTUS = 10;
-const STAMINA_COST_MINE = 15;
-/**
- * 砍树 30，是捡柴（12）的两倍半。
- *
- * 这个价差就是"柴从哪来"的全部经济：地上现成的便宜、砍树贵。玩家自然会先捡光
- * 触手可及的，等那些没了再去砍树 —— 而砍树本来就该是后期的路，它是唯一
- * 在营地附近保底存在的燃料（每座营地保底两棵，见 createWorld）。
- */
-const STAMINA_COST_CHOP = 30;
-/** 一棵树砍两次砍空。 */
-const TREE_WOOD = 2;
-/** 砍树的够得着距离。比铁矿脉（2.8）远一点：树的树冠本来就占地方。 */
-const TREE_REACH = 3.2;
-/**
- * 捡一根枯木 12 劳力（原先 30）。
- *
- * 30 是全游戏最贵的常规动作 —— 等于砍倒一整棵树、两倍挖矿、三倍割仙人掌，
- * 而它只是弯腰捡一根棍子。一管劳力只够捡三根，提示上还明晃晃写着"劳力 30/根"：
- * 少数真去读提示的玩家，读到的是"这事很贵"。
- *
- * 实测两轮，20 个人里只有 3~4 个捡过柴，而带教学那一轮也没好转 ——
- * 也就是说这不是"不知道怎么捡"，是这个动作本身在劝退。而柴是唯一决定
- * 能不能活过第一夜的东西。
- *
- * 原注释给 30 的理由是"木头进背包后会变成免费无限，用采集成本接住稀缺性"。
- * 那条理由现在不成立了：**稀缺已经由存量兜住** —— 全图 56 根地上柴 + 26 棵树
- * 各两份，一根都不再生。再收 30 劳力是重复收税。
- *
- * 现在的价差改成表达"这根柴好不好拿"：地上现成的 12，砍树 30。
- * 于是玩家会先把地上的捡光，再开始考虑砍树 —— 这正是想要的顺序。
- */
-const STAMINA_COST_WOOD = 12;
-/**
- * 随身枯木每根 +2 攻击，最多两根生效。
- * 沿用「一块木头也能当武器使」的设计 —— 背包里的材料同时是个边际武器，
- * 占那一格才有回报，否则玩家只会觉得被收了格子税。
- */
-const WOOD_ATTACK_BONUS = 2;
-const WOOD_ATTACK_CAP = 2;   // 20 → 15：两级武器共需 8 块铁 = 原先两整管劳力的站桩
-const STAMINA_COST_DRAW = 8;
-/**
- * 攻击的劳力开销已经**移进武器表**（WEAPON_STATS.stamina，刀剑两线都是 5/6/7）。
- * 劳力低于当次开销时攻击仍可挥出，但伤害衰减到 EXHAUSTED_DAMAGE_SCALE ——
- * "脱力"是可感知的惩罚，不是硬锁。
- */
-const EXHAUSTED_DAMAGE_SCALE = 0.6;
-
-// --- 水源：两级结构 ---
-//   仙人掌：位置随机、产量有限，一刀即得 —— 沿途顺手补给
-//   干枯的井：地图上预置的固定水源，必得但要走一趟 —— 规划路线的锚点
-// 基准版本是「建造干枯的井」+「提水」两级技能，我们省掉建造直接预置几口井。
-// 因此井是**地标**：它不产生"挖不挖"的赌博，而产生"今晚在哪过夜"的空间决策。
-/** 井口有效交互半径。 */
-const WELL_REACH = 3.2;
-
-/**
- * 点击移动时，直线走法的最远验证距离。
- *
- * 上限存在的理由是**开销**而不是正确性：验一条直线要按 0.35 米逐段问地形和碰撞，
- * 60 米就是一百七十多段，而这件事每帧都要做一次。40 米已经比横屏可见宽度
- * （约 43 米）还长 —— 屏幕上点得到的地方基本都在里面，再远的点击本来就该
- * 交给流场去规划路线。
- */
-const STRAIGHT_WALK_MAX = 40;
-
-/** 每口井的蓄水上限，以及回蓄一次所需秒数。 */
-const WELL_CHARGES_MAX = 3;
-/**
- * 井的初始存量只有 1 格，不是满的。
- * 基准版本的井是多人分摊、而且要自己造（木头+石头+石头）；我们是单人还白送 5 口，
- * 所以必须在别处收紧。开局满存量意味着白送 20 份水 = 3.4 个昼夜，
- * 而一局才 2~3 天 —— 那样缺水压力整局都不会出现。
- * 回蓄速度没动：逛 1 口井覆盖需求的 29%、逛 2 口 59%，剩下的交给仙人掌和长角羚。
- */
-const WELL_CHARGES_INITIAL = 1;
-// 210 秒 = 一口井每昼夜再生 1.7 格，只覆盖一个玩家约 30% 的饮水需求，
-// 和基准（500 容量 / +0.1/s ⇒ 1.5 次提水每昼夜）的比例一致。
-// 曾经是 50 秒，那意味着单独一口井就够你活，井的空间决策等于不存在。
-const WELL_REFILL_SECONDS = 210;
-const WATER_RESTORE = 26;
-/** 一份水降 14 点体温：正好能把刚中暑的 100 拉到解除线 92 以下。 */
-const WATER_WARMTH_COST = 14;
-
-/**
- * 复活后的无敌时长与清场半径。
- *
- * 两个都不能省：只清场不无敌，夜里几十只狗，推开 12 米也就两秒的事；
- * 只无敌不清场，无敌一结束你还站在犬群正中间。
- */
-const REVIVE_GRACE_SECONDS = 3.5;
-const REVIVE_CLEAR_RADIUS = 12;
-
-/** 走到几米内可以搬起一桶油。 */
-const FUEL_PICKUP_REACH = 2.6;
-/**
- * 扛着桶走到车尾几米内就算装车。半径给得比拾取宽，免得对着车找角度。
- *
- * **1.0.24：4.5 → 5.5。** 卡车是半径 2.4 的实体障碍、玩家半径 0.72，最近只能贴到
- * 3.12 米，所以 4.5 实际只留了 1.38 米的余量 —— 扛着桶（移速 ×0.54）绕车找角度
- * 的那几秒是纯粹的挫败，而它落在通关循环里唯一给正反馈的那一步前面。
- *
- * 上限由教学桶决定：桶不能落进这个圈，否则"扛"这一步就白教了
- * （tests/tutorialBarrel.test.ts 锁着这条）。1.0.24 把教学桶挪到出生点 2.2 米、
- * 偏角 2.20 之后，五个起始营地的桶→车最小是 6.50 米，5.5 留着 1.0 米余量。
- */
-const TRUCK_LOAD_REACH = 5.5;
-/**
- * 空着手站在车边几米内可以发车（油加满时）。
- * 保持 4.5 不动：装车宽是为了扛着桶不必找角度，而发车是空手的，本来就好站位。
- * 卡车是半径 2.4 的实体障碍、玩家半径 0.72，最近只能贴到 3.12 米 ——
- * 判定再收紧一点才会出现"贴着车按不动"，4.5 离那条线还有富余。
- */
-const TRUCK_BOARD_REACH = 4.5;
-/** 驶离速度与最长驶离时间（到边界就结算，这个上限只是保险）。 */
-const TRUCK_DEPART_SPEED = 11;
-const TRUCK_DEPART_MAX_SECONDS = 12;
-/** 三桶后，靠近卡车按行动键可用喇叭震退普通狼。 */
-const TRUCK_HORN_REACH = 6.4;
-const TRUCK_HORN_RADIUS = 18;
-const TRUCK_HORN_COOLDOWN = 45;
 
 export class GameSimulation {
   readonly world: WorldDefinition;
@@ -909,7 +387,7 @@ export class GameSimulation {
       kills: 0,
     };
     for (const [kind, count] of STARTING_RATION) this.addInventory(kind, count);
-    this.navigation.rebuild(this.player, this.getFlowFieldObstacles());
+    this.navigation.rebuild(this.player, getFlowFieldObstacles(this));
     this.wolfDirector = new WolfDirector(this.createWolfWorld());
     this.projectileCombat = new ProjectileCarriedCombatSystem(this.createProjectileCombatWorld());
   }
@@ -971,17 +449,17 @@ export class GameSimulation {
       getPlayerArmor: () => ARMOR_STATS[sim.player.armor],
       createDrop: (position, kind, angleOffset, count) => sim.createDrop(position, kind, angleOffset, count),
       moveEntity: (entity, dx, dz, radius, collideWithItems, terrainSlopeAllowance) =>
-        sim.moveEntity(entity, dx, dz, radius, collideWithItems, terrainSlopeAllowance),
-      canStepToward: (from, dir, radius, collideWithItems) => sim.canStepToward(from, dir, radius, collideWithItems),
+        moveEntity(sim, entity, dx, dz, radius, collideWithItems, terrainSlopeAllowance),
+      canStepToward: (from, dir, radius, collideWithItems) => canStepToward(sim, from, dir, radius, collideWithItems),
       findSteppableDirection: (from, desired, collideWithItems) =>
-        sim.findSteppableDirection(from, desired, collideWithItems),
+        findSteppableDirection(sim, from, desired, collideWithItems),
       findNearestWalkablePoint: (origin) => sim.findNearestWalkablePoint(origin),
-      lineOfSightBlocked: (start, end) => sim.lineOfSightBlocked(start, end),
-      hasMeleeLine: (start, end) => sim.hasMeleeLine(start, end),
+      lineOfSightBlocked: (start, end) => lineOfSightBlocked(sim, start, end),
+      hasMeleeLine: (start, end) => hasMeleeLine(sim, start, end),
       distanceToWorldEdge: (point) => sim.distanceToWorldEdge(point),
-      getSteeredDirection: (entity, desired) => sim.getSteeredDirection(entity, desired),
+      getSteeredDirection: (entity, desired) => getSteeredDirection(sim, entity, desired),
       getBarrierDamage: (wolf, armor) => sim.getBarrierDamage(wolf, armor),
-      isBlockingGroundItem: (item) => sim.isBlockingGroundItem(item),
+      isBlockingGroundItem,
     };
   }
 
@@ -1091,7 +569,7 @@ export class GameSimulation {
     if (!isMoving) this.player.idleTime += delta;
     this.navigationCountdown -= delta;
     if (this.navigationCountdown <= 0) {
-      this.navigation.rebuild(this.player, this.getFlowFieldObstacles());
+      this.navigation.rebuild(this.player, getFlowFieldObstacles(this));
       this.navigationCountdown = 0.65;
     }
 
@@ -1615,7 +1093,7 @@ export class GameSimulation {
     const inArc = (target: Vec2): boolean =>
       distanceSquared(this.player, target) <= attackRange * attackRange
       && dot(this.player.facing, direction(this.player, target)) >= stats.arcDot
-      && this.hasMeleeLine(this.player, target);
+      && hasMeleeLine(this, this.player, target);
 
     for (const wolf of this.wolves) {
       if (wolf.mode === "dead" || !inArc(wolf)) continue;
@@ -2362,7 +1840,7 @@ export class GameSimulation {
     if (!this.clickRoute) this.clickRoute = new NavigationGrid(this.world);
     if (!this.clickTarget || distanceSquared(this.clickTarget, target) > 0.6 * 0.6) {
       this.clickTarget = { x: target.x, z: target.z };
-      this.clickRoute.rebuild(target, this.getFlowFieldObstacles());
+      this.clickRoute.rebuild(target, getFlowFieldObstacles(this));
     }
     if (distance(this.player, target) < STRAIGHT_WALK_MAX && this.canWalkStraight(this.player, target)) {
       return direction(this.player, target);
@@ -2401,9 +1879,9 @@ export class GameSimulation {
        * 这里问的是"整条路走不走得完"，所以要反过来，两轴都得通）。
        */
       const corner = { x: point.x, z: previous.z };
-      if (!this.canTraverseTerrain(previous, corner) || !this.canTraverseTerrain(corner, point)) return false;
-      if (this.stepCrossesCollision(previous, corner, PLAYER_RADIUS, true)) return false;
-      if (this.stepCrossesCollision(corner, point, PLAYER_RADIUS, true)) return false;
+      if (!canTraverseTerrain(this, previous, corner) || !canTraverseTerrain(this, corner, point)) return false;
+      if (stepCrossesCollision(this, previous, corner, PLAYER_RADIUS, true)) return false;
+      if (stepCrossesCollision(this, corner, point, PLAYER_RADIUS, true)) return false;
       previous = point;
     }
     return true;
@@ -2569,7 +2047,7 @@ export class GameSimulation {
     // 轻装仍能靠机动脱离，装备选择因此有明确取舍。
     const gearScale = WEAPON_STATS[this.player.weapon].moveScale * ARMOR_STATS[this.player.armor].moveScale;
     const speed = 8.2 * carryingPenalty * needsPenalty * gearScale * this.getConditionSpeedScale();
-    this.moveEntity(this.player, movement.x * speed * delta, movement.z * speed * delta, PLAYER_RADIUS, true);
+    moveEntity(this, this.player, movement.x * speed * delta, movement.z * speed * delta, PLAYER_RADIUS, true);
   }
 
   private updateNeeds(delta: number): void {
@@ -3091,9 +2569,9 @@ export class GameSimulation {
     // 合起来之后逃跑变成画弧：长角羚 2.6 rad/s 掉个头要 1.2 秒，
     // 这 1.2 秒就是玩家抄近路截它的窗口 —— 它 10.5 的移速比玩家 8.2 快，
     // 但快不代表甩得掉。
-    const steered = this.getSteeredDirection(critter, desired);
+    const steered = getSteeredDirection(this, critter, desired);
     critter.facing = rotateToward(critter.facing, steered, spec.turnRate * delta);
-    this.moveEntity(critter, critter.facing.x * pace * delta, critter.facing.z * pace * delta, 0.4, false);
+    moveEntity(this, critter, critter.facing.x * pace * delta, critter.facing.z * pace * delta, 0.4, false);
   }
 
   private killCritter(critter: CritterState): void {
@@ -3116,35 +2594,6 @@ export class GameSimulation {
 
 
 
-  /**
-   * 近战必须真的处在同一层地面上。
-   *
-   * 旧判定只有水平距离，玩家站在巢穴土垄上仍能隔着两三米落差砍到下面的守卫，
-   * 守卫却找不到能爬上去的路。高度差与遮挡一起判定后，卡在崖边不再等于无伤输出位。
-   */
-  private hasMeleeLine(start: Vec2, end: Vec2): boolean {
-    const heightDelta = Math.abs(terrainHeightAt(this.world, start) - terrainHeightAt(this.world, end));
-    return heightDelta <= 1.65 && !this.lineOfSightBlocked(start, end);
-  }
-
-  private lineOfSightBlocked(start: Vec2, end: Vec2): boolean {
-    for (const wall of this.world.walls) {
-      if (segmentIntersectsCircle(start, end, wall, wall.radius * 0.82)) return true;
-    }
-    const startHeight = terrainHeightAt(this.world, start) + 1.15;
-    const endHeight = terrainHeightAt(this.world, end) + 1.15;
-    for (let step = 1; step < 8; step += 1) {
-      const t = step / 8;
-      const point = { x: start.x + (end.x - start.x) * t, z: start.z + (end.z - start.z) * t };
-      const sightHeight = startHeight + (endHeight - startHeight) * t;
-      if (terrainHeightAt(this.world, point) > sightHeight + 0.35) return true;
-    }
-    for (const item of this.items) {
-      if (this.isBlockingGroundItem(item)
-        && segmentIntersectsCircle(start, end, item, item.kind === "stone" ? 1.48 : 0.65)) return true;
-    }
-    return false;
-  }
 
 
   /**
@@ -3178,52 +2627,6 @@ export class GameSimulation {
 
 
 
-  /**
-   * 天然石头从生成时就是实体障碍；枯木只有被玩家放下后才组成路障。
-   * `placed` 表示“被玩家布置过”，不能再被误用成“有没有碰撞”。
-   */
-  /**
-   * 要让流场绕开的圆形障碍。
-   *
-   * 只收**天然**石头：它有碰撞却不该被啃（见 findBlockingItem），所以寻路必须自己绕。
-   * 玩家布置的路障故意**不**收 —— 那是专门给狗啃的，流场绕开它，布防就白做了。
-   *
-   * 半径按"狗的圆心能到哪儿"算（石头半径 + 狗半径），这样流场给出的路线
-   * 和 resolveCollisions 的判断是同一套，不会出现"寻路说能走、物理说不能"。
-   */
-  private getFlowFieldObstacles(): { x: number; z: number; radius: number }[] {
-    const out: { x: number; z: number; radius: number }[] = [];
-    for (const item of this.items) {
-      if (!this.isBlockingGroundItem(item) || item.placed) continue;
-      out.push({ x: item.x, z: item.z, radius: STONE_COLLIDE_RADIUS + WOLF_RADIUS });
-    }
-    return out;
-  }
-
-  private isBlockingGroundItem(item: GroundItem): boolean {
-    return item.active && (item.kind === "stone" || item.placed);
-  }
-
-  private getSteeredDirection(entity: Vec2, desired: Vec2): Vec2 {
-    let steerX = desired.x;
-    let steerZ = desired.z;
-    for (const wall of this.world.walls) {
-      const safe = wall.radius + 2.3;
-      const value = distanceSquared(entity, wall);
-      if (value > safe * safe || value < 0.0001) continue;
-      const away = direction(wall, entity);
-      const strength = (safe - Math.sqrt(value)) / safe;
-      steerX += away.x * strength * 2.6;
-      steerZ += away.z * strength * 2.6;
-    }
-    for (const item of this.items) {
-      if (!this.isBlockingGroundItem(item) || distanceSquared(entity, item) > 3.2 * 3.2) continue;
-      const away = direction(item, entity);
-      steerX += away.x * 1.8;
-      steerZ += away.z * 1.8;
-    }
-    return normalize({ x: steerX, z: steerZ });
-  }
 
   private advancePhase(): void {
     if (this.phase === "day") {
@@ -3541,182 +2944,5 @@ export class GameSimulation {
     return nearest;
   }
 
-  /**
-   * 推进单个轴，整步被地形拒绝时退而求其次走半步、四分之一步。
-   * 没有这个回退的话，贴着坡沿走会在"整步 0.14m"和"原地不动"之间反复横跳
-   * —— 那正是走路发卡的手感。有了回退，玩家会平滑地贴到坡沿再停住。
-   */
-  private stepAxis(
-    entity: Vec2,
-    axis: "x" | "z",
-    amount: number,
-    radius: number,
-    collideWithItems: boolean,
-    terrainSlopeAllowance = 1,
-  ): void {
-    const origin = entity[axis];
-    for (const scale of MOVE_STEP_FALLBACKS) {
-      entity[axis] = origin + amount * scale;
-      const from = axis === "x" ? { x: origin, z: entity.z } : { x: entity.x, z: origin };
-      if (this.canTraverseTerrain(from, entity, terrainSlopeAllowance)
-        && !this.stepCrossesCollision(from, entity, radius, collideWithItems)) return;
-    }
-    entity[axis] = origin;
-  }
-
-  private moveEntity(
-    entity: Vec2,
-    dx: number,
-    dz: number,
-    radius: number,
-    collideWithItems: boolean,
-    terrainSlopeAllowance = 1,
-  ): void {
-    // 分轴推进本身就提供了沿墙滑行：一轴被挡时另一轴仍然生效。
-    this.stepAxis(entity, "x", dx, radius, collideWithItems, terrainSlopeAllowance);
-    this.resolveCollisions(entity, radius, collideWithItems);
-    this.stepAxis(entity, "z", dz, radius, collideWithItems, terrainSlopeAllowance);
-    this.resolveCollisions(entity, radius, collideWithItems);
-    const half = this.world.size / 2 - radius;
-    entity.x = clamp(entity.x, -half, half);
-    entity.z = clamp(entity.z, -half, half);
-  }
-
-  private resolveCollisions(entity: Vec2, radius: number, collideWithItems: boolean): void {
-    for (let pass = 0; pass < 3; pass += 1) {
-      for (const obstacle of this.world.walls) this.pushOutsideCircle(entity, radius, obstacle, obstacle.radius);
-      if (!collideWithItems) continue;
-      for (const item of this.items) {
-        if (!this.isBlockingGroundItem(item)) continue;
-        this.pushOutsideCircle(entity, radius, item, item.kind === "stone" ? STONE_COLLIDE_RADIUS : 0.62);
-      }
-      for (const structure of this.structures) {
-        if (!structure.active) continue;
-        this.pushOutsideCircle(entity, radius, structure, STRUCTURE_SPECS[structure.kind].radius);
-      }
-    }
-  }
-
-  /**
-   * 连续碰撞：检查这一小步的整条线段，而不只检查落点。
-   *
-   * 原来的 resolveCollisions 只能修正“走完以后还压在圆里”的情况。如果一步从圆的一侧
-   * 走到另一侧，或多个路障依次把实体推出，落点可能已经在圆外，于是完全检测不到。
-   * 石头和树桩因此看着有碰撞，快速追击或击退时却能偶发穿过。
-   */
-  private stepCrossesCollision(from: Vec2, to: Vec2, radius: number, collideWithItems: boolean): boolean {
-    for (const wall of this.world.walls) {
-      if (this.stepEntersCircle(from, to, wall, radius + wall.radius)) return true;
-    }
-    if (!collideWithItems) return false;
-    for (const item of this.items) {
-      if (!this.isBlockingGroundItem(item)) continue;
-      const obstacleRadius = item.kind === "stone" ? STONE_COLLIDE_RADIUS : 0.62;
-      if (this.stepEntersCircle(from, to, item, radius + obstacleRadius)) return true;
-    }
-    for (const structure of this.structures) {
-      if (!structure.active) continue;
-      if (this.stepEntersCircle(from, to, structure, radius + STRUCTURE_SPECS[structure.kind].radius)) return true;
-    }
-    return false;
-  }
-
-  private stepEntersCircle(from: Vec2, to: Vec2, obstacle: Vec2, expandedRadius: number): boolean {
-    const startDistance = distanceSquared(from, obstacle);
-    const endDistance = distanceSquared(to, obstacle);
-    const radiusSquared = expandedRadius * expandedRadius;
-
-    // 如果放置物刚好生成在实体脚下，允许实体往外脱离，但不许继续往深处走。
-    if (startDistance < radiusSquared - 0.0001) return endDistance < startDistance;
-
-    const moveX = to.x - from.x;
-    const moveZ = to.z - from.z;
-    const toward = moveX * (obstacle.x - from.x) + moveZ * (obstacle.z - from.z);
-    if (toward <= 0) return false;
-    return segmentIntersectsCircle(from, to, obstacle, expandedRadius);
-  }
-
-  /**
-   * 以 desired 为中心向两侧张开，找第一个迈得动的方向；一圈都不行返回 null。
-   * 先试小角度，让它尽量还朝着原来想去的地方走，而不是掉头。
-   */
-  private findSteppableDirection(from: Vec2, desired: Vec2, collideWithItems = true): Vec2 | null {
-    const base = Math.atan2(desired.z, desired.x);
-    for (const offset of [0.6, -0.6, 1.2, -1.2, 1.8, -1.8, 2.4, -2.4, Math.PI]) {
-      const angle = base + offset;
-      const candidate = { x: Math.cos(angle), z: Math.sin(angle) };
-      if (this.canStepToward(from, candidate, WOLF_RADIUS, collideWithItems)) return candidate;
-    }
-    return null;
-  }
-
-  /**
-   * 沿 dir 迈一步会不会被拒掉。探针取 0.45 米 —— 比一帧的位移长（狗最快约 0.1 米/帧），
-   * 这样它在真正贴上障碍之前就已经改道，而不是先撞上去再纠正。
-   *
-   * **必须和 stepAxis 用同一组判定**，否则整套解卡机制会建立在错误的答案上：
-   * findSteppableDirection 问它"这个方向行不行"，它说行，stepAxis 却拒绝，
-   * 于是狗每帧都在"找到一个能走的方向"和"走不动"之间空转，站着不动。
-   *
-   * 这条不变式被破坏过一次：stepAxis 后来加了 stepCrossesCollision（连续碰撞），
-   * 这里没跟着加，于是探针只问地形、stepAxis 却还要过碰撞这一关，两边可能给出
-   * 相反的答案。补齐是为了让不变式重新成立 —— **但要说清楚：补齐之后，
-   * tests/wolfPathing 里那批"狗僵住 143 秒"的失败一条都没变**，所以那个 bug
-   * 另有原因，别把这次改动当成它的修复。
-   * 改这两个函数中的任何一个，都要同时改另一个。
-   */
-  private canStepToward(from: Vec2, dir: Vec2, radius = WOLF_RADIUS, collideWithItems = true): boolean {
-    /*
-     * **分轴问**，不要问对角线。
-     *
-     * moveEntity 是分轴推进的（stepAxis 先走 x 再走 z，一轴被挡另一轴仍然生效，
-     * 这正是贴墙滑行的来源）。探针若按对角线问，就会在墙角处答错：对角线方向畅通，
-     * 可 x 和 z 各自都会撞角，于是探针说"这个方向能走"、stepAxis 三档 fallback
-     * 全被拒，狗一步不动。实测岩壁洞窟外一只巡逻犬就这么定住 10 秒。
-     *
-     * 只要有一个轴迈得动，moveEntity 就会产生位移 —— 判据必须和它一致。
-     */
-    const REACH = 0.45;
-    const axisClear = (target: Vec2): boolean => this.canTraverseTerrain(from, target)
-      && !this.stepCrossesCollision(from, target, radius, collideWithItems);
-    if (Math.abs(dir.x) > 1e-6 && axisClear({ x: from.x + dir.x * REACH, z: from.z })) return true;
-    if (Math.abs(dir.z) > 1e-6 && axisClear({ x: from.x, z: from.z + dir.z * REACH })) return true;
-    return false;
-  }
-
-  private canTraverseTerrain(from: Vec2, to: Vec2, terrainSlopeAllowance = 1): boolean {
-    const limit = this.world.terrain.maxWalkableSlope * terrainSlopeAllowance;
-    const toSlope = terrainSlopeAt(this.world, to);
-    // 落点坡度是一条**站得住吗**的判据，这里却被拿来当**迈得过去吗**用。
-    // 实体已经站在坡度 0.776 的地面上（贴着营地的墙走，被完全不看地形的
-    // pushOutsideCircle 推上去的 —— 实测好几只狗被同一堵墙推到同一个坐标后一起定住），
-    // 此时它横向挪一步、爬升比只有 0.036，几乎是平着走，却因为落点坡度 0.784
-    // 微微过线而被拒；而另一个轴的落点坡度合格、爬升比却有 1.003，同样被拒。
-    // 两条判据一边卡一个方向，实体就被钉死在原地，站着看玩家，一整夜不动。
-    //
-    // 所以：脚下本来就在线上时，只要新落点不比脚下**明显**更陡就放行，让它挪得回去。
-    // 爬崖不受影响 —— 那件事从头到尾由下面的 rise/travel 把关，这里一个字没动。
-    if (toSlope > limit && toSlope > terrainSlopeAt(this.world, from) + 0.05) return false;
-    const travel = Math.hypot(to.x - from.x, to.z - from.z);
-    if (travel < 0.0001) return true;
-    const rise = Math.abs(terrainHeightAt(this.world, to) - terrainHeightAt(this.world, from));
-    return rise / travel <= limit * 1.12;
-  }
-
-  private pushOutsideCircle(entity: Vec2, radius: number, obstacle: Vec2, obstacleRadius: number): void {
-    const dx = entity.x - obstacle.x;
-    const dz = entity.z - obstacle.z;
-    const minDistance = radius + obstacleRadius;
-    const value = dx * dx + dz * dz;
-    if (value >= minDistance * minDistance) return;
-    const currentDistance = Math.sqrt(value);
-    if (currentDistance < 0.0001) {
-      entity.x += minDistance;
-      return;
-    }
-    const correction = minDistance - currentDistance;
-    entity.x += (dx / currentDistance) * correction;
-    entity.z += (dz / currentDistance) * correction;
-  }
 
 }

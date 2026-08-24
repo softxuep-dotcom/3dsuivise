@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createWorld } from "../src/game/content/createWorld";
 import { GameSimulation } from "../src/game/simulation/GameSimulation";
-import { TUTORIAL_PREY } from "../src/game/simulation/GameSimulation";
+import { TUTORIAL_PREY } from "../src/game/simulation/balance";
 import { CRITTER_SPECS } from "../src/game/simulation/types";
 
 /**

@@ -1,5 +1,6 @@
-import type { EquipTier, GameSimulation } from "../game/simulation/GameSimulation";
-import { COOKED_HEALTH } from "../game/simulation/GameSimulation";
+import type { GameSimulation } from "../game/simulation/GameSimulation";
+import type { EquipTier } from "../game/simulation/equipment";
+import { COOKED_HEALTH } from "../game/simulation/balance";
 import { t, tx } from "../i18n";
 import { clamp } from "../game/simulation/geometry";
 import { describeRecords, formatDuration, loadRecords, submitRun } from "./Records";
