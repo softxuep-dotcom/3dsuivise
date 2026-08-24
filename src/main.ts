@@ -274,8 +274,23 @@ async function bootstrap(): Promise<void> {
    * 平台不支持激励视频时（本地、GitHub Pages）按钮根本不出现，玩家看到的还是原来的结算页。
    */
   let revivesLeft = 3;
+  /**
+   * 这一局值不值得花一次激励视频救。
+   *
+   * 原先只要平台支持、次数没用完就弹。于是开局四十秒两手空空死掉也弹一次，
+   * 而那是三重浪费：把玩家送回一个注定的局面（重开明明更划算）；那种时刻
+   * 看广告的意愿最低，播不完 `rewardedBreak()` 就返回 false，**什么都不发生** ——
+   * 玩家白等一场，比不弹更想走；顺带还浪费一次库存，拉低完成率。
+   *
+   * 门槛用现成的状态：活到第二天、装过油、或者身上已经有一件造出来的装备。
+   * 那时候他真的有东西可输，广告会被认真看完。
+   */
+  const worthReviving = (): boolean => simulation.day >= 2
+    || simulation.truck.loaded > 0
+    || simulation.player.weapon !== "survival-knife"
+    || simulation.player.armor !== "none";
   const offerRevive = (): void => {
-    if (!platform.supportsRewarded || revivesLeft <= 0) return;
+    if (!platform.supportsRewarded || revivesLeft <= 0 || !worthReviving()) return;
     hud.showReviveOffer(revivesLeft, () => {
       void (async () => {
         const watched = await platform.rewardedBreak();
@@ -320,6 +335,13 @@ async function bootstrap(): Promise<void> {
    * `started` 要退回 false：Poki 要求 gameplayStart 必须直接发生在玩家输入的调用栈里，
    * 所以新的一局同样要等他第一次真的动一下，跟刚打开页面时是同一条规矩。
    */
+  /*
+   * 这一次访问里按了第几次重开。
+   *
+   * **不能用 bumpRunIndex()** —— 那个是跨会话持久化的（存在 Settings 里，用来
+   * 轮换出生营地），第二次打开页面时它早就不是 0 了。这里要的是"这一次访问"。
+   */
+  let restartsThisSession = 0;
   let restartPending = false;
   const setRestartControlsDisabled = (disabled: boolean): void => {
     for (const control of document.querySelectorAll<HTMLButtonElement>(
@@ -336,8 +358,25 @@ async function bootstrap(): Promise<void> {
     restartPending = true;
     setRestartControlsDisabled(true);
     const run = bumpRunIndex();
+    restartsThisSession += 1;
     try {
-      await platform.commercialBreak();
+      /*
+       * **第一次重开不放插屏。**
+       *
+       * Poki 的时长是把一个会话里所有局加起来算的（平台录像里"10 分钟开了
+       * 5、6 局"是**一条**会话记录），而中位玩家一个会话只玩约 1.7 局 ——
+       * 也就是绝大部分流失就发生在"第一次死 → 要不要再来"这一下。
+       * 玩家刚死、正憋着一口气想再来，那两秒里插一个广告是全流程最贵的摩擦，
+       * 而且它落在心理最脆弱的时刻。
+       *
+       * 第二次点重开的人已经证明了自己会留下，插屏放在那儿代价小得多；
+       * 之后的频次本来就由 SDK 自己控。Poki 的 QA 查的是"有没有接进来"，
+       * 不是"是不是每次都放"，所以跳过第一次完全在规矩内。
+       *
+       * 注意 gameplayStop 不受影响：它在 game-over 事件那里已经报过了
+       * （见下面的事件循环），commercialBreak 里那次是去重的。
+       */
+      if (restartsThisSession > 1) await platform.commercialBreak();
 
       difficulty = targetDifficulty;
       saveDifficulty(difficulty);

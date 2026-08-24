@@ -1082,9 +1082,23 @@ html[lang="vi"] .pause-card h2 { letter-spacing: .04em; }
   padding: 22px 30px 20px;
 }
 
-/* 并排时的横向间隙；窄到放不下时按钮自然换行，margin-bottom 接管。 */
-.game-over-card .revive-button,
-.victory-card .revive-button { margin-right: 10px; }
+/*
+ * 结算页的按钮行。
+ *
+ * 原先靠 `.revive-button { margin-right: 10px }` 撑并排间隙，那依赖"复活在前"
+ * 这个顺序 —— 按钮对调之后右边距会挂在最后一颗上，把整行的居中挤歪 10px。
+ * 换成 flex + gap 就和顺序无关了，窄屏换行时也自己居中、自己留缝。
+ *
+ * margin-bottom 是给下面那张死因卡留的空 —— 按钮现在排在它上面。
+ */
+.game-over-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.game-over-actions .primary-button { margin: 0; }
 
 .game-over-card h2,
 .victory-card h2 {
