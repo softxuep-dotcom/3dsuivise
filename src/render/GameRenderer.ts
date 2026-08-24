@@ -2,15 +2,93 @@ import * as THREE from "three";
 import type { RenderStats } from "../ui/PerfOverlay";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
-import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { GameSimulation } from "../game/simulation/GameSimulation";
 import { clamp, lerp, mulberry32 } from "../game/simulation/geometry";
 import type { CampDefinition, CritterState, GroundItem, Vec2, WeaponKind, WolfState, WorldDefinition, WorldDrop } from "../game/simulation/types";
 import { BARRIER_STATS, CRITTER_SPECS, FUEL_REQUIRED } from "../game/simulation/types";
 import { distanceToCampApproach, terrainHeightAt, terrainMoistureAt, terrainSaltAt, terrainSlopeAt } from "../game/terrain/TerrainModel";
-import { instantiateAnimal, loadAnimal, type AnimalAsset, type AnimalInstance } from "./AnimalModels";
+import { instantiateAnimal, loadAnimal, type AnimalAsset } from "./AnimalModels";
 import { createCritterMesh } from "./CritterModels";
 import { CombatFeedbackView } from "./CombatFeedbackView";
+import type { BladeVisual, CactusBatches, CactusPlacement } from "./renderPrimitives";
+import {
+  BARRIER_DAMAGE_TINT,
+  CACTUS_ARM_BASE_HEIGHT,
+  CACTUS_ARM_GEOMETRY,
+  CACTUS_ARM_RADIUS,
+  CACTUS_ELBOW_GEOMETRY,
+  CACTUS_FLOWER_GEOMETRY,
+  CACTUS_SPINE_GEOMETRY,
+  CACTUS_TRUNK_BASE_HEIGHT,
+  CACTUS_TRUNK_GEOMETRY,
+  CACTUS_TRUNK_RADIUS,
+  DROP_BONE_GEOMETRY,
+  DROP_HIDE_GEOMETRY,
+  DROP_MEAT_GEOMETRY,
+  HIDDEN_ITEM_MATRIX,
+  IRON_ORE_GEOMETRY,
+  IRON_SHARDS,
+  IRON_SHARD_GEOMETRIES,
+  ITEM_UP,
+  STONE_COLOR,
+  STONE_ITEM_GEOMETRY,
+  WEAPON_VISUALS,
+  WOOD_COLOR,
+  WOOD_ITEM_GEOMETRY,
+  createBarrelView,
+  makeMaterial,
+} from "./renderPrimitives";
+import {
+  ANIMAL_ASSET_RETRY_BACKOFF,
+  BLOB_SHADOW_CAPACITY,
+  BLOB_SHADOW_LIFT,
+  BLOB_SHADOW_NORMAL,
+  BLOB_SHADOW_NORMAL_STEP,
+  BLOB_SHADOW_UP,
+  DAY_HEMI_GROUND,
+  DAY_HEMI_INTENSITY,
+  DAY_HEMI_SKY,
+  DAY_SKY,
+  DAY_SUN,
+  DAY_SUN_INTENSITY,
+  LANDSCAPE_CAMERA_SCALE,
+  LOW_POWER_SHADOW_EXTENT,
+  LOW_POWER_SHADOW_MAP,
+  NIGHT_HEMI_GROUND,
+  NIGHT_HEMI_SKY,
+  NIGHT_SKY,
+  NIGHT_SUN,
+  PORTRAIT_CAMERA_SCALE,
+  SHADOW_ANCHOR_MARGIN,
+  SHADOW_MAX_STALE_FRAMES,
+  UPGRADE_MAX_INTERVAL_RATIO,
+  UPGRADE_MAX_WORK_RATIO,
+  UPGRADE_MIN_SAMPLES,
+  UPGRADE_PIXEL_RATIO,
+  UPGRADE_SHADOW_MAP,
+  UPGRADE_WARMUP_MS,
+  UPGRADE_WINDOW_MS,
+  createBlobShadowTexture,
+  smoothTerrainBlend,
+} from "./renderTuning";
+import type { CritterView, WolfView } from "./animalViews";
+import {
+  ORYX_COAT,
+  ORYX_HEIGHT,
+  WOLF_BAR_HEIGHT,
+  WOLF_BAR_SECONDS,
+  WOLF_BAR_WIDTH,
+  createFallbackDog,
+  createWolfBar,
+  dampAngle,
+  wolfBarScale,
+  wolfBellyColor,
+  wolfBodyColor,
+  wolfScale,
+} from "./animalViews";
+import {
+  mergeStaticGroup,
+} from "./staticBatching";
 
 interface CampView {
   flame: THREE.Group;
@@ -28,646 +106,6 @@ interface ItemRenderState {
   flash: number;
 }
 
-interface WolfView {
-  group: THREE.Group;
-  /** Quaternius 狼的实例；资源没加载成功时是 null，此时 group 里是程序化替身。 */
-  animal: AnimalInstance | null;
-  /** 受击闪红要作用到的材质。狼模型有毛色与腹面两份，替身只有一份。 */
-  tinted: THREE.MeshStandardMaterial[];
-  /** 上一帧的世界坐标；模型朝向与步态都以真实位移为准，不直接照搬寻路的瞬时 facing。 */
-  lastPosition: THREE.Vector2;
-  /** 已平滑的显示朝向。狼停住时保持这个角度，避免原地左右甩身。 */
-  visualHeading: number;
-  /** 真实移动方向的低通结果；寻路连续左右试探时不会把抖动直接传给模型。 */
-  travelDirection: THREE.Vector2;
-  /** 0..1 的移动权重，给起步与停步留一个很短的缓冲。 */
-  moveAmount: number;
-  /** 头顶血条：受伤后短暂浮现。挂在场景根上而不是狼身上，免得继承死亡侧翻。 */
-  bar: THREE.Group;
-  barFill: THREE.Sprite;
-  /** 血条剩余显示秒数。 */
-  barTimer: number;
-  /** 上一帧的血量，用来发现"这一刻挨打了"。 */
-  lastHealth: number;
-}
-
-/**
- * 血条自己的尺度，**不复用 wolfScale**。
- *
- * wolfScale 的含义已经从"几何倍率"改成"世界高度"（1.15 / 1.7 / 2.7），
- * 直接拿去乘血条，头犬的血条会跟着长到近三倍宽、飘到头顶两米以上。
- * 这里保留接近原来的那组倍率，只留下"越大的狗血条越宽"这一点。
- */
-/** 相机距离系数。竖屏拉远补视野，横屏拉近补可读性 —— 见 updateCamera。 */
-const PORTRAIT_CAMERA_SCALE = 1.08;
-const LANDSCAPE_CAMERA_SCALE = 0.64;
-
-/** 可搬运物的本色，以及被啃到快碎时染向的暗红。 */
-const STONE_COLOR = 0x748084;
-const WOOD_COLOR = 0x65432d;
-const BARRIER_DAMAGE_TINT = new THREE.Color(0x47231c);
-const ITEM_UP = new THREE.Vector3(0, 1, 0);
-const HIDDEN_ITEM_MATRIX = new THREE.Matrix4().makeScale(0, 0, 0);
-
-/**
- * 地上的一捆枯木原来是两个独立 Mesh，也就是每捆两次 draw call。
- * 合并的只是渲染几何，碰撞和拾取仍然完全由 GroundItem 决定。
- */
-const createWoodItemGeometry = (): THREE.BufferGeometry => {
-  const logs = [-0.19, 0.19].map((z) => {
-    const geometry = new THREE.CylinderGeometry(0.22, 0.26, 1.65, 7);
-    geometry.rotateZ(Math.PI / 2);
-    geometry.translate(0, 0, z);
-    return geometry;
-  });
-  const merged = mergeGeometries(logs);
-  for (const geometry of logs) geometry.dispose();
-  return merged;
-};
-
-/** 石头原来的非均匀缩放烘进共享几何，实例矩阵只负责世界位置、朝向和耐久缩放。 */
-const createStoneItemGeometry = (): THREE.BufferGeometry => {
-  const geometry = new THREE.DodecahedronGeometry(0.7, 0);
-  geometry.scale(2.15, 1.32, 1.7);
-  return geometry;
-};
-
-const WOOD_ITEM_GEOMETRY = createWoodItemGeometry();
-
-/*
- * 共享几何与材质：**参数是常量的，就不该每个实例现造一份。**
- *
- * 起因是真机读数：白天 geo 215，35 秒后的夜里 geo 414 —— 几何体数量翻了一倍。
- * renderer.info.memory.geometries **只在 dispose() 时才减**，而这份代码里
- * 一处几何体的 dispose 都没有（除了 createWoodItemGeometry 末尾那次合并清理）。
- *
- * 最大的漏点是掉落物：createDropView 每次都新建 CircleGeometry /
- * DodecahedronGeometry / CylinderGeometry，而它们三个的参数全是常量；
- * 掉落视图过期时只从场景里移除、材质和几何都不回收。按注释自己的说法
- * 「夜里一场仗能掉几十份肉皮牙」，一局下来就是几百个泄漏的 GPU 缓冲。
- *
- * 修法不是补 dispose，是**共享** —— 共享的东西本来就不该被回收，
- * 顺带把 draw call 之外的另一项（缓冲数量与显存）也压下去。
- * 仙人掌的刺与矿脉的棱柱同理：形状逐个都一样，只是摆放不同。
- *
- * 主干和手臂原先因为"每株高度随机"留在了原地，现在也提上来了：随机的只是
- * **高度**，而高度可以交给实例矩阵在 Y 上缩放表达，见 CACTUS_TRUNK_* 那两段。
- */
-const DROP_HIDE_GEOMETRY = new THREE.CircleGeometry(0.62, 5);
-const DROP_MEAT_GEOMETRY = new THREE.DodecahedronGeometry(0.42, 0);
-const DROP_BONE_GEOMETRY = new THREE.CylinderGeometry(0.07, 0.07, 0.82, 6);
-const CACTUS_SPINE_GEOMETRY = new THREE.ConeGeometry(0.04, 0.2, 4);
-const CACTUS_ELBOW_GEOMETRY = new THREE.CapsuleGeometry(0.18, 0.34, 3, 6);
-const CACTUS_FLOWER_GEOMETRY = new THREE.IcosahedronGeometry(0.16, 0);
-
-/*
- * 主干与手臂的基准胶囊。
- *
- * 每株的高度仍然是随机的（主干 1.6~2.5、手臂 0.55~0.95），但不再各造一份几何 ——
- * 取区间中点做基准，逐株用实例矩阵在 Y 上缩放。CapsuleGeometry 的总高是
- * `height + 2 × radius`，所以缩放比取 `(目标总高) / (基准总高)`。
- *
- * 代价是两端的半球会跟着在 Y 上被拉长或压扁：主干缩放比落在 0.83~1.17 之间，
- * 半球的竖直半径因此在 0.25~0.35 之间浮动（原本恒为 0.3）。这是几厘米的事，
- * 摊在一株两三米高、七面体的低模仙人掌上看不出来 —— 而换到的是
- * 「32 株 288 个 Mesh」变成「5 个 InstancedMesh」。
- */
-const CACTUS_TRUNK_RADIUS = 0.3;
-const CACTUS_TRUNK_BASE_HEIGHT = 2.05;
-const CACTUS_TRUNK_GEOMETRY = new THREE.CapsuleGeometry(CACTUS_TRUNK_RADIUS, CACTUS_TRUNK_BASE_HEIGHT, 3, 7);
-const CACTUS_ARM_RADIUS = 0.18;
-const CACTUS_ARM_BASE_HEIGHT = 0.75;
-const CACTUS_ARM_GEOMETRY = new THREE.CapsuleGeometry(CACTUS_ARM_RADIUS, CACTUS_ARM_BASE_HEIGHT, 3, 6);
-
-/**
- * 一株仙人掌的五个合批。每株的九个部件散在这五个批次里，槽位由 cactusSlots 给。
- * 一株 = 主干 1 + 手臂 2 + 肘 2 + 花 1 + 刺 3。
- */
-interface CactusBatches {
-  readonly trunks: THREE.InstancedMesh;
-  readonly arms: THREE.InstancedMesh;
-  readonly elbows: THREE.InstancedMesh;
-  readonly flowers: THREE.InstancedMesh;
-  readonly spines: THREE.InstancedMesh;
-  /** 显隐翻转时要一起打 needsUpdate 的那五个，省得每次现拼数组。 */
-  readonly all: readonly THREE.InstancedMesh[];
-}
-
-/**
- * 一株仙人掌九个部件的世界矩阵，建好就不再变（仙人掌不会移动）。
- * 割光时往实例里写零矩阵，长回来时把这些原样写回去 —— 比重算一遍便宜也短。
- */
-interface CactusPlacement {
-  readonly trunk: THREE.Matrix4;
-  readonly arms: readonly THREE.Matrix4[];
-  readonly elbows: readonly THREE.Matrix4[];
-  readonly flower: THREE.Matrix4;
-  readonly spines: readonly THREE.Matrix4[];
-}
-
-/**
- * 矿脉的四根棱柱。
- *
- * 高度四根各不相同（参差是"矿脉"读感的全部来源），但这四个高度对**每一个**
- * 矿脉都一样 —— 原先写在循环里，14 个矿脉造出 56 份几何，实际只需要 4 份。
- * 表和几何一起提上来，摆放参数留在原地。
- *
- * [绕 Y 的方位, 离心距, 高度, 外倾角]
- */
-const IRON_SHARDS: ReadonlyArray<readonly [number, number, number, number]> = [
-  [0.0, 0.0, 2.05, 0.0],
-  [1.9, 0.46, 1.42, 0.26],
-  [3.6, 0.52, 1.68, 0.19],
-  [5.2, 0.40, 1.15, 0.31],
-];
-/** 上细下粗的五棱柱：顶端收到 0.05，剪影是尖的。 */
-const IRON_SHARD_GEOMETRIES = IRON_SHARDS.map(
-  ([, , height]) => new THREE.CylinderGeometry(0.05, 0.3, height, 5),
-);
-const IRON_ORE_GEOMETRY = new THREE.OctahedronGeometry(0.34, 0);
-const STONE_ITEM_GEOMETRY = createStoneItemGeometry();
-
-/** 长角羚的沙褐主色。 */
-const ORYX_COAT = 0xc19a63;
-
-/** 动物素材下载的重试退避（毫秒）。长度 = 重试次数，所以一共尝试 3 次。 */
-const ANIMAL_ASSET_RETRY_BACKOFF: readonly number[] = [700, 1800];
-/** 长角羚的站立高度：2.3，比壮犬(1.7)高、比玩家(2.6)矮 —— 最值得追的那个剪影。 */
-const ORYX_HEIGHT = 2.3;
-
-/**
- * 狗的程序化替身。
- *
- * 只在 Wolf.glb 加载失败时用得上（GitHub Pages 从子目录发布，资源路径出过一次
- * 404）。**刻意做得很潦草**：它的存在意义是"别让夜里的狗变成隐形的"，
- * 不是备用美术方案 —— 做得越像，越会掩盖资源没加载成功这件事。
- */
-function createFallbackDog(color: number): { mesh: THREE.Object3D; material: THREE.MeshStandardMaterial } {
-  const material = makeMaterial(color, 0.95);
-  const group = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.17, 0.44, 3, 6), material);
-  body.rotation.z = Math.PI / 2;
-  body.position.y = 0.28;
-  body.castShadow = true;
-  group.add(body);
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.2, 0.18), material);
-  head.position.set(0.42, 0.36, 0);
-  group.add(head);
-  for (const [x, z] of [[0.24, 0.11], [0.24, -0.11], [-0.24, 0.11], [-0.24, -0.11]]) {
-    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.04, 0.28, 4), material);
-    leg.position.set(x, 0.14, z);
-    group.add(leg);
-  }
-  return { mesh: group, material };
-}
-
-const wolfBarScale = (wolf: WolfState): number => (
-  wolf.kind === "elite" ? 1.6 : wolf.kind === "large" ? 1.15 : 0.9
-);
-
-/**
- * 角色的贴地阴影（blob shadow）。
- *
- * 低功耗档不再让玩家、狼、猎物投真阴影，改成脚下贴一片圆形暗斑。
- *
- * 换掉的理由是**这档阴影本来就读不出形状**：阴影图 512²、阴影相机覆盖 ±32
- * 世界单位，也就是每米 8 texel；一只狼身长 1.5 米，落在阴影图上只有 12 texel。
- * 为这 12 个像素，深度 pass 要把 13 个骨骼网格（45 米剔除后的数量）**再蒙皮一遍** ——
- * 主 pass 一遍、阴影 pass 一遍。拿一坨读不出形状的斑点换一坨故意画的斑点，
- * 视觉上几乎不损失，省下的是整个动态深度 pass。
- *
- * 用 DataTexture 而不是 CanvasTexture，理由同 createGroundTexture：
- * 移动端 Chrome 会在后台回收游离 canvas 的后备存储，回前台重传就是一片全黑。
- */
-/**
- * 低功耗档的阴影缓存。
- *
- * 角色改用贴地圆斑之后（见 createBlobShadowTexture），阴影图里**只剩静态几何** ——
- * 墙、树、地形、营地、卡车。静态的东西不需要每帧重画，只需要在阴影相机
- * 移出覆盖余量时重画一次。
- *
- * 三个数是配套的，不能单独改：
- *
- *   覆盖 ±44（原 ±32）—— 买出余量。原值是照着可视地面纵深约 60 单位定的，
- *     几乎没有富余；锚点一旦滞后就会在画面里出现一条"影子到此为止"的硬线。
- *     ±44 配 10 米的漂移余量，最坏情况下逆行方向仍覆盖 34 单位 > 30。
- *   768²（原 512²）—— 覆盖变大后维持精度。88 单位 / 768 = 每米 8.7 texel，
- *     比原来的 64/512 = 8 还略高。
- *   漂移余量 10 米 —— 玩家 8.2 米/秒，约 1.2 秒重锚一次（26fps 下约 32 帧）。
- *
- * 净账：原来每 2 帧光栅化 26 万 texel（13 万/帧摊销），现在每约 30 帧
- * 光栅化 59 万（约 2 万/帧摊销）—— **少 6 倍多，而且精度还高了一点**。
- *
- * 30 帧的强制上限是**兜底**：树被砍倒、结构物落地、卡车启动这些改变投影体的
- * 事件我都挂了钩子，但漏一个就会留下一片不该存在的影子。30 帧把任何漏网之鱼的
- * 存活时间压到 1 秒出头，而它对摊销成本几乎没有影响。
- */
-const SHADOW_ANCHOR_MARGIN = 10;
-const SHADOW_MAX_STALE_FRAMES = 30;
-const LOW_POWER_SHADOW_EXTENT = 44;
-const LOW_POWER_SHADOW_MAP = 768;
-
-/*
- * ═══ 一次性画质上调 ═══  （要调参数的话，改这一块就够了）
- *
- * ## 它解决的是"好手机被一刀切压住"
- *
- * 移动档把 pixelRatio 钉死在 1.0。而现代旗舰手机的 devicePixelRatio 普遍是 2.5~3.5，
- * 所以 3D 画面实际是按原生 **1/9 的像素数**渲染再拉满屏 —— 屏幕最好的那批设备
- * 挨刀最狠。而它们的富余本来就浪费掉了：帧率撞在刷新率上限上，多出来的性能不产生
- * 任何收益。
- *
- * ## 为什么是"一次性、只向上"，而不是自适应梯子
- *
- * 梯子要调一堆阈值，而这些阈值只能在真机上验证 —— 手上只有一台旗舰机的话，
- * 下面那些降级档一次都跑不到，等于把一套没人验证过的机制推给最弱的那批玩家。
- *
- * 只允许**升一次、不许降**就没有这个问题：判据不满足时什么都不发生，
- * 弱机的行为和现在逐字相同；满足时也只动一次，玩家不会看见画质来回变。
- *
- * ## 两个判据必须同时成立
- *
- * 只看出帧间隔是不够的：帧率撞在 vsync 上限时，间隔恒等于刷新间隔，**读不出富余**——
- * 一台 120Hz 手机轻松跑满和勉强跑满，间隔都是 8.33ms。所以再加一条渲染耗时。
- *
- *   出帧间隔贴着刷新率  → GPU 跟得上，一帧没掉
- *   渲染耗时远低于刷新间隔 → CPU 侧确实有富余
- *
- * 两条都成立才升。前者管 GPU，后者管 CPU，缺一条都可能升错。
- */
-/** 玩家真正开始玩之后先跳过这么久：着色器编译和 GLB 解析都挤在这一段。 */
-const UPGRADE_WARMUP_MS = 3000;
-/** 采样窗口。攒满这么久才做判断，判断完就永久收工。 */
-const UPGRADE_WINDOW_MS = 3000;
-/** 样本不够就不升 —— 宁可不动，也不能拿几帧下结论。 */
-const UPGRADE_MIN_SAMPLES = 60;
-/** 出帧间隔中位数不得超过刷新间隔的这个倍数（1.15 ≈ 允许偶尔掉一帧）。 */
-const UPGRADE_MAX_INTERVAL_RATIO = 1.15;
-/** 渲染耗时中位数不得超过刷新间隔的这个比例。留的余量要够 pixelRatio 抬上去之后的开销。 */
-const UPGRADE_MAX_WORK_RATIO = 0.4;
-/** 达标后 pixelRatio 抬到这里（仍受 devicePixelRatio 封顶）。 */
-const UPGRADE_PIXEL_RATIO = 1.5;
-/** 达标后阴影图抬到这里。范围 ±44 不动，所以每米 texel 数从 8.7 涨到 11.6。 */
-const UPGRADE_SHADOW_MAP = 1024;
-
-const BLOB_SHADOW_TEXTURE_SIZE = 64;
-/** 同屏最多画几片。玩家 1 + 45 米内的狼与猎物，实测远不到这个数。 */
-const BLOB_SHADOW_CAPACITY = 48;
-/** 抬离地面多少，避免与地面 z-fighting。 */
-const BLOB_SHADOW_LIFT = 0.04;
-/** 估地形法线时左右各采样多远。 */
-const BLOB_SHADOW_NORMAL_STEP = 0.5;
-const BLOB_SHADOW_UP = new THREE.Vector3(0, 1, 0);
-const BLOB_SHADOW_NORMAL = new THREE.Vector3();
-
-const createBlobShadowTexture = (): THREE.DataTexture => {
-  const size = BLOB_SHADOW_TEXTURE_SIZE;
-  const data = new Uint8Array(size * size * 4);
-  const centre = (size - 1) / 2;
-  for (let y = 0; y < size; y += 1) {
-    for (let x = 0; x < size; x += 1) {
-      const index = (y * size + x) * 4;
-      const spread = Math.hypot(x - centre, y - centre) / centre;
-      // (1 - r²)^1.6：中心实、边缘平滑归零。指数比 1 大是为了让边缘收得比线性快，
-      // 免得斑点看起来像一块糊在地上的圆形污渍。
-      const alpha = spread >= 1 ? 0 : Math.pow(1 - spread * spread, 1.6);
-      data[index + 3] = Math.round(alpha * 255);
-    }
-  }
-  const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
-  texture.needsUpdate = true;
-  return texture;
-};
-
-/** 头顶血条：受伤后显示多久。够看清掉了多少，又不至于夜里几十条一直挂着。 */
-const WOLF_BAR_SECONDS = 2.6;
-const WOLF_BAR_WIDTH = 1.15;
-const WOLF_BAR_HEIGHT = 0.15;
-
-/** 沿最短圆弧平滑角度，跨过 ±π 时不会整圈回转。 */
-const dampAngle = (current: number, target: number, speed: number, delta: number): number => {
-  const difference = Math.atan2(Math.sin(target - current), Math.cos(target - current));
-  return current + difference * (1 - Math.exp(-speed * delta));
-};
-
-/**
- * 每只狼一套血条材质，不共用 —— 淡出是逐条各自算的，共用材质会让全场血条一起闪。
- * 精灵本来就不合批，两个精灵两次绘制，隐藏时直接跳过，所以这点开销是值的。
- */
-const createWolfBar = (wolf: WolfState): { bar: THREE.Group; fill: THREE.Sprite } => {
-  const group = new THREE.Group();
-  const back = new THREE.Sprite(new THREE.SpriteMaterial({
-    color: 0x0a0f13, transparent: true, opacity: 0.72, depthWrite: false,
-  }));
-  const fill = new THREE.Sprite(new THREE.SpriteMaterial({
-    color: wolf.kind === "elite" ? 0xff8a3d : 0xe2564a, transparent: true, depthWrite: false,
-  }));
-  const barScale = wolfBarScale(wolf);
-  back.scale.set(WOLF_BAR_WIDTH * barScale + 0.06, WOLF_BAR_HEIGHT * barScale + 0.05, 1);
-  fill.scale.set(WOLF_BAR_WIDTH * barScale, WOLF_BAR_HEIGHT * barScale, 1);
-  // 填充画在底板之上；两者都不写深度，避免互相打架。
-  back.renderOrder = 8;
-  fill.renderOrder = 9;
-  group.add(back, fill);
-  group.visible = false;
-  return { bar: group, fill };
-};
-
-interface CritterView {
-  group: THREE.Group;
-  bodyMaterial: THREE.MeshStandardMaterial;
-  /** 只有长角羚用 Quaternius 的鹿；其余七种仍是程序化几何。 */
-  animal: AnimalInstance | null;
-  /** 没受击时该显示的颜色。程序化几何是白（顶点色自带配色），鹿是它的沙褐主色。 */
-  baseColor: number;
-}
-
-const makeMaterial = (color: THREE.ColorRepresentation, roughness = 0.9): THREE.MeshStandardMaterial => (
-  new THREE.MeshStandardMaterial({ color, roughness, flatShading: true })
-);
-
-/** 材质的"看起来一样吗"指纹。**按参数比，不按对象比** —— 理由见 mergeStaticGroup。 */
-interface MaterialProbe {
-  color?: THREE.Color;
-  emissive?: THREE.Color;
-  emissiveIntensity?: number;
-  roughness?: number;
-  metalness?: number;
-  flatShading?: boolean;
-  map?: THREE.Texture | null;
-}
-
-const materialSignature = (material: THREE.Material): string => {
-  const probe = material as THREE.Material & MaterialProbe;
-  return [
-    material.type,
-    probe.color?.getHexString() ?? "-",
-    probe.emissive?.getHexString() ?? "-",
-    probe.emissiveIntensity ?? "-",
-    probe.roughness ?? "-",
-    probe.metalness ?? "-",
-    probe.flatShading ?? "-",
-    probe.map?.uuid ?? "-",
-    material.side,
-    material.transparent,
-    material.opacity,
-    material.depthWrite,
-    material.depthTest,
-  ].join("|");
-};
-
-/**
- * 把一组"零件之间不动"的装饰按材质压成整块，一种材质一个网格。
- *
- * ## 为什么值得做
- *
- * 巢、地标、营地、铁矿、油桶、井、卡车车体，写法都一样：一个 Group 里塞十几二十个
- * 小 Mesh，每个几十到一百个顶点。它们彼此之间从建好到这一局结束不会动、不会换色、
- * 不会单独显隐 —— 也就是说这些 Mesh 之间**没有一条信息是运行时才知道的**，
- * 完全可以在建的时候就烤成一块。
- *
- * ## 关键：烤的是**组的局部坐标**
- *
- * 所以"整个组会不会动"完全无所谓。铁矿按储量整体缩放、油桶被扛走、卡车通关时开走 ——
- * 这些都写在 Group 上，合批之后照样生效。只要零件**彼此之间**不动就能合。
- *
- * ## 为什么逐个对象合，不跨对象合
- *
- * 跨对象会把整张图的巢连成一个横跨全图的网格，包围球覆盖所有地方，于是**永远进不了
- * 视锥剔除** —— 玩家在空旷沙漠里也要提交全图的装饰。逐个合两头都占：簇内的十几条塌成
- * 两三条，而"这座营地在不在画面里"仍然由 three 逐个剔除。
- *
- * ## 两个必须按参数分桶的地方
- *
- * **材质按指纹分桶，不按对象。** 石碑的三道刻痕、井口的黑面都是在循环里
- * `makeMaterial(...)` 现造的，参数完全相同却是不同对象；按对象分桶等于没合。
- *
- * **castShadow / receiveShadow 也进桶键。** 同一个 deadwood 材质，树干投影、车辕不投影，
- * 合到一起就只能二选一，画面会变。
- *
- * @param keep 这些对象（连同其子树）原样留下 —— 营火的火苗、井上的水珠这些每帧都在动。
- */
-const mergeStaticGroup = (group: THREE.Object3D, keep: ReadonlySet<THREE.Object3D> = new Set()): void => {
-  interface Bucket {
-    material: THREE.Material;
-    cast: boolean;
-    receive: boolean;
-    /** 合并前可能被整桶换成非索引版本，所以不是 readonly。 */
-    parts: THREE.BufferGeometry[];
-    sources: THREE.Mesh[];
-  }
-  group.updateMatrixWorld(true);
-  const toLocal = new THREE.Matrix4().copy(group.matrixWorld).invert();
-  const local = new THREE.Matrix4();
-  const buckets = new Map<string, Bucket>();
-
-  const walk = (object: THREE.Object3D): void => {
-    if (keep.has(object)) return;
-    for (const child of [...object.children]) walk(child);
-    if (!(object instanceof THREE.Mesh) || Array.isArray(object.material)) return;
-    const key = `${materialSignature(object.material)}|${object.castShadow}|${object.receiveShadow}`;
-    let bucket = buckets.get(key);
-    if (!bucket) {
-      bucket = { material: object.material, cast: object.castShadow, receive: object.receiveShadow, parts: [], sources: [] };
-      buckets.set(key, bucket);
-    }
-    // applyMatrix4 会连法线一起按法线矩阵变换，所以巢那些 scale(1.5, 0.5, 1) 的
-    // 土脊不会因为非等比缩放而错光。
-    const baked = object.geometry.clone();
-    baked.applyMatrix4(local.multiplyMatrices(toLocal, object.matrixWorld));
-    bucket.parts.push(baked);
-    bucket.sources.push(object);
-  };
-  walk(group);
-
-  for (const bucket of buckets.values()) {
-    /*
-     * 索引要先统一。
-     *
-     * mergeGeometries 要求一桶里的几何**要么全带 index、要么全不带**，否则返回 null
-     * 并往控制台刷一行错。而 three 的多面体（Dodecahedron / Octahedron / Icosahedron，
-     * 也就是这里的火圈石、石堆、洞穴巨石、矿石）是**非索引**的，圆柱方块球环面则都带索引 ——
-     * 营地那种一个材质下既有石头又有木头的桶正好踩中。
-     *
-     * 混了就整桶转成非索引。这些都是 flatShading 的低模，本来就几乎没有共享顶点，
-     * 展开的代价可以忽略；换来的是这些桶真的能合上。
-     */
-    const indexed = bucket.parts.filter((part) => part.index !== null).length;
-    if (indexed > 0 && indexed < bucket.parts.length) {
-      bucket.parts = bucket.parts.map((part) => {
-        if (part.index === null) return part;
-        const flat = part.toNonIndexed();
-        part.dispose();
-        return flat;
-      });
-    }
-    // 只有一件的桶合了还是它自己，白搭一次拷贝，留原样。
-    const geometry = bucket.parts.length > 1 ? mergeGeometries(bucket.parts, false) : null;
-    for (const part of bucket.parts) part.dispose();
-    // 万一还是合不上就放弃这一桶、保持原样 —— 宁可多几条 draw call，也不能把装饰弄丢。
-    if (!geometry) continue;
-    for (const source of bucket.sources) source.removeFromParent();
-    const mesh = new THREE.Mesh(geometry, bucket.material);
-    mesh.castShadow = bucket.cast;
-    mesh.receiveShadow = bucket.receive;
-    group.add(mesh);
-  }
-};
-
-/**
- * 汽油桶。**整张图上唯一的锈红色**——沙丘、砾石、枯木、铁矿全是黄褐到灰的
- * 一族，所以这个色相在远处就是一个"那边有东西"的信号。没有小地图，
- * 桶能不能被看见完全取决于它在沙色里跳不跳得出来。
- */
-function createBarrelView(): THREE.Group {
-  const group = new THREE.Group();
-  const shell = makeMaterial(0xb43a24, 0.65);
-  const band = makeMaterial(0x6f2416, 0.6);
-  const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.44, 0.44, 1.18, 12), shell);
-  drum.castShadow = true;
-  group.add(drum);
-  for (const y of [-0.3, 0.3]) {
-    const hoop = new THREE.Mesh(new THREE.CylinderGeometry(0.47, 0.47, 0.1, 12), band);
-    hoop.position.y = y;
-    group.add(hoop);
-  }
-  const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.14, 8), band);
-  cap.position.set(0.2, 0.62, 0);
-  group.add(cap);
-  return group;
-}
-
-interface BladeVisual {
-  name: string;
-  /** 刃宽倍率，基准是求生匕首的 0.25。 */
-  width: number;
-  /** 刃长倍率，基准是求生匕首的 0.95。 */
-  length: number;
-  /** 剑是双刃对称，刀是单刃（背侧拉直）。 */
-  doubleEdged: boolean;
-  color: number;
-  roughness: number;
-  metalness: number;
-  gripColor: number;
-  emissive?: number;
-  emissiveIntensity?: number;
-  /** 三阶长剑的独立刃口 mesh 颜色。 */
-  edgeColor?: number;
-  /** 剑线连击时刃身发什么光。 */
-  comboGlow?: number;
-}
-
-/**
- * 七把武器的外观。
- *
- * 只有一个劈砍动画，七把武器挥起来是同一个动作 —— 所以**区分全靠剪影与颜色**。
- * 规则是色相分线、明度与自发光分阶：
- *
- *   刀线走冷色，越往上越"热"（铁被反复锻打）：生铁灰 → 淬蓝钢 → 暗铁 + 赤热纹
- *   剑线走暖色，越往上越"黑"（骨 → 牙 → 淬过的齿）：骨白 → 琥珀牙黄 → 墨黑 + 白刃口
- *
- * 刀越往上越宽越长（最宽 ×1.85），剑越往上越窄越长（最窄 ×0.70）。
- * 宽刀砍下去像斧，窄剑砍下去像削。
- */
-const WEAPON_VISUALS: Record<WeaponKind, BladeVisual> = {
-  "survival-knife": {
-    name: "SurvivalKnife", width: 1.00, length: 1.00, doubleEdged: false,
-    color: 0xb8c1bd, roughness: 0.42, metalness: 0.52, gripColor: 0x4b3023,
-  },
-
-  "saber-1": {
-    name: "IronCleaver", width: 1.35, length: 1.10, doubleEdged: false,
-    color: 0x8a9299, roughness: 0.62, metalness: 0.35, gripColor: 0x4b3023,
-  },
-  "saber-2": {
-    name: "ForgedBroadsaber", width: 1.55, length: 1.20, doubleEdged: false,
-    color: 0x6f8ba8, roughness: 0.34, metalness: 0.72, gripColor: 0x3e2a1c,
-  },
-  "saber-3": {
-    name: "SlagHeavysaber", width: 1.85, length: 1.30, doubleEdged: false,
-    color: 0x4a4f57, roughness: 0.30, metalness: 0.80, gripColor: 0x2f2119,
-    emissive: 0x8c2a10, emissiveIntensity: 0.55,
-  },
-
-  "sword-1": {
-    name: "BoneShortsword", width: 0.85, length: 1.05, doubleEdged: true,
-    color: 0xe4dcc4, roughness: 0.75, metalness: 0.05, gripColor: 0x5a4632,
-    comboGlow: 0xfff0d0,
-  },
-  "sword-2": {
-    name: "FangRapier", width: 0.75, length: 1.15, doubleEdged: true,
-    color: 0xd9a441, roughness: 0.55, metalness: 0.15, gripColor: 0x4e3a24,
-    comboGlow: 0xffc861,
-  },
-  "sword-3": {
-    name: "SplitToothLongsword", width: 0.70, length: 1.28, doubleEdged: true,
-    color: 0x2b2622, roughness: 0.45, metalness: 0.25, gripColor: 0x2a2119,
-    edgeColor: 0xf2ece0, comboGlow: 0xf2ece0,
-  },
-};
-
-const smoothTerrainBlend = (edge0: number, edge1: number, value: number): number => {
-  const t = clamp((value - edge0) / Math.max(0.0001, edge1 - edge0), 0, 1);
-  return t * t * (3 - 2 * t);
-};
-
-// 精英狼比大狼再大一档，但不再是全场唯一的 BOSS 剪影。
-/**
- * 三档狗的**站立高度**（世界单位）。模型按高度归一化到 1，所以这里就是高度本身。
- *
- * 尺子是玩家：玩家 2.6 高。于是野狗到腰（1.15）、壮犬到胸（1.7）、
- * 头犬比你还高一头（2.7）—— 等距视角下判断"这只咬不咬得动"靠的是剪影，不是血条，
- * 所以这三档必须一眼分得开。狼的高/长是 0.51，换算回体长是 2.3 / 3.3 / 5.3。
- */
-const wolfScale = (wolf: WolfState): number => (
-  wolf.kind === "elite" ? 2.7 : wolf.kind === "large" ? 1.7 : 1.15
-);
-
-/*
- * 昼夜光照配色表。**改这里就是改整个游戏的气质**，所以摊开写成常量而不是散在函数里。
- *
- * 白天走"暖主光 + 冷填充"，夜晚走"冷到底 + 一盏篝火"。见 syncDayNight 里那段。
- * 想回到 1.0.14 的全暖白天：DAY_SKY=d8bf8d、DAY_HEMI_SKY=ffeec4、
- * DAY_HEMI_GROUND=8a6a44、DAY_HEMI_INTENSITY=2.2、DAY_SUN_INTENSITY=3.2。
- */
-const DAY_SKY = new THREE.Color(0xc9c3b4);
-const DAY_HEMI_SKY = new THREE.Color(0xcdd8e6);
-const DAY_HEMI_GROUND = new THREE.Color(0x8a7250);
-const DAY_SUN = new THREE.Color(0xfff0cc);
-const DAY_HEMI_INTENSITY = 1.15;
-const DAY_SUN_INTENSITY = 4.1;
-
-const NIGHT_SKY = new THREE.Color(0x2c3d5c);
-const NIGHT_HEMI_SKY = new THREE.Color(0x8fa6cf);
-const NIGHT_HEMI_GROUND = new THREE.Color(0x3a4356);
-const NIGHT_SUN = new THREE.Color(0xa8bce0);
-
-/** 腹面与口鼻的浅色。跟主色同色相、抬明度，模型自带的 Main_Light 槽正好吃这个。 */
-const wolfBellyColor = (wolf: WolfState): number => {
-  if (wolf.kind === "elite") return 0x7d5a3f;
-  if (wolf.role === "guard") return 0x8e8f86;
-  if (wolf.kind === "large") return 0xc98d55;
-  return 0xf0d3a0;
-};
-
-/**
- * 三档狗的毛色。
- *
- * 分档规则是**明度**而不是色相：夜里只有篝火一盏光源，色相差在暗处基本读不出来，
- * 而明暗差还在。所以从白天的野狗到头犬是一路压暗，头犬几乎是黑褐色的一块。
- */
-const wolfBodyColor = (wolf: WolfState): number => {
-  if (wolf.kind === "elite") return 0x4a2f1e;
-  // 守巢犬单独一个色：它和白天的壮犬同为 large，但玩家要学会的是
-  // "巢边那三只不一样、碰它就得打完"。走**冷灰褐**而不是继续在暖褐里分深浅 ——
-  // 全场只有它们不是沙漠色系，远远一眼就能认出来那圈是谁在守着。
-  if (wolf.role === "guard") return 0x5b5f57;
-  if (wolf.kind === "large") return 0x8f5228;
-  if (wolf.role === "wild") return 0xd9a95f;
-  return wolf.raider ? 0xc07a34 : 0xcf9a56;
-};
-
-/** 猎物配色：整体压在沙色系里，靠明度和一点点色相区分，不抢狼的戏。 */
 export class GameRenderer {
   readonly canvas: HTMLCanvasElement;
 
