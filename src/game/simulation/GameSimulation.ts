@@ -6,13 +6,14 @@ import {
   dot,
   mulberry32,
   normalize,
-  rotateToward,
   TAU,
 } from "./geometry";
 import { campGatePosition, campLocalToWorld, isTerrainWalkable } from "../terrain/TerrainModel";
 import { NavigationGrid } from "./NavigationGrid";
 import { ProjectileCarriedCombatSystem } from "./ProjectileCarriedCombatSystem";
 import type { ProjectileCarriedCombatWorld } from "./ProjectileCarriedCombatSystem";
+import { CritterDirector } from "./CritterDirector";
+import type { CritterWorld } from "./CritterDirector";
 import { WolfDirector } from "./WolfDirector";
 import type { WolfWorld } from "./WolfDirector";
 import type {
@@ -67,8 +68,6 @@ import {
   COOKED_WATER,
   COOL_ACTION_COOLDOWN,
   COOL_ACTION_WARMTH,
-  CRITTER_LOD_DISTANCE,
-  CRITTER_LOD_STRIDE,
   DROP_LIFETIME,
   EXHAUSTED_DAMAGE_SCALE,
   FIRE_WARMTH_RADIUS,
@@ -113,10 +112,6 @@ import {
   TRUCK_HORN_RADIUS,
   TRUCK_HORN_REACH,
   TRUCK_LOAD_REACH,
-  TUTORIAL_PREY,
-  TUTORIAL_PREY_COUNT,
-  TUTORIAL_PREY_RADIUS,
-  TUTORIAL_PREY_SPREAD,
   TUTORIAL_WOOD_RADIUS,
   TUTORIAL_WOOD_SPREAD,
   WARMTH_COLD_ENTER,
@@ -182,8 +177,6 @@ export interface TruckPowerState {
   hornCooldown: number;
 }
 
-
-
 export class GameSimulation {
   readonly world: WorldDefinition;
   readonly camps: CampState[];
@@ -205,7 +198,9 @@ export class GameSimulation {
   private readonly projectileCombat!: ProjectileCarriedCombatSystem;
   /** 狼群本体现在归 WolfDirector 管；这里保留同名入口，渲染层和 HUD 不用改。 */
   get wolves(): WolfState[] { return this.wolfDirector.wolves; }
-  readonly critters: CritterState[] = [];
+  private readonly critterDirector: CritterDirector;
+  /** 猎物种群现在归 CritterDirector 管；这里保留同名入口，渲染层和测试不用改。 */
+  get critters(): CritterState[] { return this.critterDirector.critters; }
   readonly drops: WorldDrop[] = [];
   readonly barrels: FuelBarrelState[];
   /** 卡车。位置在驶离时会变，所以它是状态不是定义的引用。 */
@@ -239,8 +234,6 @@ export class GameSimulation {
    */
   private clickRoute: NavigationGrid | null = null;
   private clickTarget: Vec2 | null = null;
-  private critterId = 0;
-  private critterRespawnCountdown = 4;
   /**
    * 动物模型改为进场后下载。资源没准备好时模拟层也不能先生成实体，
    * 否则玩家会被尚未显示出来的狼攻击，或看见猎物稍后突然换模型。
@@ -388,6 +381,7 @@ export class GameSimulation {
     };
     for (const [kind, count] of STARTING_RATION) this.addInventory(kind, count);
     this.navigation.rebuild(this.player, getFlowFieldObstacles(this));
+    this.critterDirector = new CritterDirector(this.createCritterWorld());
     this.wolfDirector = new WolfDirector(this.createWolfWorld());
     this.projectileCombat = new ProjectileCarriedCombatSystem(this.createProjectileCombatWorld());
   }
@@ -396,7 +390,7 @@ export class GameSimulation {
   enableCritters(): void {
     if (this.crittersEnabled) return;
     this.crittersEnabled = true;
-    this.seedCritters();
+    this.critterDirector.seed();
   }
 
   /** 狼模型下载完成后启用守巢犬、白天野狼和夜袭刷新。 */
@@ -408,6 +402,23 @@ export class GameSimulation {
     // 资源可能直到入夜后才下载完；此时要从本夜的完整配额重新开始。
     if (this.phase === "night") this.wolfDirector.beginNight();
     else this.wolfDirector.beginDay();
+  }
+
+  /** 猎物种群能看到的世界。口径同 createWolfWorld，见 CritterWorld 的注释。 */
+  private createCritterWorld(): CritterWorld {
+    const sim = this;
+    return {
+      get world() { return sim.world; },
+      get items() { return sim.items; },
+      get structures() { return sim.structures; },
+      get player() { return sim.player; },
+      get spawnAnchor() { return sim.spawnAnchor; },
+      get spawnFacing() { return sim.spawnFacing; },
+      random: () => sim.random(),
+      emit: (event) => { sim.events.push(event); },
+      createDrop: (position, kind, angleOffset, count) => sim.createDrop(position, kind, angleOffset, count),
+      findNearestWalkablePoint: (origin) => sim.findNearestWalkablePoint(origin),
+    };
   }
 
   /**
@@ -494,10 +505,9 @@ export class GameSimulation {
         knockback,
         knockbackStun: stun,
       }),
-      killCritter: (critter) => sim.killCritter(critter),
+      killCritter: (critter) => sim.critterDirector.kill(critter),
     };
   }
-
 
   start(): void {
     this.running = true;
@@ -579,7 +589,7 @@ export class GameSimulation {
     this.updateWells();
     this.updateStructures(delta);
     this.projectileCombat.update(delta);
-    if (this.crittersEnabled) this.updateCritters(delta);
+    if (this.crittersEnabled) this.critterDirector.update(delta);
     if (this.wolvesEnabled) this.wolfDirector.updateWolves(delta);
     this.updateRest(delta);
     this.updateObjectives();
@@ -666,7 +676,6 @@ export class GameSimulation {
     this.events.push({ type: "revive" });
     return true;
   }
-
 
   private endGameWithVictory(): void {
     if (this.victorySent) return;
@@ -1123,7 +1132,7 @@ export class GameSimulation {
       critter.sprint = CRITTER_SPECS[critter.kind].sprintSeconds;
       hit = true;
       this.events.push({ type: "critter-hit", critterId: critter.id });
-      if (critter.health <= 0) this.killCritter(critter);
+      if (critter.health <= 0) this.critterDirector.kill(critter);
     }
 
     if (hit && stats.healthOnHit > 0) {
@@ -1204,7 +1213,6 @@ export class GameSimulation {
     const critter = this.critters.find((candidate) => candidate === target);
     return critter ? `c${critter.id}` : null;
   }
-
 
   // 旧的饮食快捷方法已经删除：它们只服务于 HUD 快捷键和 R/F/C 热键。
   // 消耗现在一律走背包的物品格（开背包会暂停游戏）。
@@ -2332,17 +2340,10 @@ export class GameSimulation {
     }
   }
 
-
-
-
-
   private distanceToWorldEdge(point: Vec2): number {
     const half = this.world.size / 2;
     return half - Math.max(Math.abs(point.x), Math.abs(point.z));
   }
-
-
-
 
   private createDrop(position: Vec2, kind: InventoryItemKind, angleOffset: number, count = 1): void {
     const angle = Math.atan2(this.player.z - position.z, this.player.x - position.x) + angleOffset;
@@ -2361,9 +2362,6 @@ export class GameSimulation {
     this.events.push({ type: "loot-drop", kind, dropId: drop.id });
   }
 
-
-
-
   // ==========================================================================
   // 荒漠猎物
   // 全部不攻击玩家。难度只由「警觉半径 + 逃跑速度 + 冲刺时长」三项决定：
@@ -2371,83 +2369,6 @@ export class GameSimulation {
   // 代价是你自己的劳力和体温（奔跑产热 +0.9/s，白天很容易把自己追到中暑）。
   // ==========================================================================
 
-  /** LOD 错峰用的帧计数。 */
-  private critterLodFrame = 0;
-
-  private updateCritters(delta: number): void {
-    this.critterRespawnCountdown -= delta;
-    if (this.critterRespawnCountdown <= 0) {
-      this.critterRespawnCountdown = 6;
-      this.replenishCritters();
-    }
-    /*
-     * 和狼同一套降频，理由见 WolfDirector 的 LOD_DISTANCE。
-     * 猎物比狼更该降：它们不追人、不攻击，远处那几十只纯粹在自己溜达。
-     * 半径同样取 50 米，压过渲染层 45 米的剔除线。
-     */
-    this.critterLodFrame += 1;
-    const lodCutoff = CRITTER_LOD_DISTANCE * CRITTER_LOD_DISTANCE;
-    for (const critter of this.critters) {
-      if (distanceSquared(critter, this.player) > lodCutoff) {
-        critter.lodAccum += delta;
-        if ((critter.id + this.critterLodFrame) % CRITTER_LOD_STRIDE !== 0) continue;
-      }
-      this.updateCritter(critter, critter.lodAccum > 0 ? critter.lodAccum + delta : delta);
-      critter.lodAccum = 0;
-    }
-    for (let index = this.critters.length - 1; index >= 0; index -= 1) {
-      const critter = this.critters[index];
-      if (critter.mode === "dead" && critter.deathTimer <= 0) this.critters.splice(index, 1);
-    }
-  }
-
-  /** 每种猎物各自维持自己的目标数量，在远离玩家的地方补回来。 */
-  /**
-   * 开局把整个种群一次撒满。
-   * 之前只靠每 6 秒补 1 只，玩家开局面对的是一片空荡荡的沙漠，
-   * 要一分钟后才慢慢有东西可打 —— 第一天的觅食完全没法进行。
-   */
-  private seedCritters(): void {
-    for (const kind of Object.keys(CRITTER_SPECS) as CritterKind[]) {
-      const spec = CRITTER_SPECS[kind];
-      for (let index = 0; index < spec.population; index += 1) {
-        // 头几只教学猎物撒在出生点脚边（见 tutorialPreySpot），其余照旧满图散。
-        // 它们**算在自己那一种的 population 里面**，所以 replenishCritters 的账不变：
-        // 教学猎物被打死之后由常规补充在远处补回，脚边不会源源不断地刷。
-        const point = kind === TUTORIAL_PREY && index < TUTORIAL_PREY_COUNT
-          ? this.tutorialPreySpot(index)
-          // 开局允许离玩家近一些，否则第一天要跑很远才见得到活物。
-          : this.findCritterSpawnPoint(14);
-        if (point) this.spawnCritter(kind, point);
-      }
-    }
-  }
-
-  /**
-   * 教学猎物的落点：出生点前方 5.5~7.0 米，散在初始朝向的左中右。
-   *
-   * 一只在正前方（玩家开局面朝卡车，它必定在画面里），左右各一只岔开约 35°，
-   * 于是无论玩家先转向哪边都会撞见一只。
-   *
-   * 这一步要教的不是"这游戏能打猎"，是"按这个键，眼前的东西就没了" ——
-   * 拾骨鸦 10 血、初始匕首 30 伤害，和入夜后扑上来那只教学犬（28 血 / 防御 0）
-   * 完全相同的结算。玩家在鸟身上学会的那一下，正是 30 秒后救他命的那一下。
-   *
-   * 改之前最近的可攻击目标在 27 米外，一直挥刀的玩家第一次命中要到第 43 秒 ——
-   * 而第一天白天只有 40 秒，考试比课先到。
-   *
-   * 角度和半径都是写死的常量，不走 this.random()：一是这三只本来就该稳定出现在
-   * 同一个地方，二是不额外消费随机流，免得整张地图的布局跟着抖。
-   */
-  private tutorialPreySpot(index: number): Vec2 {
-    const spread = TUTORIAL_PREY_SPREAD[index] ?? 0;
-    const radius = TUTORIAL_PREY_RADIUS[index] ?? 6;
-    const angle = this.spawnFacing + spread;
-    return {
-      x: this.spawnAnchor.x + Math.cos(angle) * radius,
-      z: this.spawnAnchor.z + Math.sin(angle) * radius,
-    };
-  }
 
   /**
    * 出生点侧后方那一根教学枯木（见 TUTORIAL_WOOD_* 的注释）。
@@ -2476,125 +2397,9 @@ export class GameSimulation {
     });
   }
 
-  private replenishCritters(): void {
-    for (const kind of Object.keys(CRITTER_SPECS) as CritterKind[]) {
-      const spec = CRITTER_SPECS[kind];
-      const alive = this.critters.filter((c) => c.kind === kind && c.mode !== "dead").length;
-      if (alive >= spec.population) continue;
-      const point = this.findCritterSpawnPoint();
-      if (point) this.spawnCritter(kind, point);
-    }
-  }
-
-  private findCritterSpawnPoint(minPlayerDistance = 30): Vec2 | null {
-    for (let guard = 0; guard < 24; guard += 1) {
-      const point = {
-        x: (this.random() - 0.5) * (this.world.size - 20),
-        z: (this.random() - 0.5) * (this.world.size - 20),
-      };
-      // 别在玩家眼皮底下凭空出现。
-      if (distanceSquared(point, this.player) < minPlayerDistance * minPlayerDistance) continue;
-      if (!isTerrainWalkable(this.world, point)) continue;
-      return point;
-    }
-    return null;
-  }
-
-  private spawnCritter(kind: CritterKind, origin: Vec2): void {
-    const spec = CRITTER_SPECS[kind];
-    const spawn = this.findNearestWalkablePoint(origin);
-    const facingAngle = this.random() * TAU;
-    this.critters.push({
-      id: this.critterId++,
-      kind,
-      ...spawn,
-      // 一个角度、一次取样。原先是 `{ cos(random()), sin(random()) }` —— **两次**取样，
-      // 出来的根本不是单位向量（实测长度 0.68）。渲染只看 atan2(z, x) 所以一直没露馅，
-      // 直到朝向开始参与转向限速的插值：非单位向量会让第一步的转角算错。
-      facing: { x: Math.cos(facingAngle), z: Math.sin(facingAngle) },
-      lodAccum: 0,
-      health: spec.maxHealth,
-      maxHealth: spec.maxHealth,
-      mode: "graze",
-      anchor: { ...spawn },
-      wanderAngle: this.random() * TAU,
-      sprint: spec.sprintSeconds,
-      hurtFlash: 0,
-      deathTimer: 0,
-      dropsCreated: false,
-    });
-  }
-
-  private updateCritter(critter: CritterState, delta: number): void {
-    critter.hurtFlash = Math.max(0, critter.hurtFlash - delta);
-    if (critter.mode === "dead") {
-      critter.deathTimer -= delta;
-      return;
-    }
-
-    const spec = CRITTER_SPECS[critter.kind];
-    const playerDistance = distance(critter, this.player);
-    const startled = playerDistance < spec.alertRadius && critter.sprint > 0;
-
-    if (startled) {
-      critter.mode = "flee";
-      critter.sprint = Math.max(0, critter.sprint - delta);
-    } else {
-      critter.mode = "graze";
-      // 只有玩家离得够远才回气，否则站在旁边等它回满就太廉价了。
-      if (playerDistance > spec.alertRadius * 1.35) {
-        critter.sprint = Math.min(spec.sprintSeconds, critter.sprint + delta * (spec.sprintSeconds / spec.sprintRecovery));
-      }
-    }
-
-    let desired: Vec2;
-    let pace: number;
-    if (critter.mode === "flee") {
-      desired = direction(this.player, critter);
-      pace = spec.fleeSpeed;
-    } else {
-      // 游荡：绕着锚点慢慢晃，离得太远就往回收。
-      critter.wanderAngle += delta * (0.3 + (critter.id % 5) * 0.04);
-      const anchorPull = distance(critter, critter.anchor) > 14 ? direction(critter, critter.anchor) : { x: 0, z: 0 };
-      desired = normalize({
-        x: Math.cos(critter.wanderAngle) + anchorPull.x * 2.2,
-        z: Math.sin(critter.wanderAngle * 0.82) + anchorPull.z * 2.2,
-      });
-      pace = spec.grazeSpeed;
-    }
-
-    // 转向限速，**而且移动跟着限速后的朝向走**，不是跟着 desired 走。
-    //
-    // 分开的话（朝向平滑、位移瞬时）动物会侧着身子滑行，比甩头还怪。
-    // 合起来之后逃跑变成画弧：长角羚 2.6 rad/s 掉个头要 1.2 秒，
-    // 这 1.2 秒就是玩家抄近路截它的窗口 —— 它 10.5 的移速比玩家 8.2 快，
-    // 但快不代表甩得掉。
-    const steered = getSteeredDirection(this, critter, desired);
-    critter.facing = rotateToward(critter.facing, steered, spec.turnRate * delta);
-    moveEntity(this, critter, critter.facing.x * pace * delta, critter.facing.z * pace * delta, 0.4, false);
-  }
-
-  private killCritter(critter: CritterState): void {
-    if (critter.dropsCreated) return;
-    const spec = CRITTER_SPECS[critter.kind];
-    critter.dropsCreated = true;
-    critter.mode = "dead";
-    critter.health = 0;
-    critter.deathTimer = 0.7;
-    if (spec.meat > 0) this.createDrop(critter, "raw-meat", -0.6, spec.meat);
-    if (spec.hide > 0) this.createDrop(critter, "hide", 0.6, spec.hide);
-    // 长角羚是唯一会掉水的猎物：沙漠里猎杀大型有蹄类取体液是真实做法。
-    if (spec.water > 0) this.createDrop(critter, "water", 1.8, spec.water);
-    this.events.push({ type: "critter-killed", critterId: critter.id, kind: critter.kind });
-  }
-
   getCritterLabel(kind: CritterKind): LocalizedText {
     return loc(`critter.${kind}.name`);
   }
-
-
-
-
 
   /**
    * 玩家此刻躲在哪座亮着火的营地里；在野外则返回 null。
@@ -2624,9 +2429,6 @@ export class GameSimulation {
     const raw = Math.round(wolf.attack * sizeScale);
     return Math.max(1, raw - armor);
   }
-
-
-
 
   private advancePhase(): void {
     if (this.phase === "day") {
@@ -2943,6 +2745,5 @@ export class GameSimulation {
     }
     return nearest;
   }
-
 
 }

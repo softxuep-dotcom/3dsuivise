@@ -81,7 +81,11 @@ describe("开局的第一刀", () => {
     const anchor = { x: sim.player.x, z: sim.player.z };
     for (const critter of sim.critters) {
       if (critter.kind === TUTORIAL_PREY && distance(anchor, critter) < 9) {
-        (sim as unknown as { killCritter(c: typeof critter): void }).killCritter(critter);
+        // 猎物的死亡结算归 CritterDirector；这里越过私有字段直接调，
+        // 是为了不经战斗就精确地只杀脚边那几只。
+        (sim as unknown as {
+          critterDirector: { kill(c: typeof critter): void };
+        }).critterDirector.kill(critter);
       }
     }
     for (let step = 0; step * STEP <= 120; step += 1) {
