@@ -70,7 +70,8 @@ try {
   & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "package-poki.ps1")
   if ($LASTEXITCODE -ne 0) { Die "压包失败。" }
 
-  $zipPath = Join-Path $root "last-truck-out-poki-$version.zip"
+  # 成品名字跟 package-poki.ps1 问同一个来源，别自己拼 —— 见 poki-archive-path.ps1。
+  $zipPath = (& (Join-Path $PSScriptRoot "poki-archive-path.ps1") -ProjectRoot $root).Path
   if (-not (Test-Path -LiteralPath $zipPath)) { Die "压包脚本跑完了但没找到 $zipPath。" }
 
   # --- 4. 回读验收 ---
