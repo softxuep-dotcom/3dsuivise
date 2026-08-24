@@ -8,6 +8,7 @@ import type { Difficulty } from "../game/simulation/difficulty";
 import { DEFAULT_DIFFICULTY, DIFFICULTIES } from "../game/simulation/difficulty";
 import { FUEL_REQUIRED, STRUCTURE_SPECS } from "../game/simulation/types";
 import { itemIcon } from "./ItemIcons";
+import { toastSeconds } from "./ToastDuration";
 import type {
   DeathCause,
   GameEvent,
@@ -833,16 +834,25 @@ export class HudController {
    *      的普通提示直接作废，那时它说的已经不是当下了。
    */
   showToast(text: string, seconds = 2.3, priority: number = TOAST_NORMAL): void {
+    /*
+     * 六处调用点传进来的那个数字是**下限**，不是时长 —— 真正挂多久按这一句
+     * 要读多少字算。理由与折算方式见 ToastDuration.ts：那些常数当初是对着中文
+     * 调的，而中文是这里十二种语言中最短的一种（法文是它的 2.78 倍）。
+     *
+     * 扩在这一个点上，六处调用点一个数都不用改，队列与顶替逻辑也照旧 ——
+     * 它们从这里往下拿到的都已经是折算过的 hold。
+     */
+    const hold = toastSeconds(text, seconds);
     if (this.toastTimer > 0 && this.toast.textContent === text) {
       // 同一句话又来一遍：续上时长，不排第二条。
-      this.toastTimer = Math.max(this.toastTimer, seconds);
+      this.toastTimer = Math.max(this.toastTimer, hold);
       return;
     }
     if (this.toastQueue.some((entry) => entry.text === text)) return;
 
     const busy = this.toastTimer > 0 || this.toastGap > 0;
     if (!busy) {
-      this.playToast(text, seconds, priority);
+      this.playToast(text, hold, priority);
       return;
     }
     if (priority <= TOAST_CASUAL) return;
@@ -855,10 +865,10 @@ export class HudController {
           queuedAt: this.toastClock,
         });
       }
-      this.playToast(text, seconds, priority);
+      this.playToast(text, hold, priority);
       return;
     }
-    this.toastQueue.push({ text, seconds, priority, queuedAt: this.toastClock });
+    this.toastQueue.push({ text, seconds: hold, priority, queuedAt: this.toastClock });
   }
 
   /** 空白走完之后接上下一条；队列见底就把目标条亮回来。 */
