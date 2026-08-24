@@ -7,6 +7,7 @@ import { InputController } from "./game/input/InputController";
 import { GameSimulation } from "./game/simulation/GameSimulation";
 import { GameRenderer } from "./render/GameRenderer";
 import { HudController } from "./ui/HudController";
+import { FirstBarrelHint } from "./ui/FirstBarrelHint";
 import { NightIntro } from "./ui/NightIntro";
 import { TutorialStage } from "./ui/TutorialStage";
 import { bumpRunIndex, loadDifficulty, loadRunIndex, saveDifficulty } from "./ui/Settings";
@@ -242,6 +243,16 @@ async function bootstrap(): Promise<void> {
     isTimerFrozen: () => hud.isGameplayBlocked() && !hud.isInventoryOpen(),
   });
 
+  /*
+   * 出生点脚边那桶油：走开了还没碰就给它点一盏灯。见 ui/FirstBarrelHint.ts。
+   * 和 NightIntro 共用渲染层那一盏聚光灯，但两边在时间上不重叠（它只在第一个白天）。
+   */
+  const firstBarrelHint = new FirstBarrelHint({
+    get simulation() { return simulation; },
+    spotlight: (target) => renderer.spotlightOn(target),
+  });
+  firstBarrelHint.reset();
+
   if (import.meta.env.DEV) {
     /*
      * 把教学和渲染层也挂上调试句柄。
@@ -390,6 +401,7 @@ async function bootstrap(): Promise<void> {
       renderer.resetRun(world, simulation);
       hud.resetRun(simulation, difficulty);
       nightIntro.reset();
+      firstBarrelHint.reset();
       // 上一局的最低帧不该挂在新一局头上。
       perf?.resetWorst();
       input.cancelMoveTarget();
@@ -556,6 +568,8 @@ async function bootstrap(): Promise<void> {
         simulation.truck,
       );
       hud.update(delta);
+      // 排在 NightIntro 之前：两边共用同一盏聚光灯，入夜教学要有最后发言权。
+      firstBarrelHint.update(delta);
       // 教学走在 HUD 之后：它要读背包的开合状态，也要按最新的一帧投影去挖亮洞。
       nightIntro.update(delta);
       renderer.render(delta);
