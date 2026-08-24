@@ -63,6 +63,12 @@ export class FirstBarrelHint {
   private hold = 0;
   /** 这一局点过了没有。一局最多一次 —— 它是提醒，不是催促。 */
   private fired = false;
+  /**
+   * 这一局的 simulation 有没有真的跑起来过。
+   *
+   * 用来把 `running === false` 的**两种**含义拆开，见 update() 里那段。
+   */
+  private begun = false;
 
   constructor(private readonly ctx: FirstBarrelHintWorld) {}
 
@@ -76,6 +82,7 @@ export class FirstBarrelHint {
   reset(): void {
     this.hold = 0;
     this.fired = false;
+    this.begun = false;
     this.ctx.spotlight(null);
     const player = this.ctx.simulation.player;
     let nearest: FuelBarrelState | null = null;
@@ -108,6 +115,21 @@ export class FirstBarrelHint {
     }
 
     if (this.fired) return;
+    /*
+     * `running === false` 有**两种**互不相干的含义，而这里对它们的处置正好相反：
+     * "还没开始"要**等**，"已经结束"才该**熄火**。
+     *
+     * 之前这里把两者一起按后者办，于是这盏灯在真机上一次都没亮过：
+     * simulation.start() 挂在玩家第一次真的动一下（main.ts 的 enterGame），
+     * 而 reset() 在 bootstrap 那一刻就跑完了 —— 中间玩家盯着屏幕还没动的那些帧，
+     * frame() 照样每帧调 update()，第一帧就把 fired 焊死。软重启同理：
+     * 那里 reset() 之后紧接着 started = false，新的一局又要等玩家的第一次输入。
+     *
+     * 原来的测试没接住，是因为它的 harness 先 start() 再 reset() ——
+     * 正好跳过了真实帧序里唯一出事的那一段。
+     */
+    if (sim.running) this.begun = true;
+    if (!this.begun) return;
     /*
      * 只在第一个白天点。入夜之后 NightIntro 也会写 spotlightOn，
      * 两边同时写会互相打架 —— 而这盏灯只有一个目标位。

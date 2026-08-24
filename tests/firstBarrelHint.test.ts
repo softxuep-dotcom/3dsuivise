@@ -17,7 +17,7 @@ describe("出生点油桶提示灯", () => {
   const STEP = 1 / 20;
 
   /** 造一局，并把提示灯挂上。返回的 lit 永远是"此刻灯在照谁"。 */
-  const build = (): {
+  const build = (preStartSeconds = 3): {
     sim: GameSimulation;
     hint: FirstBarrelHint;
     lit: () => Vec2 | null;
@@ -33,8 +33,18 @@ describe("出生点油桶提示灯", () => {
       get simulation() { return sim; },
       spotlight: (target) => { lit = target; },
     });
-    sim.start();
+    /*
+     * **真机上的次序**，所有用例都从这里开始：reset() 在 bootstrap 那一刻就跑完，
+     * 而 simulation.start() 要等玩家第一次真的动一下（main.ts 的 enterGame）。
+     * 中间玩家还没动的那些帧，frame() 照样每帧在调 hint.update()。
+     *
+     * 这一段不是摆设：第一版的灯就是死在这里 —— 它把"还没开始"和"已经结束"
+     * 一起当成"这局没戏了"，开场第一帧就熄了火，真机上一次都没亮过。
+     * 而老的 harness 先 start() 再 reset()，恰好把唯一出事的那一段跳了过去。
+     */
     hint.reset();
+    for (let t = 0; t < preStartSeconds / STEP; t += 1) hint.update(STEP);
+    sim.start();
     // reset() 认的是"离玩家最近的那桶地面油" —— 也就是教学桶（2.2 米）。
     const barrel = sim.barrels.reduce((best, b) => (
       Math.hypot(b.x - sim.player.x, b.z - sim.player.z)
@@ -107,6 +117,14 @@ describe("出生点油桶提示灯", () => {
     expect(g.sim.player.carrying).toBe("fuel");
     g.walkAway(4);
     expect(g.lit()).toBeNull();
+  });
+
+  it("开局盯着屏幕没动的那些帧，不该把这一局的灯提前熄掉", () => {
+    // 加载完到玩家第一次输入之间可以隔很久（读目标行、看地形、切出去接个电话）。
+    // 那段时间 simulation.running 一直是 false，但它的含义是"还没开始"，不是"结束了"。
+    const g = build(20);
+    g.walkAway(4);
+    expect(g.lit()).not.toBeNull();
   });
 
   it("重开之后能重新点一次", () => {
