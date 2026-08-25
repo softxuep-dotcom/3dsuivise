@@ -708,25 +708,34 @@ export class HudController {
     this.syncActionArmed(hint);
     this.actionIcon.dataset.icon = ACTION_ICON[hint.action];
     this.actionLabel.textContent = t(`action.${hint.action}`);
-    if (hint.action === "none") {
-      /*
-       * 键鼠玩家开局什么操作说明都没有。
-       *
-       * 加载卡改成纯进度页之后，原来那行 "WASD 移动 · E 互动 · 空格攻击…"
-       * （controls-copy）被一起删掉了，而现在开场没有按钮、加载完直接进场，
-       * 于是键鼠玩家唯一能学到的键就是 E —— 还得先走到可交互物旁边才会冒出来。
-       * 移动、攻击、背包全靠猜。
-       *
-       * 所以在**还没动过**的时候，把提示位借来说一次怎么走。玩家一移动
-       * （clockStarted 由第一次实际输入触发）它就永远消失，不占常驻版面。
-       * 触屏不显示：那边有摇杆和四颗大按钮，本来就不用教。
-       */
-      if (!touchLayout && !this.simulation.clockStarted && this.simulation.running) {
-        this.prompt.innerHTML = tx({ key: "hud.pcControls" });
-        this.prompt.classList.remove("hidden");
-      } else {
-        this.prompt.classList.add("hidden");
-      }
+    /*
+     * 键鼠玩家在**迈第一步之前**，提示位先说怎么走 —— 这一条要排在
+     * hint 的分支**外面**，不能挂在 `hint.action === "none"` 里。
+     *
+     * 挂在里面时它一次都不会显示，而且是两道时间上互斥的闸：
+     *
+     *   开局那一刻   action = "pickup"（教学桶在 2.2 米，FUEL_PICKUP_REACH 是 2.6）
+     *                clockStarted = false          → 第一个条件不成立
+     *   走 0.5 秒后  action = "none"
+     *                clockStarted = true           → 第二个条件不成立
+     *
+     * 五座起始营地全是这样（探针跑过）。1.0.24 把教学桶从 8.5 米收进 2.2 米，
+     * 是为了让开局第一下按键就是"扛桶"——那一刀对它自己的目的完全正确，
+     * 但顺手把这条提示唯一的窗口关死了，而两处隔着两个文件，谁都没看见。
+     *
+     * 后果不小：键鼠玩家屏幕上**没有第二处提到移动键**。四颗按钮的角标只有
+     * Q / B / Space / E，"WASD" 三个字母在整个 DOM 里出现零次 —— 移动全靠猜。
+     * 而 Poki 的 Fit Test 刚加进 PC 流量，1.0.32 的柱状图里多出来的 8 个百分点
+     * 全堆在头两分钟、长尾一动没动，正是"新人群不知道怎么开始"的形状。
+     *
+     * 覆盖掉这一帧的 "E 扛起油桶" 不亏：E 键本来就写在行动键的角标上，
+     * 而 hud.pcControls 这句话里也有 E。移动键才是屏幕上无处可查的那个。
+     */
+    if (!touchLayout && !this.simulation.clockStarted) {
+      this.prompt.innerHTML = tx({ key: "hud.pcControls" });
+      this.prompt.classList.remove("hidden");
+    } else if (hint.action === "none") {
+      this.prompt.classList.add("hidden");
     } else if (touchLayout) {
       // 提示就贴在"行动"键上方，键名由那颗按钮自己说 —— 这里再写一遍纯属重复。
       this.prompt.textContent = tx(hint.text);
