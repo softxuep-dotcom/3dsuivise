@@ -1,5 +1,17 @@
+/*
+ * 字体栈先西文后中文。
+ *
+ * 原来把 "Microsoft YaHei" 排在第一位 —— 而它是 **每一台 Windows 都预装**的，
+ * 于是英/美玩家的整个界面都在用雅黑的拉丁字形：它们是从 CJK 字体里派生的，
+ * 字宽比 Segoe UI 宽 8.5%（实测 16px 下同一串文字 253.7px vs 233.8px），
+ * 小字号 hinting 也差，一眼就是"中文软件"的观感。macOS 上 PingFang SC 同理。
+ *
+ * CSS 的字体回退是 **逐字符** 的，所以把西文字体提到前面不会弄坏中文：
+ * Segoe UI / SF Pro 都没有汉字，汉字自然落到后面的雅黑 / 苹方。
+ * 中文 Windows 上 system-ui 本来就是雅黑，中文玩家看到的效果一字不变。
+ */
 :root {
-  font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+  font-family: system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Microsoft YaHei", "PingFang SC", sans-serif;
   color: #f4f8fb;
   background: #101821;
   font-synthesis: none;
@@ -408,7 +420,11 @@ button { font: inherit; }
   text-shadow: 0 1px 2px rgba(0,0,0,.72);
 }
 
-#backpack-button .button-label { gap: 1px; }
+#backpack-button .button-label {
+  /* 名称和容量分两行；长语言若拼在同一行，极矮横屏会被 56px 圆键裁掉。 */
+  display: grid;
+  gap: 1px;
+}
 
 /* 四个右下操作键在所有设备上都可见；输入方式不同，HUD 不分两套。 */
 .action-buttons { display: flex; align-items: flex-end; gap: 8px; }
@@ -446,15 +462,14 @@ button { font: inherit; }
 .round-button.action .hud-sprite { width: 38px; height: 38px; }
 
 /*
- * 圆里能放字的宽度比外接方框窄得多（68px 的圆在标签那一行只剩 ~52px），
- * 而这些标签要过六种语言 —— 法语的"Température normale"比中文的"体温适宜"长四倍。
- * 所以圆里的标签最多两行，超出省略；完整文案一直在 aria-label 里。
+ * 圆形按钮要覆盖十二种语言。实测俄语、西语和德语的短标签最容易碰边；
+ * 62px 能容纳两行，同时在 78px 圆内保留两侧各 8px 的安全边距。
  */
 .utility-button .button-label,
 .round-button .button-label {
   display: -webkit-box;
   overflow: hidden;
-  max-width: 52px;
+  max-width: 62px;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   font-size: 8px;
@@ -1123,6 +1138,7 @@ html[lang="vi"] .pause-card h2 { letter-spacing: .04em; }
   font-weight: 800;
   font-style: normal;
   letter-spacing: .06em;
+  overflow-wrap: anywhere;
   text-transform: uppercase;
 }
 
@@ -1383,7 +1399,8 @@ html[lang="vi"] .pause-card h2 { letter-spacing: .04em; }
  * 顶部中央栏和右上状态栏必然抢同一段横向空间。所以整条中央栏改为**沉到两个角面板下面**
  * 靠左排列 —— 它不再和任何东西争位置，也不用再为每个子元素各算一次偏移。
  */
-@media (pointer: coarse) and (orientation: portrait) {
+@media (pointer: coarse) and (orientation: portrait),
+       (max-width: 760px) and (orientation: portrait) {
   /*
    * 中央栏改为**吊在行动提示上方、向上生长**。
    * 竖屏顶部两个角面板加起来占掉 10~309px，而它们的高度都随内容变（状态徽章、说明行、
@@ -1424,6 +1441,16 @@ html[lang="vi"] .pause-card h2 { letter-spacing: .04em; }
     align-items: flex-start;
     max-width: calc(100vw - 20px);
     transform: none;
+  }
+
+  /* Toast 独立居中悬在角色上方，不跟中央栏沉进左下角或拇指操作区。 */
+  #toast {
+    position: fixed;
+    left: 50%;
+    bottom: 62%;
+    width: max-content;
+    max-width: min(84vw, 320px);
+    transform: translateX(-50%);
   }
 }
 
@@ -1517,7 +1544,9 @@ html[lang="vi"] .pause-card h2 { letter-spacing: .04em; }
   .round-button .hud-sprite { width: 26px; height: 26px; }
   .round-button.attack .hud-sprite { width: 32px; height: 32px; }
   .utility-button .button-label,
-  .round-button .button-label { max-width: 42px; font-size: 7px; }
+  .round-button .button-label { max-width: 46px; font-size: 7px; }
+  /* #thermal-state 的常规 9px 规则优先级更高，需要在紧凑档明确缩小。 */
+  #thermal-state { font-size: 7px; }
   .joystick { width: 82px; height: 82px; }
   .joystick i { top: 24px; left: 24px; width: 34px; height: 34px; }
   .prompt { bottom: calc(max(24px, env(safe-area-inset-bottom)) + 72px); }

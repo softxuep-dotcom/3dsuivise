@@ -7,6 +7,7 @@ import type { Difficulty } from "../game/simulation/difficulty";
 import { DEFAULT_DIFFICULTY, DIFFICULTIES } from "../game/simulation/difficulty";
 import { FUEL_REQUIRED, STRUCTURE_SPECS } from "../game/simulation/types";
 import { itemIcon } from "./ItemIcons";
+import { toastSeconds } from "./ToastDuration";
 import type {
   DeathCause,
   GameEvent,
@@ -34,6 +35,17 @@ const required = <T extends HTMLElement>(id: string): T => {
   if (!element) throw new Error(`Missing UI element: ${id}`);
   return element as T;
 };
+
+/*
+ * Toast 分三档：关键消息可顶掉普通消息；拾取/猎杀只争当下，不进入队列。
+ * 这样同一帧涌入的昼夜提示、燃料警告和顺手反馈不会再互相覆盖。
+ */
+const TOAST_CASUAL = 0;
+const TOAST_NORMAL = 1;
+const TOAST_CRITICAL = 2;
+const TOAST_GAP = 0.14;
+const TOAST_MIN_SECONDS = 0.9;
+const TOAST_STALE_SECONDS = 6;
 
 const ACTION_ICON: Record<InteractionHint["action"], string> = {
   pickup: "pickup",
@@ -211,14 +223,18 @@ export class HudController {
    */
   private actionOverride: InteractionHint | null = null;
   private toastTimer = 0;
+  private toastPriority = -1;
+  private toastGap = 0;
+  private toastClock = 0;
+  private readonly toastQueue: { text: string; seconds: number; priority: number; queuedAt: number }[] = [];
   private lastHudUpdate = 0;
   private inventoryOpen = false;
   private adPlaying = false;
   private paused = false;
   private readonly pauseOverlay = required<HTMLElement>("pause-overlay");
   private readonly reviveButton = required<HTMLButtonElement>("revive-button");
-  private lastBlocked = false;
-  private blockedListener: ((blocked: boolean) => void) | null = null;
+  private lastPlatformIdle = false;
+  private platformIdleListener: ((idle: boolean) => void) | null = null;
 
   /** 本局实际在跑的难度 —— 记录只和同难度比。 */
   private readonly difficulty: Difficulty;
@@ -273,6 +289,9 @@ export class HudController {
     this.setPaused(false);
     this.toast.classList.add("hidden");
     this.toastTimer = 0;
+    this.toastGap = 0;
+    this.toastPriority = -1;
+    this.toastQueue.length = 0;
     this.objectiveChip.classList.remove("muted");
     this.huntProgress.classList.remove("fuel-loaded");
     // 两个搏动提示本来就是"每局第一次"的口径（见字段上的注释，它们不写 localStorage）,
@@ -287,13 +306,22 @@ export class HudController {
     this.hud.classList.remove("hidden");
   }
 
-  /** 订阅"可玩 / 不可玩"的翻转。平台适配层拿它报 gameplayStart / gameplayStop。 */
-  onGameplayBlockedChange(listener: (blocked: boolean) => void): void {
-    this.blockedListener = listener;
+  /** 订阅"平台眼里在不在玩"的翻转。平台适配层拿它报 gameplayStart / gameplayStop。 */
+  onPlatformIdleChange(listener: (idle: boolean) => void): void {
+    this.platformIdleListener = listener;
   }
 
+  /** 模拟层是否应冻结。背包打开时世界仍然需要暂停。 */
   isGameplayBlocked(): boolean {
     return this.inventoryOpen || this.adPlaying || this.paused;
+  }
+
+  /**
+   * 平台眼里玩家是否离开了游戏。背包不算离开：玩家仍在挑选物品、合成或建造。
+   * 只有广告和显式暂停才应触发 gameplayStop。
+   */
+  isPlatformIdle(): boolean {
+    return this.adPlaying || this.paused;
   }
 
   /**
@@ -512,22 +540,24 @@ export class HudController {
   }
 
   update(deltaSeconds: number): void {
-    // 每帧自查"现在算不算在玩"，变了才通知。
-    //
-    // 不在各个开关处逐个报，是因为 inventoryOpen 有五条改法（背包键、关闭键、
-    // 建造完成、死亡、通关），漏掉任何一条，平台那边的"这一局玩了多久"就错了。
-    // 自查一次全都覆盖，代价是最多晚一帧 —— 对统计毫无影响。
-    const blocked = this.isGameplayBlocked();
-    if (blocked !== this.lastBlocked) {
-      this.lastBlocked = blocked;
-      this.blockedListener?.(blocked);
+    // 平台上报与模拟冻结不是同一个谓词：背包冻住世界，但不代表玩家离开。
+    const idle = this.isPlatformIdle();
+    if (idle !== this.lastPlatformIdle) {
+      this.lastPlatformIdle = idle;
+      this.platformIdleListener?.(idle);
     }
+    this.toastClock += deltaSeconds;
     if (this.toastTimer > 0) {
       this.toastTimer -= deltaSeconds;
       if (this.toastTimer <= 0) {
         this.toast.classList.add("hidden");
-        this.objectiveChip.classList.remove("muted");
+        this.toastPriority = -1;
+        if (this.toastQueue.length > 0) this.toastGap = TOAST_GAP;
+        else this.objectiveChip.classList.remove("muted");
       }
+    } else if (this.toastGap > 0) {
+      this.toastGap -= deltaSeconds;
+      if (this.toastGap <= 0) this.playNextToast();
     }
     this.lastHudUpdate += deltaSeconds;
     if (this.lastHudUpdate < 0.08) return;
@@ -578,25 +608,15 @@ export class HudController {
     this.syncHintPulse(hint);
     this.actionIcon.dataset.icon = ACTION_ICON[hint.action];
     this.actionLabel.textContent = t(`action.${hint.action}`);
-    if (hint.action === "none") {
-      /*
-       * 键鼠玩家开局什么操作说明都没有。
-       *
-       * 加载卡改成纯进度页之后，原来那行 "WASD 移动 · E 互动 · 空格攻击…"
-       * （controls-copy）被一起删掉了，而现在开场没有按钮、加载完直接进场，
-       * 于是键鼠玩家唯一能学到的键就是 E —— 还得先走到可交互物旁边才会冒出来。
-       * 移动、攻击、背包全靠猜。
-       *
-       * 所以在**还没动过**的时候，把提示位借来说一次怎么走。玩家一移动
-       * （clockStarted 由第一次实际输入触发）它就永远消失，不占常驻版面。
-       * 触屏不显示：那边有摇杆和四颗大按钮，本来就不用教。
-       */
-      if (!touchLayout && !this.simulation.clockStarted && this.simulation.running) {
-        this.prompt.innerHTML = tx({ key: "hud.pcControls" });
-        this.prompt.classList.remove("hidden");
-      } else {
-        this.prompt.classList.add("hidden");
-      }
+    /*
+     * 键鼠玩家迈出第一步前优先显示移动说明。这个判断必须放在 action 分支外：
+     * 开场可能已经靠近可交互物，而 running 又要等第一次输入才会置位。
+     */
+    if (!touchLayout && !this.simulation.clockStarted) {
+      this.prompt.innerHTML = tx({ key: "hud.pcControls" });
+      this.prompt.classList.remove("hidden");
+    } else if (hint.action === "none") {
+      this.prompt.classList.add("hidden");
     } else if (touchLayout) {
       // 提示就贴在"行动"键上方，键名由那颗按钮自己说 —— 这里再写一遍纯属重复。
       this.prompt.textContent = tx(hint.text);
@@ -666,15 +686,19 @@ export class HudController {
     if (event.type === "nourish") this.flashNourish(event);
     if (event.type === "message") this.showToast(t(event.key, event.params), 3.1);
     if (event.type === "phase") {
-      this.showToast(t(event.phase === "night" ? "toast.nightfall" : "toast.daybreak", { day: event.day }), 3.4);
+      this.showToast(
+        t(event.phase === "night" ? "toast.nightfall" : "toast.daybreak", { day: event.day }),
+        3.4,
+        TOAST_CRITICAL,
+      );
     }
     if (event.type === "pickup" && (event.kind === "raw-meat" || event.kind === "hide" || event.kind === "water")) {
       const label = t(`loot.${event.kind}`);
-      this.showToast(label, 1.4);
+      this.showToast(label, 1.4, TOAST_CASUAL);
     }
     if (event.type === "critter-killed") {
       const label = this.simulation.getCritterLabel(event.kind);
-      this.showToast(t(event.kind === "oryx" ? "toast.huntBig" : "toast.hunt", { name: label }), 1.8);
+      this.showToast(t(event.kind === "oryx" ? "toast.huntBig" : "toast.hunt", { name: label }), 1.8, TOAST_CASUAL);
     }
     if (event.type === "fuel-loaded") {
       // 模拟层紧接着还会发详细 message；再发一条同义 toast 会在同一帧互相覆盖。
@@ -686,7 +710,7 @@ export class HudController {
     }
     if (event.type === "truck-depart") {
       this.closeInventory();
-      this.showToast(t("toast.truckDepart"), 5);
+      this.showToast(t("toast.truckDepart"), 5, TOAST_CRITICAL);
     }
     if (event.type === "victory") {
       this.closeInventory();
@@ -707,11 +731,55 @@ export class HudController {
    *
    * 压暗而不是隐藏：目标条要保持在原位不跳，玩家的眼睛才知道回哪儿找它。
    */
-  showToast(text: string, seconds = 2.3): void {
+  showToast(text: string, seconds = 2.3, priority: number = TOAST_NORMAL): void {
+    const busy = this.toastTimer > 0 || this.toastGap > 0;
+    const hold = toastSeconds(text, seconds, busy || this.toastQueue.length > 0);
+
+    if (this.toastTimer > 0 && this.toast.textContent === text) {
+      this.toastTimer = Math.max(this.toastTimer, hold);
+      return;
+    }
+    if (this.toastQueue.some((entry) => entry.text === text)) return;
+
+    if (!busy) {
+      this.playToast(text, hold, priority);
+      return;
+    }
+    if (priority <= TOAST_CASUAL) return;
+    if (priority > this.toastPriority && this.toastTimer > 0) {
+      if (this.toastPriority >= TOAST_NORMAL) {
+        this.toastQueue.unshift({
+          text: this.toast.textContent ?? "",
+          seconds: Math.max(this.toastTimer, TOAST_MIN_SECONDS),
+          priority: this.toastPriority,
+          queuedAt: this.toastClock,
+        });
+      }
+      this.playToast(text, hold, priority);
+      return;
+    }
+    this.toastQueue.push({ text, seconds: hold, priority, queuedAt: this.toastClock });
+  }
+
+  private playNextToast(): void {
+    while (this.toastQueue.length > 0) {
+      const entry = this.toastQueue.shift();
+      if (!entry) break;
+      if (entry.priority < TOAST_CRITICAL && this.toastClock - entry.queuedAt > TOAST_STALE_SECONDS) continue;
+      const crowded = this.toastQueue.length > 0 ? 0.72 : 1;
+      this.playToast(entry.text, Math.max(entry.seconds * crowded, TOAST_MIN_SECONDS), entry.priority);
+      return;
+    }
+    this.objectiveChip.classList.remove("muted");
+  }
+
+  private playToast(text: string, seconds: number, priority: number): void {
     this.toast.textContent = text;
     this.toast.classList.remove("hidden");
     this.objectiveChip.classList.add("muted");
     this.toastTimer = seconds;
+    this.toastGap = 0;
+    this.toastPriority = priority;
   }
 
   private updateInventory(): void {
@@ -741,7 +809,7 @@ export class HudController {
       const spec = STRUCTURE_SPECS[kind];
       const parts = spec.cost.map(([item, count]) =>
         `${itemName(item)} ${this.simulation.getInventoryCount(item)}/${count}`);
-      button.textContent = t("build.button", { name: t(`structure.${kind}.name`), parts: parts.join(" + "), stamina: spec.stamina });
+      button.textContent = t("build.button", { name: t(`structure.${kind}.name`), parts: parts.join(" + ") });
       button.disabled = spec.cost.some(([item, count]) => this.simulation.getInventoryCount(item) < count);
     }
     this.renderUpgradeSlot("armor");

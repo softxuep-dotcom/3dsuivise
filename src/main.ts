@@ -247,11 +247,10 @@ async function bootstrap(): Promise<void> {
   input.setRouter((target) => simulation.directionToClickTarget(target));
 
   /*
-   * "可玩 / 不可玩"的唯一报点。
+   * 给平台报"在玩 / 没在玩"的唯一报点。
    *
-   * HUD 每帧自查 isGameplayBlocked()（开背包会暂停模拟层、广告期间会冻结），
-   * 翻转时回调到这里。所有暂停路径因此只有这一处要维护 ——
-   * 以后再加什么会暂停游戏的 UI，平台信号自动跟着对。
+   * HUD 每帧自查 isPlatformIdle()。它和 isGameplayBlocked() 的职责不同：
+   * 背包会冻结模拟层，但玩家仍在挑选物品、合成或建造，不应给平台报停。
    */
   /*
    * 死后续命：看一次激励视频原地复活，一局三次。
@@ -281,8 +280,8 @@ async function bootstrap(): Promise<void> {
     });
   };
 
-  hud.onGameplayBlockedChange((blocked) => {
-    if (blocked) platform.gameplayStop();
+  hud.onPlatformIdleChange((idle) => {
+    if (idle) platform.gameplayStop();
     else if (started && simulation.running && !document.hidden) platform.gameplayStart();
   });
 
@@ -437,7 +436,8 @@ async function bootstrap(): Promise<void> {
     } else {
       previousTime = performance.now();
       if (started && hiddenAt > 0) hud.showToast(t("hud.resumed"), 1.5);
-      if (started && simulation.running && !hud.isGameplayBlocked()) platform.gameplayStart();
+      // 回到前台时与平台监听使用同一个谓词；即使背包开着也应恢复会话上报。
+      if (started && simulation.running && !hud.isPlatformIdle()) platform.gameplayStart();
     }
   });
 

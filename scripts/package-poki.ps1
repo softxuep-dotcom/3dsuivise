@@ -1,11 +1,11 @@
 $ErrorActionPreference = "Stop"
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$packageJsonPath = Join-Path $projectRoot "package.json"
 $distPath = Join-Path $projectRoot "dist-poki"
-$packageJson = Get-Content -LiteralPath $packageJsonPath -Raw -Encoding UTF8 | ConvertFrom-Json
-$displayVersion = [string]$packageJson.version
-$archivePath = Join-Path $projectRoot "last-truck-out-poki-$displayVersion.zip"
+
+# 成品名称由单一脚本生成，普通打包和双击打包不会再各拼一份。
+$naming = & (Join-Path $PSScriptRoot "poki-archive-path.ps1") -ProjectRoot $projectRoot
+$archivePath = $naming.Path
 $legacyArchivePath = Join-Path $projectRoot "last-truck-out-poki.zip"
 
 if (-not (Test-Path -LiteralPath (Join-Path $distPath "index.html"))) {
@@ -46,3 +46,4 @@ finally {
 }
 
 Write-Host "Poki package ready: $archivePath"
+Write-Host "  version=$($naming.Version)  commit=$($naming.Commit)"

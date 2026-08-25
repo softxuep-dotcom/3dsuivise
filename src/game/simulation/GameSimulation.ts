@@ -1157,7 +1157,7 @@ export class GameSimulation {
     const item = this.findNearestItem(2.5);
     if (item) {
       if (item.kind === "wood") {
-        if (!this.spendStamina(STAMINA_COST_WOOD, "labour.wood")) return;
+        if (!this.spendStamina(STAMINA_COST_WOOD)) return;
         if (!this.addInventory("wood", 1)) {
           this.player.stamina = Math.min(this.player.maxStamina, this.player.stamina + STAMINA_COST_WOOD);
           this.events.push({ type: "message", key: "msg.2" });
@@ -1188,7 +1188,7 @@ export class GameSimulation {
 
     const ironNode = this.findNearestIron(2.8);
     if (ironNode) {
-      if (!this.spendStamina(STAMINA_COST_MINE, "labour.mine")) return;
+      if (!this.spendStamina(STAMINA_COST_MINE)) return;
       if (!this.addInventory("iron-ore", 1)) {
         this.events.push({ type: "message", key: "msg.3" });
         return;
@@ -1201,7 +1201,7 @@ export class GameSimulation {
 
     const tree = this.findNearestTree(TREE_REACH);
     if (tree) {
-      if (!this.spendStamina(STAMINA_COST_CHOP, "labour.chop")) return;
+      if (!this.spendStamina(STAMINA_COST_CHOP)) return;
       if (!this.addInventory("wood", 1)) {
         // 劳力要退回去 —— 背包满时这一下什么也没发生，不该收钱。
         this.player.stamina = Math.min(this.player.maxStamina, this.player.stamina + STAMINA_COST_CHOP);
@@ -1329,7 +1329,7 @@ export class GameSimulation {
    * 扣劳力；不足时给出提示并返回 false，调用方应中止该次采集。
    * 劳力是本作对"无限点击采集"的唯一约束 —— 采集要花钱，钱有上限。
    */
-  private spendStamina(cost: number, labelKey: string): boolean {
+  private spendStamina(cost: number): boolean {
     if (this.player.stamina < cost) {
       /*
        * 劳力不够 = **这次点击什么也没发生**，所以"站着不动"的计时不该被它清零。
@@ -1341,7 +1341,7 @@ export class GameSimulation {
        */
       this.player.idleTime = this.idleTimeBeforeAction;
       this.events.push({ type: "exhausted" });
-      this.events.push({ type: "message", key: "msg.5", params: { v0: loc(labelKey), v1: cost } });
+      this.events.push({ type: "message", key: "msg.5" });
       return false;
     }
     this.player.stamina -= cost;
@@ -1350,7 +1350,7 @@ export class GameSimulation {
 
   /** 割仙人掌取汁：一刀即得，代价是劳力和"你得先找到它"。 */
   private harvestCactus(patch: CactusPatch): void {
-    if (!this.spendStamina(STAMINA_COST_CACTUS, "labour.cactus")) return;
+    if (!this.spendStamina(STAMINA_COST_CACTUS)) return;
     if (!this.addInventory("cactus-juice", 1)) {
       this.events.push({ type: "message", key: "msg.6" });
       return;
@@ -1379,7 +1379,7 @@ export class GameSimulation {
       this.events.push({ type: "message", key: "msg.8" });
       return;
     }
-    if (!this.spendStamina(STAMINA_COST_DRAW, "labour.draw")) return;
+    if (!this.spendStamina(STAMINA_COST_DRAW)) return;
     if (!this.addInventory("water", 1)) {
       this.events.push({ type: "message", key: "msg.9" });
       return;
@@ -1897,7 +1897,7 @@ export class GameSimulation {
       this.events.push({ type: "message", key: "msg.24", params: { v0: loc(`structure.${kind}.name`), v1: reason } });
       return false;
     }
-    if (!this.spendStamina(spec.stamina, `structure.${kind}.build`)) return false;
+    if (!this.spendStamina(spec.stamina)) return false;
 
     this.noteInPlaceAction();
     for (const [item, count] of spec.cost) this.removeInventory(item, count);
@@ -1958,9 +1958,9 @@ export class GameSimulation {
     if (this.departTimer > 0) return { action: "none", text: loc("hint.none") };
     // 与 requestInteraction 保持一致：水分告急时，仙人掌优先、其次找井。
     if (this.player.water < WATER_URGENT && !this.player.carrying) {
-      if (this.findNearestCactus(2.7)) return { action: "cactus", text: loc("hint.urgentCactus", { cost: STAMINA_COST_CACTUS }) };
+      if (this.findNearestCactus(2.7)) return { action: "cactus", text: loc("hint.urgentCactus") };
       const urgentWell = this.findNearestWell(WELL_REACH);
-      if (urgentWell) return { action: "well", text: loc("hint.urgentWell", { cost: STAMINA_COST_DRAW }) };
+      if (urgentWell) return { action: "well", text: loc("hint.urgentWell") };
     }
     if (this.player.carrying === "fuel") {
       return distance(this.player, this.truck) <= TRUCK_LOAD_REACH
@@ -1991,18 +1991,18 @@ export class GameSimulation {
     const item = this.findNearestItem(2.5);
     if (item) {
       return item.kind === "wood"
-        ? { action: "pickup", text: loc("hint.takeWood", { cost: STAMINA_COST_WOOD }) }
+        ? { action: "pickup", text: loc("hint.takeWood") }
         : { action: "pickup", text: loc("hint.liftStone") };
     }
     const structure = this.findNearestStructure(2.7);
     if (structure) return { action: "pickup", text: loc("hint.liftStake") };
-    if (this.findNearestCactus(2.7)) return { action: "cactus", text: loc("hint.cactus", { cost: STAMINA_COST_CACTUS }) };
-    if (this.findNearestIron(2.8)) return { action: "mine", text: loc("hint.mine", { cost: STAMINA_COST_MINE }) };
+    if (this.findNearestCactus(2.7)) return { action: "cactus", text: loc("hint.cactus") };
+    if (this.findNearestIron(2.8)) return { action: "mine", text: loc("hint.mine") };
     if (this.findNearestTree(TREE_REACH)) {
-      return { action: "chop", text: loc("hint.chop", { cost: STAMINA_COST_CHOP }) };
+      return { action: "chop", text: loc("hint.chop") };
     }
     const well = this.findNearestWell(WELL_REACH);
-    if (well) return { action: "well", text: loc("hint.well", { cost: STAMINA_COST_DRAW, left: well.charges }) };
+    if (well) return { action: "well", text: loc("hint.well", { left: well.charges }) };
     return { action: "none", text: loc("hint.none") };
   }
 
@@ -2304,7 +2304,7 @@ export class GameSimulation {
 
     if (this.phase === "day" && this.day === 1 && this.phaseTime <= 14) return loc("sim.23");
     if (this.player.warmth > 78) return loc("sim.24");
-    if (this.objectiveStage === 0) return loc("sim.26", { v0: STAMINA_COST_WOOD });
+    if (this.objectiveStage === 0) return loc("sim.26");
     if (this.objectiveStage === 1) return loc("sim.27");
     if (this.objectiveStage === 2) return loc("sim.28");
     if (this.getInventoryCount("water") === 0 && this.getInventoryCount("cactus-juice") === 0) return loc("sim.29");

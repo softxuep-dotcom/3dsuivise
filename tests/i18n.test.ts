@@ -48,7 +48,7 @@ const enKeys = Object.keys(en).sort();
  * 主包下载前，index.html 会先用一小份内联文案画开场页。它必须和完整语言表一致，
  * 否则慢网络下会先显示一种说法，语言 chunk 到达后再突然跳成另一种。
  */
-const initialCopySource = html.match(/var initialCopy = (\{[\s\S]*?\n\s*\});\n\s*var activeInitialCopy/);
+const initialCopySource = html.match(/var initialCopy = (\{[\s\S]*?\r?\n\s*\});\r?\n\s*var activeInitialCopy/);
 if (!initialCopySource) throw new Error("index.html 里找不到 initialCopy");
 const initialCopy = Function(`"use strict"; return (${initialCopySource[1]});`)() as Record<
   string,
@@ -109,5 +109,26 @@ describe("多语言 · 数值一致", () => {
       .filter((key) => nums(en[key]) !== nums(table[key]))
       .map((key) => `${key}: en[${nums(en[key])}] ≠ ${lang}[${nums(table[key])}]`);
     expect(bad, `装备数值不一致：\n  ${bad.join("\n  ")}`).toEqual([]);
+  });
+});
+
+describe("多语言 · 不显示劳力消耗数值", () => {
+  const forbiddenPlaceholders: Record<string, RegExp> = {
+    "build.button": /\{stamina\}/,
+    "msg.5": /\{v[01]\}/,
+    "sim.26": /\{v0\}/,
+    "hint.cactus": /\{cost\}/,
+    "hint.chop": /\{cost\}/,
+    "hint.mine": /\{cost\}/,
+    "hint.takeWood": /\{cost\}/,
+    "hint.urgentCactus": /\{cost\}/,
+    "hint.urgentWell": /\{cost\}/,
+    "hint.well": /\{cost\}/,
+  };
+
+  it.each(Object.entries(ALL_LOCALES))("%s 不再把具体劳力成本写进界面", (_lang, table) => {
+    for (const [key, pattern] of Object.entries(forbiddenPlaceholders)) {
+      expect(table[key], key).not.toMatch(pattern);
+    }
   });
 });
