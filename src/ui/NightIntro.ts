@@ -21,12 +21,12 @@ import type { TutorialStage } from "./TutorialStage";
  * ## 三拍
  *
  *   1. 停 —— 时间冻住，一声狼嚎，镜头从人物推到营火上（3.4 秒，不需要操作）
- *   2. 点火 —— 镜头收回，照亮火塘和行动键，等玩家添一根柴
- *   3. 取暖 —— **放开时钟**，照亮体温条，等他在火边站够 2.6 秒
+ *   2. 点火 —— 镜头收回，同时恢复时间与正常光照；行动键提示点火，但不再挡住游戏
+ *   3. 取暖 —— 维持正常时间与光照，只照亮体温条，等他在火边站够 2.6 秒
  *
- * 第 3 拍必须放开时钟，因为那一拍要看的正是体温条往回涨 —— 冻着的话
- * 这一课的证据本身不会发生。前两拍则必须冻着：狼在第 0.45 秒就开始出巢，
- * 一边讲课一边挨咬的话，这段教学只会变成一次不明不白的死亡。
+ * 只有第 1 拍冻结世界：推镜时玩家看不见自己，不能让战斗趁机发生。镜头一开始
+ * 返回玩家，第 2、3 拍就必须同时恢复时间和光照。否则画面已经把控制权还给玩家，
+ * 系统却仍逼他在压暗的世界里找路，视觉信号与实际状态互相矛盾。
  *
  * ## 没有柴怎么办
  *
@@ -65,7 +65,8 @@ interface Beat {
   skip?: () => boolean;
 }
 
-const STORAGE_KEY = "desert-survivor.nightIntro.v1";
+// v2：镜头返回时会同步恢复时间和光照。旧版看过 v1 的玩家也应看到修正版一次。
+const STORAGE_KEY = "desert-survivor.nightIntro.v2";
 /** 第三拍要在火边站够多久才算学会。累计，不要求连续。 */
 const WARM_SECONDS = 2.6;
 /** 整段的硬上限。 */
@@ -119,28 +120,28 @@ export class NightIntro {
         line: "night.fire",
         // 包里没柴时这一拍教的是另一件事，文案必须跟着换。
         sub: () => (hasWood() ? "night.fire.sub" : "night.fire.noWood"),
-        spot: () => this.camp,
+        // 推镜结束就收灯：镜头、时间、光照在同一个状态边界恢复给玩家。
+        spot: () => null,
         lit: () => ["action-button"],
         focus: () => null,
-        hold: true,
+        hold: false,
         // 这一拍指的那颗键上写的得是"点燃"，不能是通用的"行动" ——
         // 教学正指着它，而它此刻还没写上答案。见 HudController.actionOverride。
         actionLabel: "ignite",
         done: () => simulation.getNearestLitCamp() !== null,
         minSeconds: 0.9,
-        // 有柴：给足 14 秒走过去按一下。没柴：这一拍**做不到**，说完那句
-        // "白天要先捡枯木"就该放人走 —— 让他对着一颗按不出结果的键干等
-        // 十四秒，只会教会他这套教学不值得看。
+        // 这只是非阻塞的观察窗口，不再冻结时间或压暗世界：玩家在 14 秒内点着火，
+        // 就继续展示取暖反馈；没有点着则自动收掉教学。没柴时只让说明停留 5 秒。
         timeoutSeconds: () => (hasWood() ? 14 : 5),
       },
       {
         line: "night.warm",
         sub: () => "night.warm.sub",
-        // 这一拍照的是玩家自己：要看的是他脚下那圈取暖光环亮起来。
-        spot: () => simulation.player,
+        // 镜头已经还给玩家，世界光照保持正常；只用 HUD 高亮说明体温正在恢复。
+        spot: () => null,
         lit: () => ["warmth-meter"],
         focus: () => null,
-        // **放开时钟**：体温要真的往回涨，这一拍才有东西可看。
+        // 时钟继续正常走：体温要真的往回涨，这一拍才有东西可看。
         hold: false,
         done: () => this.warmedTime >= WARM_SECONDS,
         minSeconds: 1.2,

@@ -132,3 +132,50 @@ describe("多语言 · 不显示劳力消耗数值", () => {
     }
   });
 });
+
+describe("多语言 · 品牌与核心目标用词", () => {
+  const hardLabels: Record<string, string> = {
+    en: "Hard",
+    zh: "困难",
+    fr: "Difficile",
+    de: "Schwer",
+    it: "Difficile",
+    "pt-BR": "Difícil",
+    es: "Difícil",
+    tr: "Zor",
+    ja: "ハード",
+    ru: "Сложно",
+    ko: "어려움",
+    vi: "Khó",
+  };
+
+  const loadedTerms: Record<string, RegExp> = {
+    en: /\bloaded\b/i,
+    zh: /装车/,
+    fr: /charg/,
+    de: /verladen/i,
+    it: /caricat/i,
+    "pt-BR": /carregad/i,
+    es: /cargad/i,
+    tr: /yüklendi/i,
+    ja: /積/,
+    ru: /загружен/i,
+    ko: /실었|적재|싣고/,
+    vi: /chất/i,
+  };
+
+  it.each(Object.entries(ALL_LOCALES))("%s 保留统一的英文游戏标题", (_lang, table) => {
+    expect(table["intro.title"]).toBe("Last Truck Out");
+  });
+
+  it.each(Object.entries(ALL_LOCALES))("%s 的最高难度使用标准“困难”名称", (lang, table) => {
+    expect(table["difficulty.insane"]).toBe(hardLabels[lang]);
+  });
+
+  it.each(Object.entries(ALL_LOCALES))("%s 始终把六桶油描述为装车", (lang, table) => {
+    const term = loadedTerms[lang];
+    for (const key of ["msg.fuelFull", "sim.fuelReady", "toast.truckDepart"]) {
+      expect(table[key], key).toMatch(term);
+    }
+  });
+});
