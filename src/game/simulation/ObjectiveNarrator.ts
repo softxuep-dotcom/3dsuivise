@@ -110,6 +110,7 @@ export class ObjectiveNarrator {
     }
 
     // 致命轴优先：水分和饥饿归零是立即死亡，必须压过其它所有提示。
+    if (this.owner.player.water < 18 && this.owner.player.hunger < 18) return loc("sim.needsCritical");
     if (this.owner.player.water < 18) return loc("sim.9");
     if (this.owner.player.hunger < 18) return loc("sim.10");
     // 其次是瘫痪状态。

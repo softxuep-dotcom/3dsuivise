@@ -85,8 +85,8 @@ export function runNight({ campId, seconds = NIGHT_SECONDS, onStep, move }: Nigh
 /**
  * 每步把玩家的五条轴顶满。我们观察的是整夜的狗群行为，玩家不该成为变量。
  *
- * **水分和饥饿必须一起顶**，只顶血是不够的：水每秒 -0.42、初始 90，
- * 到第 214 秒归零就触发 endGame("dehydrated")，running 置 false，
+ * **水分和饥饿必须一起顶**，只顶血是不够的：两者每秒 -0.42，开局分别为 80 / 70，
+ * 饥饿先在第 166.7 秒归零并触发 endGame，running 置 false，
  * 此后 update() 直接 return —— 整个世界静止。跑超过一夜的用例（比如天亮撤退）
  * 会看到"27 只狗卡在原地 200 秒"，那不是寻路坏了，是模拟停了。
  */
