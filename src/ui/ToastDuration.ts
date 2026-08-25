@@ -45,13 +45,31 @@ const LATIN_PER_SECOND = 16;   // 拉丁、西里尔、数字、标点、空格
 const NOTICE_SECONDS = 1.2;
 
 /**
- * 阅读时间的上限。
+ * 阅读时间的上限，**分两档**。
  *
- * 超过这个长度的文案本来就不该走字幕（该进结算页或帮助页），给它无限时长
- * 只会让后面排队的指令全部作废 —— 见 HudController 的 TOAST_STALE_SECONDS。
+ * 这个上限的职责只有一个：别让一条长文案把后面排队的指令饿死
+ * （见 HudController 的 TOAST_STALE_SECONDS —— 排过 6 秒的普通提示直接作废）。
+ * 所以它只在**后面确实有东西排队**时才该生效。
+ *
+ * 一刀切成 6 秒的代价，在开局那一句上尤其贵：`msg.1` 是玩家看到的第一句话，
+ * 而它塞了两条指令（「首次移动后开始计时」+「天黑前添柴并封住入口」）。
+ * 中文 22 个字装得下，德文要 106 个字符：
+ *
+ *     de 7.8s  pt 7.1s  es/fr 7.0s  it 6.7s  vi 6.4s  en 6.3s  ru 6.1s   ← 读不完
+ *     ja 5.7s  tr 5.6s  ko 5.4s  zh 4.1s                                 ← 读得完
+ *
+ * **十二种里八种读不完开场那句**，源语言英文自己也读不完。而 msg.1 在 t=0
+ * 出现时队列是空的 —— 它谁也没饿着，那 6 秒纯粹是白收的。
+ *
+ * SOLO 档取 8 秒而不是无限：全部 1224 条（12 语种 × 会走字幕的键）实测
+ * 中位 3.8s、p90 5.6s、**最长 8.1s**（fr 的 sim.33），超过 9 秒的一条都没有。
+ * 8 秒因此覆盖了除那一条以外的全部文案，同时把「万一将来有人写一段长的」
+ * 压在 TOAST_STALE_SECONDS 之上不超过 2 秒 —— 那是队列能吸收的量。
+ *
  * 注意这只封"读字换来的时长"，调用点自己传的 nominal 更大时以 nominal 为准。
  */
 const MAX_READING_SECONDS = 6;
+const SOLO_MAX_READING_SECONDS = 8;
 
 /** 汉字与假名：平/片假名、CJK 统一表意文字（含扩展 A）、兼容表意文字。 */
 function isHanOrKana(code: number): boolean {
@@ -83,11 +101,15 @@ export function readingSeconds(text: string): number {
 /**
  * 这一条字幕该挂多久。
  *
+ * `crowded` = 此刻是否还有别的字幕在放或在排队。为真时用 6 秒上限（保护队列），
+ * 为假时放宽到 8 秒 —— 独自出现的那一条谁也没饿着，见上面两个常量的注释。
+ *
  * `nominal` 是调用点原本那个常数，语义从"挂这么久"变成**"至少挂这么久"** ——
  * 中文短句算出来普遍就在 3 秒附近，所以源语言的观感逐帧不变，
  * 变的是长语言：法文 p90 从被切断变成 5.6 秒读得完。
  */
-export function toastSeconds(text: string, nominal: number): number {
+export function toastSeconds(text: string, nominal: number, crowded = true): number {
   const needed = NOTICE_SECONDS + readingSeconds(text);
-  return Math.max(nominal, Math.min(needed, MAX_READING_SECONDS));
+  const cap = crowded ? MAX_READING_SECONDS : SOLO_MAX_READING_SECONDS;
+  return Math.max(nominal, Math.min(needed, cap));
 }

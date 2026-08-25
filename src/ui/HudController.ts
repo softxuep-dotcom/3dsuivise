@@ -874,7 +874,18 @@ export class HudController {
      * 扩在这一个点上，六处调用点一个数都不用改，队列与顶替逻辑也照旧 ——
      * 它们从这里往下拿到的都已经是折算过的 hold。
      */
-    const hold = toastSeconds(text, seconds);
+    /*
+     * 6 秒上限只在**后面确实有东西排队**时才收 —— 那才是它要防的事
+     * （长文案饿死排队的指令，见 TOAST_STALE_SECONDS）。独自出现的一条
+     * 谁也没饿着，放宽到 8 秒。
+     *
+     * 这一条专治 `msg.1`：玩家看到的第一句话，t=0 出现、队列是空的，
+     * 而十二种语言里八种在 6 秒里读不完（德文要 7.8 秒，只读得完 77%）。
+     * 读得完的四种是 ja / tr / ko / zh —— 也就是说这条上限一直在按语言
+     * 分配"看不看得懂开局规则"，而那句话讲的正是第一夜的全部玩法。
+     */
+    const busy = this.toastTimer > 0 || this.toastGap > 0;
+    const hold = toastSeconds(text, seconds, busy || this.toastQueue.length > 0);
     if (this.toastTimer > 0 && this.toast.textContent === text) {
       // 同一句话又来一遍：续上时长，不排第二条。
       this.toastTimer = Math.max(this.toastTimer, hold);
@@ -882,7 +893,6 @@ export class HudController {
     }
     if (this.toastQueue.some((entry) => entry.text === text)) return;
 
-    const busy = this.toastTimer > 0 || this.toastGap > 0;
     if (!busy) {
       this.playToast(text, hold, priority);
       return;

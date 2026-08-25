@@ -34,7 +34,13 @@ const MESSAGE_NOMINAL = 3.1;
 
 /** 注意到一条字幕冒出来的固定开销，与 ToastDuration 的 NOTICE_SECONDS 同值。 */
 const NOTICE = 1.2;
-/** 阅读时长上限，与 ToastDuration 的 MAX_READING_SECONDS 同值。 */
+/**
+ * 阅读时长上限，与 ToastDuration 的 MAX_READING_SECONDS 同值。
+ *
+ * 注意它现在**分两档**：这一档（6 秒）只在后面还有字幕在排队时生效，
+ * 独占时放宽到 8 秒。下面这一组用例走的全是默认的 `crowded = true`，
+ * 所以读的都是 6 秒这一档；放宽那一档另有一组，见文件末尾。
+ */
 const CAP = 6;
 
 /**
@@ -77,7 +83,8 @@ describe("字幕时长按实际字数折算", () => {
     expect(toastSeconds("发车", 5)).toBe(5);
   });
 
-  it("阅读时长封顶 6 秒，但封不掉调用点自己要的更长时间", () => {
+  // 这条走默认的 crowded = true —— 也就是"后面有东西排队"那一档。
+  it("排队时阅读时长封顶 6 秒，但封不掉调用点自己要的更长时间", () => {
     const wall = "x".repeat(4000);
     expect(toastSeconds(wall, MESSAGE_NOMINAL)).toBe(6);
     expect(toastSeconds(wall, 8)).toBe(8);
@@ -105,5 +112,58 @@ describe("字幕时长按实际字数折算", () => {
     for (const locale of ["fr", "de", "ru"]) {
       expect(before[locale], `${locale} 应比 zh 更受 3.1 秒之害`).toBeGreaterThan(before.zh);
     }
+  });
+});
+
+/**
+ * 独占那一档。
+ *
+ * 6 秒上限的职责只有一个：别让长文案饿死后面排队的指令（见 HudController 的
+ * TOAST_STALE_SECONDS）。所以它只在**确实有东西在排队**时才该收 ——
+ * 而 `msg.1`（玩家看到的第一句话）在 t=0 出现时队列是空的，它谁也没饿着。
+ *
+ * 那 6 秒收掉的东西不小：msg.1 塞了两条指令（「首次移动后开始计时」+
+ * 「天黑前添柴并封住入口」），中文 22 个字装得下，德文要 106 个字符。
+ * 十二种语言里**八种读不完**，而读得完的四种恰好是 ja / tr / ko / zh ——
+ * 这条上限一直在按语言分配"看不看得懂第一夜怎么玩"。
+ */
+describe("独占时放宽到 8 秒", () => {
+  const fill = (raw: string): string => raw.replace(/\{[^}]+\}/g, "12");
+  const need = (text: string): number => NOTICE + readingSeconds(text);
+
+  it("十二种语言的开场第一句，独占时都读得完", () => {
+    for (const [locale, dict] of Object.entries(LOCALES)) {
+      const text = fill(dict["msg.1"]);
+      expect(
+        toastSeconds(text, MESSAGE_NOMINAL, false),
+        `${locale} 的 msg.1 独占时应当读得完（需 ${need(text).toFixed(1)}s）`,
+      ).toBeGreaterThanOrEqual(need(text) - 1e-9);
+    }
+  });
+
+  it("最长的那句（德文 msg.1）独占时超过 6 秒，但仍然收得住", () => {
+    const text = fill(de["msg.1"]);
+    expect(need(text)).toBeGreaterThan(CAP);          // 前提：它确实读不完
+    expect(toastSeconds(text, MESSAGE_NOMINAL, false)).toBeGreaterThan(CAP);
+    expect(toastSeconds(text, MESSAGE_NOMINAL, false)).toBeLessThanOrEqual(8);
+  });
+
+  it("后面有东西排队时，照旧收在 6 秒", () => {
+    const text = fill(de["msg.1"]);
+    expect(toastSeconds(text, MESSAGE_NOMINAL, true)).toBeCloseTo(CAP, 9);
+  });
+
+  it("默认收着 —— 漏传参数不该悄悄放宽", () => {
+    const text = fill(de["msg.1"]);
+    expect(toastSeconds(text, MESSAGE_NOMINAL)).toBe(toastSeconds(text, MESSAGE_NOMINAL, true));
+  });
+
+  it("放宽的是上限不是下限：短句仍然按 nominal 挂", () => {
+    expect(toastSeconds("发车", 5, false)).toBe(5);
+    expect(toastSeconds(fill(zh["msg.2"]), MESSAGE_NOMINAL, false)).toBeGreaterThanOrEqual(MESSAGE_NOMINAL);
+  });
+
+  it("天花板没有被整个拆掉：一堵墙那么长的文案仍然收在 8 秒", () => {
+    expect(toastSeconds("x".repeat(4000), MESSAGE_NOMINAL, false)).toBe(8);
   });
 });
