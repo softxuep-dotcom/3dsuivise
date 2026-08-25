@@ -3074,9 +3074,16 @@ export class GameSimulation {
       return;
     }
     const logs = Math.ceil((night - fuel) / 95);
+    // 背包里的柴已经够用时，缺的是“添进火里”这个动作，不是继续外出找柴。
+    const carried = this.getInventoryCount("wood");
+    if (carried >= logs) {
+      this.events.push({ type: "message", key: "msg.duskCarryEnough", params: { logs } });
+      return;
+    }
+    const missing = logs - carried;
     this.events.push(fuel <= 0
-      ? { type: "message", key: "msg.duskNoFire", params: { night, logs } }
-      : { type: "message", key: "msg.duskLowFire", params: { fuel: Math.round(fuel), night, logs } });
+      ? { type: "message", key: "msg.duskNoFire", params: { night, logs: missing } }
+      : { type: "message", key: "msg.duskLowFire", params: { fuel: Math.round(fuel), night, logs: missing } });
   }
 
   private updateObjectives(): void {
@@ -3084,15 +3091,11 @@ export class GameSimulation {
     if (!this.duskWarningSent && this.phase === "day" && this.phaseTime <= 30) {
       this.duskWarningSent = true;
       this.warnDuskFuel();
-      if (this.day === 1) {
-        this.events.push({ type: "message", key: "msg.45" });
-      }
     }
     // 枯木改为进背包之后，这一阶不能再只看 carrying —— 否则捡了柴也不算数，
     // 玩家会永远卡在"拿起身边的枯木"。
     if (this.objectiveStage === 0 && (this.player.carrying || this.getInventoryCount("wood") > 0)) {
       this.objectiveStage = 1;
-      this.events.push({ type: "message", key: "msg.46" });
     } else if (this.objectiveStage === 1 && this.camps.some((camp) => camp.fuel > 90)) {
       this.objectiveStage = 2;
       this.events.push({ type: "message", key: "msg.47" });

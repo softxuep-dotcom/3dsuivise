@@ -53,6 +53,26 @@ const STONE_COLOR = 0x748084;
 const WOOD_COLOR = 0x65432d;
 const BARRIER_DAMAGE_TINT = new THREE.Color(0x47231c);
 
+/* 参数固定的几何体跨实例共享，避免掉落物过期后持续遗留 GPU 缓冲。 */
+const DROP_HIDE_GEOMETRY = new THREE.CircleGeometry(0.62, 5);
+const DROP_MEAT_GEOMETRY = new THREE.DodecahedronGeometry(0.42, 0);
+const DROP_BONE_GEOMETRY = new THREE.CylinderGeometry(0.07, 0.07, 0.82, 6);
+const CACTUS_SPINE_GEOMETRY = new THREE.ConeGeometry(0.04, 0.2, 4);
+const CACTUS_ELBOW_GEOMETRY = new THREE.CapsuleGeometry(0.18, 0.34, 3, 6);
+const CACTUS_FLOWER_GEOMETRY = new THREE.IcosahedronGeometry(0.16, 0);
+
+/** [绕 Y 的方位, 离心距, 高度, 外倾角]；每座矿脉复用同一组几何体。 */
+const IRON_SHARDS: ReadonlyArray<readonly [number, number, number, number]> = [
+  [0.0, 0.0, 2.05, 0.0],
+  [1.9, 0.46, 1.42, 0.26],
+  [3.6, 0.52, 1.68, 0.19],
+  [5.2, 0.40, 1.15, 0.31],
+];
+const IRON_SHARD_GEOMETRIES = IRON_SHARDS.map(
+  ([, , height]) => new THREE.CylinderGeometry(0.05, 0.3, height, 5),
+);
+const IRON_ORE_GEOMETRY = new THREE.OctahedronGeometry(0.34, 0);
+
 /** 长角羚的沙褐主色。 */
 const ORYX_COAT = 0xc19a63;
 
@@ -364,6 +384,10 @@ export class GameRenderer {
   private readonly wolfViews = new Map<number, WolfView>();
   private readonly critterViews = new Map<number, CritterView>();
   private readonly dropViews = new Map<number, THREE.Object3D>();
+  /* 材质跟随渲染器实例共享；软重开不会为每份掉落物再造一套。 */
+  private readonly dropHideMaterial = makeMaterial(0x7a4931, 1);
+  private readonly dropMeatMaterial = makeMaterial(0x9e3f3d, 0.9);
+  private readonly dropBoneMaterial = makeMaterial(0xd7c8ad, 1);
   private readonly hemisphere: THREE.HemisphereLight;
   private readonly sun: THREE.DirectionalLight;
   private readonly fireLight = new THREE.PointLight(0xff8b38, 0, 22, 2);
@@ -1374,19 +1398,8 @@ export class GameRenderer {
 
       // 四根高矮不一的尖棱柱，向外倾斜 —— 参差和倾角是"矿脉"读感的全部来源，
       // 四根一样高一样直的话就变成一座塔了。
-      const shards: Array<[number, number, number, number]> = [
-        // [绕 Y 的方位, 离心距, 高度, 外倾角]
-        [0.0, 0.0, 2.05, 0.0],
-        [1.9, 0.46, 1.42, 0.26],
-        [3.6, 0.52, 1.68, 0.19],
-        [5.2, 0.40, 1.15, 0.31],
-      ];
-      for (const [angle, radius, height, tilt] of shards) {
-        const shard = new THREE.Mesh(
-          // 上细下粗的五棱柱：顶端收到 0.05，剪影是尖的。
-          new THREE.CylinderGeometry(0.05, 0.3, height, 5),
-          rockMaterial,
-        );
+      for (const [index, [angle, radius, height, tilt]] of IRON_SHARDS.entries()) {
+        const shard = new THREE.Mesh(IRON_SHARD_GEOMETRIES[index], rockMaterial);
         shard.position.set(Math.cos(angle) * radius, 0.3 + height / 2, Math.sin(angle) * radius);
         shard.rotation.z = Math.cos(angle) * tilt;
         shard.rotation.x = -Math.sin(angle) * tilt;
@@ -1397,7 +1410,7 @@ export class GameRenderer {
       // 矿脉：贴在棱柱根部朝外的一圈，三颗，比原先大四成、自发光更强。
       for (let index = 0; index < 3; index += 1) {
         const angle = 0.7 + index * 2.1;
-        const ore = new THREE.Mesh(new THREE.OctahedronGeometry(0.34, 0), oreMaterial);
+        const ore = new THREE.Mesh(IRON_ORE_GEOMETRY, oreMaterial);
         ore.position.set(Math.cos(angle) * 0.52, 0.5 + (index % 2) * 0.42, Math.sin(angle) * 0.52);
         ore.rotation.set(index * 0.7, index * 1.1, index * 0.4);
         group.add(ore);
@@ -1607,16 +1620,16 @@ export class GameRenderer {
         arm.position.set(dir * 0.42, 0.75 + side * 0.42 + armHeight / 2, 0);
         arm.castShadow = true;
         group.add(arm);
-        const elbow = new THREE.Mesh(new THREE.CapsuleGeometry(0.18, 0.34, 3, 6), fleshMaterial);
+        const elbow = new THREE.Mesh(CACTUS_ELBOW_GEOMETRY, fleshMaterial);
         elbow.rotation.z = Math.PI / 2;
         elbow.position.set(dir * 0.24, 0.75 + side * 0.42, 0);
         group.add(elbow);
       }
-      const flower = new THREE.Mesh(new THREE.IcosahedronGeometry(0.16, 0), flowerMaterial);
+      const flower = new THREE.Mesh(CACTUS_FLOWER_GEOMETRY, flowerMaterial);
       flower.position.y = trunkHeight + 0.42;
       group.add(flower);
       for (let index = 0; index < 3; index += 1) {
-        const spine = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.2, 4), spineMaterial);
+        const spine = new THREE.Mesh(CACTUS_SPINE_GEOMETRY, spineMaterial);
         const angle = (index / 3) * Math.PI * 2;
         spine.position.set(Math.cos(angle) * 0.31, 0.6 + index * 0.42, Math.sin(angle) * 0.31);
         spine.rotation.z = -Math.cos(angle) * 1.2;
@@ -2437,7 +2450,7 @@ export class GameRenderer {
 
   private createDropView(drop: WorldDrop): THREE.Object3D {
     if (drop.kind === "hide") {
-      const hide = new THREE.Mesh(new THREE.CircleGeometry(0.62, 5), makeMaterial(0x7a4931, 1));
+      const hide = new THREE.Mesh(DROP_HIDE_GEOMETRY, this.dropHideMaterial);
       hide.rotation.x = -Math.PI / 2;
       hide.scale.set(1.25, 0.82, 1);
       // 兽皮是一张贴地的圆片，影子和它自己基本重合 —— 低功耗档不投影，看不出来。
@@ -2445,12 +2458,12 @@ export class GameRenderer {
       return hide;
     }
     const group = new THREE.Group();
-    const meat = new THREE.Mesh(new THREE.DodecahedronGeometry(0.42, 0), makeMaterial(0x9e3f3d, 0.9));
+    const meat = new THREE.Mesh(DROP_MEAT_GEOMETRY, this.dropMeatMaterial);
     meat.scale.set(1.25, 0.65, 0.9);
     // 夜里一场仗能掉几十份肉皮牙，全在玩家脚边 —— 正好落在阴影相机里。
     meat.castShadow = !this.lowPower;
     group.add(meat);
-    const bone = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.82, 6), makeMaterial(0xd7c8ad, 1));
+    const bone = new THREE.Mesh(DROP_BONE_GEOMETRY, this.dropBoneMaterial);
     bone.rotation.z = Math.PI / 2;
     bone.position.y = 0.08;
     group.add(bone);

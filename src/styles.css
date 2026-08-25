@@ -295,8 +295,11 @@ button { font: inherit; }
   display: flex;
   align-items: flex-end;
   gap: 18px;
-  pointer-events: auto;
+  /* 弧形容器有大量透明空隙；只让按钮接点击，空隙继续用于点地移动。 */
+  pointer-events: none;
 }
+
+.bottom-right button { pointer-events: auto; }
 
 .utility-buttons { display: flex; gap: 8px; }
 
@@ -460,6 +463,13 @@ button { font: inherit; }
 .round-button.action { width: 78px; height: 78px; background: rgba(48, 110, 127, .7); }
 .round-button.attack { width: 72px; height: 72px; background: rgba(147, 62, 48, .72); }
 .round-button.action .hud-sprite { width: 38px; height: 38px; }
+
+/* 触屏玩家不必一路试按：够得着交互物才亮；不设 disabled，保留平台输入上报。 */
+@media (pointer: coarse) {
+  #action-button { transition: opacity .14s ease-out, background-color .14s ease-out; }
+  #action-button:not(.armed) { opacity: .42; background: rgba(48, 110, 127, .55); }
+  #action-button.armed { background: rgba(64, 148, 170, .88); }
+}
 
 /*
  * 圆形按钮要覆盖十二种语言。实测俄语、西语和德语的短标签最容易碰边；
@@ -948,9 +958,16 @@ html[lang="vi"] .pause-card h2 { letter-spacing: .04em; }
   padding: 22px 30px 20px;
 }
 
-/* 并排时的横向间隙；窄到放不下时按钮自然换行，margin-bottom 接管。 */
-.game-over-card .revive-button,
-.victory-card .revive-button { margin-right: 10px; }
+/* 继续游戏的动作先于长报告出现；重开排第一，复活只在值得挽救时出现。 */
+.game-over-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.game-over-actions .primary-button { margin: 0; }
 
 .game-over-card h2,
 .victory-card h2 {

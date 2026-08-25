@@ -36,6 +36,9 @@ const required = <T extends HTMLElement>(id: string): T => {
   return element as T;
 };
 
+/** HUD 每 0.08 秒更新一次；三拍余量防止交互距离边缘轻微晃动造成闪烁。 */
+const ARMED_GRACE_TICKS = 3;
+
 /*
  * Toast 分三档：关键消息可顶掉普通消息；拾取/猎杀只争当下，不进入队列。
  * 这样同一帧涌入的昼夜提示、燃料警告和顺手反馈不会再互相覆盖。
@@ -140,6 +143,7 @@ export class HudController {
    */
   private attackHintUsed = false;
   private actionHintUsed = false;
+  private armedGrace = 0;
   private readonly conditionBadge = required<HTMLElement>("condition-badge");
   private readonly drainNote = required<HTMLElement>("drain-note");
   private readonly huntProgress = required<HTMLElement>("hunt-progress");
@@ -298,6 +302,7 @@ export class HudController {
     // 所以新的一局要放回来。
     this.attackHintUsed = false;
     this.actionHintUsed = false;
+    this.armedGrace = 0;
     this.refreshRecordsLine();
   }
 
@@ -526,6 +531,13 @@ export class HudController {
     this.actionButton.classList.toggle("hint-pulse", action);
   }
 
+  /** 触屏行动键两档亮度：进入可交互范围立即点亮，离开后留三拍再熄灭。 */
+  private syncActionArmed(hint: InteractionHint): void {
+    if (hint.action !== "none") this.armedGrace = ARMED_GRACE_TICKS;
+    else if (this.armedGrace > 0) this.armedGrace -= 1;
+    this.actionButton.classList.toggle("armed", this.armedGrace > 0);
+  }
+
   private flashNourish(delta: { health: number; water: number; hunger: number; warmth: number }): void {
     for (const [key, meter] of this.nourishMeters) {
       const amount = delta[key];
@@ -606,6 +618,7 @@ export class HudController {
     const hint = this.actionOverride ?? this.simulation.getInteractionHint();
     const touchLayout = matchMedia("(pointer: coarse)").matches || window.innerWidth <= 760;
     this.syncHintPulse(hint);
+    this.syncActionArmed(hint);
     this.actionIcon.dataset.icon = ACTION_ICON[hint.action];
     this.actionLabel.textContent = t(`action.${hint.action}`);
     /*

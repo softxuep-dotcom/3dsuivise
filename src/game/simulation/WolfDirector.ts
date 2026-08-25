@@ -162,7 +162,6 @@ export class WolfDirector {
   private lodFrame = 0;
   private raidersSpawnedThisNight = 0;
   private wildRespawnCountdown = 0;
-  private largeWolfAnnounced = false;
   /** 今晚计划放出的攻营犬总数，见 getRaidQuota。 */
   private raidQuotaThisNight = 1;
 
@@ -935,10 +934,6 @@ export class WolfDirector {
       dropsCreated: false,
     });
     if (tutorialWolf) this.ctx.emit({ type: "message", key: "msg.41" });
-    if (kind === "large" && role === "raider" && !this.largeWolfAnnounced) {
-      this.largeWolfAnnounced = true;
-      this.ctx.emit({ type: "message", key: "msg.42" });
-    }
   }
 
   /**

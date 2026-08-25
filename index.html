@@ -257,6 +257,11 @@
         <div class="intro-card game-over-card">
           <p class="eyebrow" data-i18n="over.eyebrow">The sand remembers your tracks</p>
           <h2 data-i18n="over.title">Buried by the sand</h2>
+          <div class="game-over-actions">
+            <button id="restart-button" class="primary-button" type="button" data-i18n="over.restart">Face another night</button>
+            <!-- 只有平台支持、次数尚余且本局值得挽救时才显示。 -->
+            <button id="revive-button" class="primary-button revive-button hidden" type="button"></button>
+          </div>
           <div class="death-report" role="group" data-i18n-attr="aria-label:death.report">
             <div class="death-report-cause">
               <span class="death-report-label" data-i18n="death.report">Cause of death</span>
@@ -269,9 +274,6 @@
             </div>
           </div>
           <p id="result-copy"></p>
-          <!-- 只有平台支持激励视频、且这局还有次数时才显示（HudController 控制）。 -->
-          <button id="revive-button" class="primary-button revive-button hidden" type="button"></button>
-          <button id="restart-button" class="primary-button" type="button" data-i18n="over.restart">Face another night</button>
         </div>
       </div>
 

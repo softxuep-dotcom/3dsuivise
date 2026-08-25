@@ -6,8 +6,10 @@ import { createWorld, pickStartCamp } from "./game/content/createWorld";
 import { InputController } from "./game/input/InputController";
 import { GameSimulation } from "./game/simulation/GameSimulation";
 import { GameRenderer } from "./render/GameRenderer";
+import { FirstBarrelHint } from "./ui/FirstBarrelHint";
 import { HudController } from "./ui/HudController";
 import { NightIntro } from "./ui/NightIntro";
+import { isRunWorthReviving, shouldBreakBeforeRestart } from "./ui/RetentionPolicy";
 import { TutorialStage } from "./ui/TutorialStage";
 import { bumpRunIndex, loadDifficulty, loadRunIndex, saveDifficulty } from "./ui/Settings";
 import { normalizeDifficulty } from "./game/simulation/difficulty";
@@ -231,6 +233,13 @@ async function bootstrap(): Promise<void> {
     isTimerFrozen: () => hud.isGameplayBlocked() && !hud.isInventoryOpen(),
   });
 
+  /* 玩家走离出生油桶仍未拿取时，短暂用场景聚光提醒；不停表、不夺镜头。 */
+  const firstBarrelHint = new FirstBarrelHint({
+    get simulation() { return simulation; },
+    spotlight: (target) => renderer.spotlightOn(target),
+  });
+  firstBarrelHint.reset();
+
   if (import.meta.env.DEV) {
     /*
      * 把教学和渲染层也挂上调试句柄。
@@ -263,7 +272,7 @@ async function bootstrap(): Promise<void> {
    */
   let revivesLeft = 3;
   const offerRevive = (): void => {
-    if (!platform.supportsRewarded || revivesLeft <= 0) return;
+    if (!platform.supportsRewarded || revivesLeft <= 0 || !isRunWorthReviving(simulation)) return;
     hud.showReviveOffer(revivesLeft, () => {
       void (async () => {
         const watched = await platform.rewardedBreak();
@@ -321,10 +330,13 @@ async function bootstrap(): Promise<void> {
    * `started` 要退回 false：Poki 要求 gameplayStart 必须直接发生在玩家输入的调用栈里，
    * 所以新的一局同样要等他第一次真的动一下，跟刚打开页面时是同一条规矩。
    */
+  /** 当前页面会话内的重开次数；第一次重开免插屏，第二次起仍交给 SDK 控频。 */
+  let restartsThisSession = 0;
   const softRestart = async (button: HTMLElement | null): Promise<void> => {
     if (button instanceof HTMLButtonElement) button.disabled = true;
     const run = bumpRunIndex();
-    await platform.commercialBreak();
+    restartsThisSession += 1;
+    if (shouldBreakBeforeRestart(restartsThisSession)) await platform.commercialBreak();
 
     world = createWorld(undefined, pickStartCamp(run));
     simulation = new GameSimulation(world, difficulty);
@@ -336,6 +348,7 @@ async function bootstrap(): Promise<void> {
     renderer.resetRun(world, simulation);
     hud.resetRun(simulation);
     nightIntro.reset();
+    firstBarrelHint.reset();
     input.cancelMoveTarget();
     started = false;
     revivesLeft = 3;
@@ -471,6 +484,8 @@ async function bootstrap(): Promise<void> {
         started && simulation.running && !hud.isGameplayBlocked(),
       );
       hud.update(delta);
+      // 与第一夜教学共用聚光灯；NightIntro 随后执行，入夜时由教学取得最终控制权。
+      firstBarrelHint.update(delta);
       // 教学走在 HUD 之后：它要读背包的开合状态，也要按最新的一帧投影去挖亮洞。
       nightIntro.update(delta);
       renderer.render(delta);
