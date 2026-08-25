@@ -3,7 +3,11 @@ name: Deploy GitHub Pages
 on:
   push:
     branches:
+      # main 是 codexdesign2 那条线；lastcar 是从 1.0.22 重新开始的这条。
+      # 两条共用同一个仓库，也共用同一个 Pages 站点 —— **后推的覆盖先推的**，
+      # 不是并存。想看哪条就推哪条，或者用下面的 workflow_dispatch 手动指定。
       - main
+      - lastcar
   workflow_dispatch:
 
 permissions:
