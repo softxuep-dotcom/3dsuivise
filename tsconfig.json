@@ -17,8 +17,19 @@
       "DOM.Iterable"
     ]
   },
+  /*
+   * tools/probes 也要进来。
+   *
+   * 探针原先在 tests/ 下，是被 tsc 检查的；搬到 tools/probes/ 之后如果不加回来，
+   * 它们就变成一片没人管的 any —— 而它们直接调 GameSimulation 的公有面，
+   * 正是最需要在改接口时立刻报错的一类代码。
+   *
+   * 只收 probes 而不是整个 tools/：draw-map.ts 和 strip-clips.mjs 是 Node 脚本，
+   * 收进来就得装 @types/node，而它们跟游戏代码的接口没有任何关系。
+   */
   "include": [
     "src",
-    "tests"
+    "tests",
+    "tools/probes"
   ]
 }

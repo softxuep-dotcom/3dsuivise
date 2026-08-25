@@ -1,20 +1,8 @@
 import { describe, it } from "vitest";
-import { createWorld } from "../src/game/content/createWorld";
-import { GameSimulation } from "../src/game/simulation/GameSimulation";
-import { campGatePosition, campLocalToWorld, terrainHeightAt, terrainSlopeAt } from "../src/game/terrain/TerrainModel";
-import { en } from "../src/i18n/locales/en";
-
-const STEP = 1 / 20;
-const d = (a: any, b: any) => Math.hypot(a.x - b.x, a.z - b.z);
-function render(text: any): string {
-  if (typeof text === "string") return text;
-  let out = (en as any)[text.key] ?? `??${text.key}`;
-  for (const [k, v] of Object.entries(text.params ?? {})) {
-    const value = typeof v === "object" && v && "key" in (v as any) ? ((en as any)[(v as any).key] ?? (v as any).key) : String(v);
-    out = out.replaceAll(`{${k}}`, value);
-  }
-  return `[${text.key}] ${out}`;
-}
+import { createWorld } from "../../src/game/content/createWorld";
+import { GameSimulation } from "../../src/game/simulation/GameSimulation";
+import { campGatePosition, campLocalToWorld, terrainHeightAt, terrainSlopeAt } from "../../src/game/terrain/TerrainModel";
+import { STEP, d, render } from "./harness";
 
 describe("probe 3 - the descent", () => {
   it("boulder is reachable: exact stop distance and hint", () => {

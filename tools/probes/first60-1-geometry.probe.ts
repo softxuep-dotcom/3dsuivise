@@ -1,24 +1,8 @@
 import { describe, it } from "vitest";
-import { createWorld } from "../src/game/content/createWorld";
-import { GameSimulation } from "../src/game/simulation/GameSimulation";
-import { campGatePosition } from "../src/game/terrain/TerrainModel";
-import { en } from "../src/i18n/locales/en";
-
-const STEP = 1 / 20;
-
-function render(text: any): string {
-  if (typeof text === "string") return text;
-  const key = text.key as string;
-  let out = (en as any)[key] ?? `??${key}`;
-  const params = text.params ?? {};
-  for (const [k, v] of Object.entries(params)) {
-    const value = typeof v === "object" && v && "key" in (v as any)
-      ? ((en as any)[(v as any).key] ?? (v as any).key)
-      : String(v);
-    out = out.replaceAll(`{${k}}`, value);
-  }
-  return `[${key}] ${out}`;
-}
+import { createWorld } from "../../src/game/content/createWorld";
+import { GameSimulation } from "../../src/game/simulation/GameSimulation";
+import { campGatePosition } from "../../src/game/terrain/TerrainModel";
+import { STEP, d, render } from "./harness";
 
 describe("first 60 seconds probe", () => {
   it("geometry", () => {
@@ -26,7 +10,6 @@ describe("first 60 seconds probe", () => {
     const sim = new GameSimulation(world);
     const camp = world.camps[world.startCampId];
     const p = sim.player;
-    const d = (a: any, b: any) => Math.hypot(a.x - b.x, a.z - b.z);
     console.log("startCampId", world.startCampId, "camp", camp.x, camp.z, "radius", camp.radius);
     console.log("player spawn", p.x.toFixed(2), p.z.toFixed(2));
     console.log("truck", world.truck.x.toFixed(2), world.truck.z.toFixed(2), "dist from player", d(p, world.truck).toFixed(1));
@@ -69,7 +52,6 @@ describe("first 60 seconds probe", () => {
     const camp = world.camps[world.startCampId];
     const gate = campGatePosition(camp);
     sim.start();
-    const d = (a: any, b: any) => Math.hypot(a.x - b.x, a.z - b.z);
     let t = 0;
     const log: string[] = [];
     const goto = (target: { x: number; z: number }, reach: number, budget = 40): boolean => {

@@ -1,0 +1,13 @@
+以下 id 出现在 index.html，但没有任何 src/**/*.ts 按名字取它。
+这不是错误 —— 它们可能只被 CSS、data-i18n、内联启动脚本或变量取法用到。
+这份清单是**软清单**：它变了说明 HUD 的结构变了，请确认那是你想要的。
+
+  #boot-bar   ← 内联启动脚本在用
+  #boot-progress   ← 内联启动脚本在用
+  #boot-status   ← 内联启动脚本在用
+  #game-root
+  #inventory-grid
+  #inventory-title
+  #restart-button
+  #touch-controls
+  #victory-restart-button

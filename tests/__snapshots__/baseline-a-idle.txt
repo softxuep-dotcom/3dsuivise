@@ -1,0 +1,61 @@
+场景 A · 站着不动，什么也不做，直到死
+起点 (-0.30, -34.50)  营地 #1
+
+     t   day 相位    血    水    饿   体温   劳力  状态         目标行
+   0.0   1 day     100.0   90.0   82.0   22.0  100.0 normal       sim.fuelFirst
+   5.0   1 day     100.0   87.9   79.9   25.5  100.0 normal       sim.fuelFirst
+  10.0   1 day     100.0   85.8   77.8   28.9  100.0 normal       sim.fuelFirst
+  15.0   1 day     100.0   83.7   75.7   32.4  100.0 normal       sim.fuelFirst
+  20.0   1 day     100.0   81.6   73.6   35.8  100.0 normal       sim.fuelFirst
+  25.0   1 day     100.0   79.5   71.5   39.3  100.0 normal       sim.fuelFirst
+  30.0   1 day     100.0   77.4   69.4   42.7  100.0 normal       sim.13
+  35.0   1 day     100.0   75.3   67.3   46.2  100.0 normal       sim.13
+  40.0   1 night   100.0   73.2   65.2   49.6  100.0 normal       sim.13
+  45.0   1 night   100.0   71.1   63.1   44.4  100.0 normal       sim.13
+  50.0   1 night   100.0   69.0   61.0   39.1  100.0 normal       sim.13
+  55.0   1 night   100.0   66.9   58.9   33.9  100.0 normal       sim.13
+  60.0   1 night    99.7   64.8   56.8   28.6  100.0 normal       sim.17
+  65.0   1 night    98.5   62.7   54.7   23.4  100.0 normal       sim.17
+  70.0   1 night    97.3   60.6   52.6   18.1  100.0 normal       sim.17
+  75.0   1 night    96.1   58.5   50.5   12.9  100.0 normal       sim.17
+  80.0   1 night    94.9   56.4   48.4    7.6  100.0 normal       sim.17
+  85.0   1 night    93.7   54.3   46.3    2.4  100.0 hypothermia  sim.11
+  90.0   1 night    92.5   52.2   44.2    0.0  100.0 hypothermia  sim.11
+  95.0   1 night    91.3   50.1   42.1    0.0  100.0 hypothermia  sim.11
+ 100.0   1 night    90.1   48.0   40.0    0.0  100.0 hypothermia  sim.11
+ 105.0   1 night    88.9   45.9   37.9    0.0  100.0 hypothermia  sim.11
+ 110.0   1 night    87.7   43.8   35.8    0.0  100.0 hypothermia  sim.11
+ 115.0   1 night    86.5   41.7   33.7    0.0  100.0 hypothermia  sim.11
+ 120.0   1 night    85.3   39.6   31.6    0.0  100.0 hypothermia  sim.11
+ 125.0   1 night    84.1   37.5   29.5    0.0  100.0 hypothermia  sim.11
+ 130.0   1 night    82.9   35.4   27.4    0.0  100.0 hypothermia  sim.11
+ 135.0   1 night    81.7   33.3   25.3    0.0  100.0 hypothermia  sim.11
+ 140.0   1 night    80.5   31.2   23.2    0.0  100.0 hypothermia  sim.11
+ 145.0   1 night    79.3   29.1   21.1    0.0  100.0 hypothermia  sim.11
+ 150.0   1 night    78.1   27.0   19.0    0.0  100.0 hypothermia  sim.11
+ 155.0   1 night    76.9   24.9   16.9    0.0  100.0 hypothermia  sim.10
+ 160.0   1 night    75.7   22.8   14.8    0.0  100.0 hypothermia  sim.10
+ 165.0   1 night    74.5   20.7   12.7    0.0  100.0 hypothermia  sim.10
+ 170.0   1 night    73.3   18.6   10.6    0.0  100.0 hypothermia  sim.10
+ 175.0   1 night    72.1   16.5    8.5    0.0  100.0 hypothermia  sim.9
+ 180.0   1 night    70.9   14.4    6.4    0.0  100.0 hypothermia  sim.9
+ 185.0   1 night    69.7   12.3    4.3    0.0  100.0 hypothermia  sim.9
+ 190.0   1 night    68.5   10.2    2.2    0.0  100.0 hypothermia  sim.9
+ 195.0   2 day      67.3    8.1    0.1   18.3  100.0 normal       sim.9
+
+结束于 t=195.3  running=false  死因=starved  瘫痪状态=normal
+
+事件流
+  t=0.1 message key=msg.1
+  t=10.1 message key=msg.duskNoFire params={"night":150,"logs":1}
+  t=28.6 rest active=true
+  t=40.0 phase phase=night day=1.00
+  t=40.0 message key=msg.duskFireShort
+  t=58.7 rest active=false
+  t=82.6 condition condition=hypothermia
+  t=82.6 message key=msg.37
+  t=190.1 phase phase=day day=2.00
+  t=190.1 message key=msg.43
+  t=190.2 condition condition=normal
+  t=190.2 message key=msg.38
+  t=195.3 game-over cause=starved condition=normal killer=null

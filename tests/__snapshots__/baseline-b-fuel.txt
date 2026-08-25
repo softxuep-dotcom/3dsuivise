@@ -1,0 +1,18 @@
+场景 B · 量移速，然后取一桶油装上车
+起点 (-0.30, -34.50)  卡车 (-0.54, -42.74)
+教学桶 #9 在 2.2 米外  现场守卫=false
+
+空手 3 秒走了 24.60 米（8.20 m/s）
+扛桶 3 秒走了 13.28 米（4.43 m/s）  拾起成功=true
+扛运惩罚 = 0.540 倍
+
+扛回卡车       到达=true  用时=2.7s 剩余距离=4.11m
+
+装车后  已装 1/6  扛桶=false  离车 4.1 米
+总用时 8.6s  目标行=sim.27
+
+事件流
+  t=0.1 message key=msg.1
+  t=3.0 pickup kind=fuel
+  t=8.6 fuel-loaded loaded=1.00 required=6.00
+  t=8.6 message key=msg.fuelLoaded params={"loaded":1,"required":6}

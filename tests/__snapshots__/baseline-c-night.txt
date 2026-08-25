@@ -1,0 +1,19 @@
+场景 C · 守 0 号营地过一整夜（180 秒），玩家不动、不死
+
+     t  在场  小狼  大狼  夜袭  守巢  野生  已死   最近  模式分布
+   0.0     6     0     6     0     5     1     0   27.2   patrol
+  15.0    27    17    10    21     5     1     0   12.5   chase,entering,patrol
+  30.0    36    25    11    30     5     1     0   12.5   chase,entering,patrol
+  45.0    36    25    11    30     5     1     0   12.5   chase,entering,patrol
+  60.0    36    25    11    30     5     1     0   12.5   chase,entering,patrol,raid
+  75.0    36    25    11    30     5     1     0   12.5   chase,entering,patrol
+  90.0    36    25    11    30     5     1     0    1.6   chase,entering,patrol
+ 105.0    36    25    11    30     5     1     0    1.6   chase,entering,patrol,raid
+ 120.0    36    25    11    30     5     1     0    1.6   chase,entering,patrol,raid
+ 135.0    36    25    11    30     5     1     0    1.6   chase,entering,patrol
+ 150.0    36    25    11    30     5     1     0    1.6   chase,entering,patrol
+ 165.0    36    25    11    30     5     1     0    1.6   chase,entering,patrol
+
+整夜共放出 36 只，天亮时在场 36 只
+精英狼 0 只（第 3 天起才可能出现）
+收尾模式分布：patrol

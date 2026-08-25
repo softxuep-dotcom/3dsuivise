@@ -1,25 +1,8 @@
 import { describe, it } from "vitest";
-import { createWorld } from "../src/game/content/createWorld";
-import { GameSimulation } from "../src/game/simulation/GameSimulation";
-import { campGatePosition, campLocalToWorld, isTerrainWalkable, terrainHeightAt } from "../src/game/terrain/TerrainModel";
-import { en } from "../src/i18n/locales/en";
-
-const STEP = 1 / 20;
-
-function render(text: any): string {
-  if (typeof text === "string") return text;
-  const key = text.key as string;
-  let out = (en as any)[key] ?? `??${key}`;
-  const params = text.params ?? {};
-  for (const [k, v] of Object.entries(params)) {
-    const value = typeof v === "object" && v && "key" in (v as any)
-      ? ((en as any)[(v as any).key] ?? (v as any).key)
-      : String(v);
-    out = out.replaceAll(`{${k}}`, value);
-  }
-  return `[${key}] ${out}`;
-}
-const d = (a: any, b: any) => Math.hypot(a.x - b.x, a.z - b.z);
+import { createWorld } from "../../src/game/content/createWorld";
+import { GameSimulation } from "../../src/game/simulation/GameSimulation";
+import { campGatePosition, campLocalToWorld, isTerrainWalkable, terrainHeightAt } from "../../src/game/terrain/TerrainModel";
+import { STEP, d, render } from "./harness";
 
 describe("probe 2", () => {
   it("objective every second 20..45 for an idle player", () => {

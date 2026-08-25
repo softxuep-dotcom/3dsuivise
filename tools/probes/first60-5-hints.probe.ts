@@ -1,31 +1,8 @@
 import { describe, it } from "vitest";
-import { createWorld } from "../src/game/content/createWorld";
-import { GameSimulation } from "../src/game/simulation/GameSimulation";
-import { en } from "../src/i18n/locales/en";
-
-const STEP = 1 / 20;
-const d = (a: any, b: any) => Math.hypot(a.x - b.x, a.z - b.z);
-function render(text: any): string {
-  if (typeof text === "string") return text;
-  let out = (en as any)[text.key] ?? `??${text.key}`;
-  for (const [k, v] of Object.entries(text.params ?? {})) {
-    const value = typeof v === "object" && v && "key" in (v as any) ? ((en as any)[(v as any).key] ?? (v as any).key) : String(v);
-    out = out.replaceAll(`{${k}}`, value);
-  }
-  return `[${text.key}] ${out}`;
-}
-function push(sim: GameSimulation, target: any, stopAt: number, budget: number) {
-  let secs = 0, last = 1e9, stall = 0;
-  for (let i = 0; i < budget * 20; i += 1) {
-    if (d(sim.player, target) <= stopAt) return { ok: true, secs };
-    const dx = target.x - sim.player.x, dz = target.z - sim.player.z, len = Math.hypot(dx, dz) || 1;
-    sim.update(STEP, { x: dx / len, z: dz / len }); secs += STEP; sim.drainEvents();
-    const now = d(sim.player, target);
-    stall = Math.abs(now - last) < 1e-7 ? stall + 1 : 0; last = now;
-    if (stall > 30) return { ok: false, secs };
-  }
-  return { ok: false, secs };
-}
+import { createWorld } from "../../src/game/content/createWorld";
+import { GameSimulation } from "../../src/game/simulation/GameSimulation";
+import { en } from "../../src/i18n/locales/en";
+import { STEP, d, push, render } from "./harness";
 
 describe("probe 5", () => {
   it("carrying a fuel barrel advances objectiveStage 0 -> 1 and dead-ends the objective line", () => {

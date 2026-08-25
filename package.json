@@ -11,7 +11,8 @@
     "build:poki": "vite build --mode poki",
     "package:poki": "npm run build:poki && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-poki.ps1",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "probe": "vitest run --config vitest.probes.config.ts"
   },
   "dependencies": {
     "three": "^0.185.1"
