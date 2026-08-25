@@ -9,7 +9,7 @@ import { GameRenderer } from "./render/GameRenderer";
 import { FirstBarrelHint } from "./ui/FirstBarrelHint";
 import { HudController } from "./ui/HudController";
 import { NightIntro } from "./ui/NightIntro";
-import { isRunWorthReviving, shouldBreakBeforeRestart } from "./ui/RetentionPolicy";
+import { shouldBreakBeforeRestart } from "./ui/RetentionPolicy";
 import { TutorialStage } from "./ui/TutorialStage";
 import { bumpRunIndex, loadDifficulty, loadRunIndex, saveDifficulty } from "./ui/Settings";
 import { normalizeDifficulty } from "./game/simulation/difficulty";
@@ -262,18 +262,18 @@ async function bootstrap(): Promise<void> {
    * 背包会冻结模拟层，但玩家仍在挑选物品、合成或建造，不应给平台报停。
    */
   /*
-   * 死后续命：看一次激励视频原地复活，一局三次。
+   * 每次死亡都停在死亡页。
+   * Poki 版同时提供“看广告原地复活”，并始终保留“再来一局”。
    *
    * 两条不能省的规矩：
    *   - `rewardedBreak()` 返回 false（没看完 / 加载失败 / 平台没有广告）**一次都不能给**；
-   *   - 次数在这里扣而不是在 HUD 里扣 —— 广告没播成不该消耗次数。
+   *   - 广告复活不设次数上限；第一、第二、第三……次死亡都继续给玩家选择。
    *
    * 平台不支持激励视频时（本地、GitHub Pages）按钮根本不出现，玩家看到的还是原来的结算页。
    */
-  let revivesLeft = 3;
   const offerRevive = (): void => {
-    if (!platform.supportsRewarded || revivesLeft <= 0 || !isRunWorthReviving(simulation)) return;
-    hud.showReviveOffer(revivesLeft, () => {
+    if (!platform.supportsRewarded) return;
+    hud.showReviveOffer(() => {
       void (async () => {
         const watched = await platform.rewardedBreak();
         if (!watched) {
@@ -282,7 +282,6 @@ async function bootstrap(): Promise<void> {
           return;
         }
         if (!simulation.revive()) return;
-        revivesLeft -= 1;
         hud.resumeAfterRevive();
         platform.gameplayStart();
       })();
@@ -351,7 +350,6 @@ async function bootstrap(): Promise<void> {
     firstBarrelHint.reset();
     input.cancelMoveTarget();
     started = false;
-    revivesLeft = 3;
     previousTime = performance.now();
 
     if (import.meta.env.DEV) {

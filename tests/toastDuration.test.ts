@@ -12,10 +12,11 @@ import { ja } from "../src/i18n/locales/ja";
 import { ru } from "../src/i18n/locales/ru";
 import { ko } from "../src/i18n/locales/ko";
 import { vi } from "../src/i18n/locales/vi";
+import { id } from "../src/i18n/locales/id";
 
 /*
  * 这组测试守的不是算术，是**那个 bug 不会再回来**：
- * 六处调用点的常数是对着中文调的，而中文是这十二种语言里最短的一种。
+ * 六处调用点的常数是对着中文调的，而中文是这十三种语言里最短的一种。
  *
  * 所以两头都要钉住：
  *   - 长语言（法德俄韩日）在固定 3.1 秒下读不完的那一批，现在必须读得完；
@@ -26,7 +27,7 @@ import { vi } from "../src/i18n/locales/vi";
  */
 
 const LOCALES: Record<string, Record<string, string>> = {
-  zh, en, de, fr, it: itIT, "pt-BR": ptBR, es, tr, ja, ru, ko, vi,
+  zh, en, de, fr, it: itIT, "pt-BR": ptBR, es, tr, ja, ru, ko, vi, id,
 };
 
 /** 模拟层 message 的时长下限，见 HudController 的 event.type === "message" 分支。 */
@@ -94,7 +95,7 @@ describe("字幕时长按实际字数折算", () => {
     expect(readingSeconds("荒原沙海狼群")).toBeGreaterThan(readingSeconds("abcdef"));
   });
 
-  it("十二种语言在旧口径下都有读不完的条目，新口径下一条不剩", () => {
+  it("十三种语言在旧口径下都有读不完的条目，新口径下一条不剩", () => {
     const before: Record<string, number> = {};
     for (const [locale, dict] of Object.entries(LOCALES)) {
       const texts = Object.values(dict).filter((s) => s.length > 1);
@@ -124,14 +125,14 @@ describe("字幕时长按实际字数折算", () => {
  *
  * 那 6 秒收掉的东西不小：msg.1 塞了两条指令（「首次移动后开始计时」+
  * 「天黑前添柴并封住入口」），中文 22 个字装得下，德文要 106 个字符。
- * 十二种语言里**八种读不完**，而读得完的四种恰好是 ja / tr / ko / zh ——
+ * 十三种语言里**八种读不完**，而读得完的五种恰好是 ja / tr / ko / en / zh ——
  * 这条上限一直在按语言分配"看不看得懂第一夜怎么玩"。
  */
 describe("独占时放宽到 8 秒", () => {
   const fill = (raw: string): string => raw.replace(/\{[^}]+\}/g, "12");
   const need = (text: string): number => NOTICE + readingSeconds(text);
 
-  it("十二种语言的开场第一句，独占时都读得完", () => {
+  it("十三种语言的开场第一句，独占时都读得完", () => {
     for (const [locale, dict] of Object.entries(LOCALES)) {
       const text = fill(dict["msg.1"]);
       expect(
@@ -167,4 +168,3 @@ describe("独占时放宽到 8 秒", () => {
     expect(toastSeconds("x".repeat(4000), MESSAGE_NOMINAL, false)).toBe(8);
   });
 });
-

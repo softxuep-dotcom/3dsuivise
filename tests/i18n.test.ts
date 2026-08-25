@@ -13,16 +13,17 @@ import { ja } from "../src/i18n/locales/ja";
 import { ru } from "../src/i18n/locales/ru";
 import { ko } from "../src/i18n/locales/ko";
 import { vi } from "../src/i18n/locales/vi";
+import { id } from "../src/i18n/locales/id";
 
 /*
  * 文案的三种坏法，肉眼都很难看出来，而且都是“改一处忘多处”造成的：
  *
  *   1. 某种语言少了一个键 —— 静默回退英文，只有那个语种的玩家会看到夹生页面
  *   2. 占位符对不上 —— 少一个 {metres} 就丢信息，多一个就露出花括号
- *   3. 数值和别的语言不一致 —— 平衡改了只更了 en，其余十一种还在说旧数字
+ *   3. 数值和别的语言不一致 —— 平衡改了只更了 en，其余十二种还在说旧数字
  *
  * 第 3 条最阴：装备文案里写死了攻击力、防御、闪避%、反伤%、扫角，
- * 一共几十个数字散在十二种语言里。数字是语言无关的，所以可以互相校验。
+ * 一共几十个数字散在十三种语言里。数字是语言无关的，所以可以互相校验。
  *
  * **新增语言必须同时加进 LOCALES**，否则这三条测试对它等于不存在 ——
  * es / tr / ja 就这么漏了一整轮。
@@ -40,6 +41,7 @@ const LOCALES: Record<string, Record<string, string>> = {
   ru,
   ko,
   vi,
+  id,
 };
 const ALL_LOCALES: Record<string, Record<string, string>> = { en, ...LOCALES };
 const enKeys = Object.keys(en).sort();
@@ -133,6 +135,13 @@ describe("多语言 · 不显示劳力消耗数值", () => {
   });
 });
 
+describe("多语言 · 广告复活不限次数", () => {
+  it.each(Object.entries(ALL_LOCALES))("%s 的广告复活按钮不再显示剩余次数", (_lang, table) => {
+    expect(table["revive.offer"]).not.toMatch(/\{count\}/);
+    expect(table["revive.offer"].length).toBeGreaterThan(0);
+  });
+});
+
 describe("多语言 · 品牌与核心目标用词", () => {
   const hardLabels: Record<string, string> = {
     en: "Hard",
@@ -147,6 +156,7 @@ describe("多语言 · 品牌与核心目标用词", () => {
     ru: "Сложно",
     ko: "어려움",
     vi: "Khó",
+    id: "Sulit",
   };
 
   const loadedTerms: Record<string, RegExp> = {
@@ -162,6 +172,7 @@ describe("多语言 · 品牌与核心目标用词", () => {
     ru: /загружен/i,
     ko: /실었|적재|싣고/,
     vi: /chất/i,
+    id: /dimuat/i,
   };
 
   it.each(Object.entries(ALL_LOCALES))("%s 保留统一的英文游戏标题", (_lang, table) => {

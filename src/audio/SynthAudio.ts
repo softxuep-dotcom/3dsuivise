@@ -200,6 +200,20 @@ export class SynthAudio {
       case "fuel-loaded":
         this.thud(0.12, 0.3, 560);
         window.setTimeout(() => this.playSample("confirm", 0.42, 0.95 + event.loaded * 0.035), 80);
+        // fb7f325 的递进装车声：不用盯 HUD，也能从音阶听出已经装到第几桶。
+        if (event.loaded === 1) this.tone(440, 0.13, "square", 0.2, 1.8);
+        if (event.loaded === 2) {
+          this.tone(620, 0.16, "sine", 0.24, 1.18);
+          window.setTimeout(() => this.tone(760, 0.12, "sine", 0.2, 1.08), 90);
+        }
+        if (event.loaded === 3) {
+          this.tone(155, 0.34, "square", 0.3, 0.86);
+          window.setTimeout(() => this.tone(132, 0.3, "square", 0.24, 0.92), 105);
+        }
+        if (event.loaded === 5) this.tone(48, 0.75, "sawtooth", 0.4, 1.7);
+        if (event.loaded >= event.required) {
+          window.setTimeout(() => this.tone(330, 0.34, "triangle", 0.34, 1.5), 160);
+        }
         break;
       case "truck-depart":
         this.tone(70, 1.1, "sawtooth", 0.9, 1.35);

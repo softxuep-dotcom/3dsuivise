@@ -1,33 +1,13 @@
 import { describe, expect, it } from "vitest";
 import html from "../index.html?raw";
-import { isRunWorthReviving, shouldBreakBeforeRestart } from "../src/ui/RetentionPolicy";
-
-const run = (overrides: Partial<{
-  day: number;
-  loaded: number;
-  weapon: "survival-knife" | "saber-1";
-  armor: "none" | "hide-1";
-}> = {}) => ({
-  day: overrides.day ?? 1,
-  truck: { loaded: overrides.loaded ?? 0 },
-  player: {
-    weapon: overrides.weapon ?? "survival-knife",
-    armor: overrides.armor ?? "none",
-  },
-});
+import mainSource from "../src/main.ts?raw";
+import { shouldBreakBeforeRestart } from "../src/ui/RetentionPolicy";
 
 describe("死亡后留存策略", () => {
-  it("开局空手死亡不展示激励复活", () => {
-    expect(isRunWorthReviving(run())).toBe(false);
-  });
-
-  it.each([
-    ["活到第二天", run({ day: 2 })],
-    ["已经装油", run({ loaded: 1 })],
-    ["已经造武器", run({ weapon: "saber-1" })],
-    ["已经造护甲", run({ armor: "hide-1" })],
-  ])("%s 时值得提供复活", (_label, candidate) => {
-    expect(isRunWorthReviving(candidate)).toBe(true);
+  it("每次死亡都直接进入死亡页并尝试展示广告复活", () => {
+    expect(mainSource).toContain('if (event.type === "game-over") offerRevive();');
+    expect(mainSource).toContain("if (!platform.supportsRewarded) return;");
+    expect(mainSource).not.toContain("deathsThisSession");
   });
 
   it("第一次重开免插屏，第二次起恢复平台控频", () => {

@@ -1075,13 +1075,12 @@ export class HudController {
    * 结算页上的"看广告续命"。
    *
    * 按钮文案里**必须写明这是广告**（Poki 审核必查项），所以标签上带一个片头符号，
-   * 并把剩余次数摊开写 —— 玩家要在点之前就知道自己换的是什么、还剩几次。
-   * 平台不支持激励视频、或次数用完，整个按钮不显示。
+   * 玩家要在点之前就知道自己换的是什么。平台不支持激励视频时整个按钮不显示。
    */
-  showReviveOffer(remaining: number, onRevive: () => void): void {
+  showReviveOffer(onRevive: () => void): void {
     this.reviveButton.classList.remove("hidden");
     this.reviveButton.disabled = false;
-    this.reviveButton.textContent = t("revive.offer", { count: remaining });
+    this.reviveButton.textContent = t("revive.offer");
     this.reviveButton.onclick = () => {
       this.reviveButton.disabled = true;
       onRevive();

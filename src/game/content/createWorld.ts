@@ -72,6 +72,13 @@ const TRUCK_RADIUS = 2.4;
 const DEN_BARREL_RADIUS = 12;
 const DEN_BARREL_COUNT = 3;
 /**
+ * 井离任何营地出生点的最小距离。
+ *
+ * WELL_REACH 是 3.2，教学桶在 2.2 米；6 米既能让井退出开场交互圈，
+ * 又只把原候选点推开一点，不会把井整个换到地图另一边。
+ */
+const WELL_SPAWN_CLEARANCE = 6;
+/**
  * 教学桶离出生点多远、朝卡车偏多少弧度。见 placeBarrels 末尾那段。
  *
  * **8.5 → 2.2 米，偏角 0.95 → 2.20。**
@@ -607,15 +614,45 @@ export function createWorld(seed = 71291, startCampId = BLUEPRINT.startCampId): 
     });
   }
 
-  // 干枯的井：每座营地配一口，落在营地外 22~34 米的可走地面上。
-  // 距离是刻意的 —— 井必须在"营地视野之外但一趟能来回"的圈上，
-  // 取水才会变成一次需要规划的外出，而不是站在火边顺手就办了。
+  /*
+   * 干枯的井：每座营地配一口，落在营地外 22~34 米的可走地面上。
+   * 距离是从营地中心量的，而出生点在 approach 末端；两者可能相差二三十米，
+   * 所以原始候选仍可能落到出生点脚边。
+   *
+   * 这里沿“背离最近出生点”的方向只推到 6 米，不把候选作废重抽：这样井只是
+   * 挪开一点，random() 消费次数也不变，后面的地标和软重启依赖的世界布局不会漂。
+   */
+  const campSpawns = camps.map((camp) => {
+    const approach = camp.approach.map((local) => campLocalToWorld(camp, local));
+    return approach[approach.length - 1] ?? campGatePosition(camp);
+  });
+  const nudgeOffSpawn = (point: Vec2): Vec2 => {
+    let nearest: Vec2 | null = null;
+    let nearestDistance = WELL_SPAWN_CLEARANCE;
+    for (const spawn of campSpawns) {
+      const gap = distance(point, spawn);
+      if (gap >= nearestDistance) continue;
+      nearest = spawn;
+      nearestDistance = gap;
+    }
+    if (!nearest) return point;
+    const away = normalize({ x: point.x - nearest.x, z: point.z - nearest.z });
+    if (away.x === 0 && away.z === 0) return point;
+    return {
+      x: nearest.x + away.x * WELL_SPAWN_CLEARANCE,
+      z: nearest.z + away.z * WELL_SPAWN_CLEARANCE,
+    };
+  };
+
   const wells: WellDefinition[] = [];
   for (const camp of camps) {
     for (let attempt = 0; attempt < 240; attempt += 1) {
       const angle = random() * TAU;
       const radius = 22 + random() * 12;
-      const point = { x: camp.x + Math.cos(angle) * radius, z: camp.z + Math.sin(angle) * radius };
+      const point = nudgeOffSpawn({
+        x: camp.x + Math.cos(angle) * radius,
+        z: camp.z + Math.sin(angle) * radius,
+      });
       if (Math.abs(point.x) > 96 || Math.abs(point.z) > 96) continue;
       if (!awayFromCamps(point, camps, 6)) continue;
       if (!isTerrainWalkable(terrainWorld, point) || terrainSlopeAt(terrainWorld, point) > 0.34) continue;

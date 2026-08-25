@@ -27,8 +27,25 @@ describe("教学桶", () => {
     expect(isTerrainWalkable(world, barrel)).toBe(true);
     // 0.78 是 TerrainModel 的可走坡度上限。
     expect(terrainSlopeAt(world, barrel)).toBeLessThan(0.78);
-    // TRUCK_LOAD_REACH = 4.5：贴着车放等于把"扛"这一步教没了。
-    expect(Math.hypot(barrel.x - world.truck.x, barrel.z - world.truck.z)).toBeGreaterThan(4.5);
+    // TRUCK_LOAD_REACH = 5.5：贴着车放等于把"扛"这一步教没了。
+    expect(Math.hypot(barrel.x - world.truck.x, barrel.z - world.truck.z)).toBeGreaterThan(5.5);
+  });
+
+  it("扛到离车心 5.25 米即可装车", () => {
+    const sim = new GameSimulation(createWorld());
+    sim.start();
+    const barrel = sim.world.barrels[sim.world.barrels.length - 1];
+    sim.player.x = barrel.x;
+    sim.player.z = barrel.z;
+    sim.requestInteraction();
+    sim.drainEvents();
+
+    sim.player.x = sim.truck.x + 5.25;
+    sim.player.z = sim.truck.z;
+    sim.requestInteraction();
+
+    expect(sim.truck.loaded).toBe(1);
+    expect(sim.drainEvents()).toContainEqual({ type: "fuel-loaded", loaded: 1, required: FUEL_REQUIRED });
   });
 
   it("开局能扛起来、装上车，而且远早于第一个白天结束（40 秒）", () => {
@@ -45,9 +62,9 @@ describe("教学桶", () => {
       const dz = aim.z - sim.player.z;
       const dist = Math.hypot(dx, dz);
       sim.update(STEP, dist > 1.6 ? { x: dx / dist, z: dz / dist } : { x: 0, z: 0 });
-      // 拾取半径 2.6、装车半径 4.5，机器人都留一点余量。
+      // 拾取半径 2.6、装车半径 5.5，机器人都留一点余量。
       if (!sim.player.carrying && dist <= 2.4) sim.requestInteraction();
-      else if (sim.player.carrying && dist <= 4.2) sim.requestInteraction();
+      else if (sim.player.carrying && dist <= 5.2) sim.requestInteraction();
       loadEvent = sim.drainEvents().find((event) => event.type === "fuel-loaded") as typeof loadEvent;
       if (sim.truck.loaded > 0) loadedAt = step * STEP;
     }

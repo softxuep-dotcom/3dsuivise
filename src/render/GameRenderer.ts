@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { GameSimulation } from "../game/simulation/GameSimulation";
 import { clamp, lerp, mulberry32 } from "../game/simulation/geometry";
 import type { CampDefinition, CritterState, GroundItem, Vec2, WeaponKind, WolfState, WorldDefinition, WorldDrop } from "../game/simulation/types";
@@ -181,6 +182,80 @@ function createBarrelView(): THREE.Group {
   return group;
 }
 
+/**
+ * 车顶装油进度使用的桶形图标。白色主体由 SpriteMaterial.color 着色，
+ * 深色桶箍保留轮廓，因此未点亮的格子在沙地和夜色里也都能读出来。
+ */
+function createFuelPipTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = 64;
+  canvas.height = 64;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("fuel pip canvas context unavailable");
+
+  context.beginPath();
+  context.moveTo(20, 10);
+  context.lineTo(44, 10);
+  context.lineTo(49, 17);
+  context.lineTo(49, 47);
+  context.lineTo(44, 54);
+  context.lineTo(20, 54);
+  context.lineTo(15, 47);
+  context.lineTo(15, 17);
+  context.closePath();
+  context.fillStyle = "#ffffff";
+  context.fill();
+  context.strokeStyle = "#172522";
+  context.lineWidth = 4;
+  context.lineJoin = "round";
+  context.stroke();
+  for (const y of [20, 44]) {
+    context.beginPath();
+    context.moveTo(16, y);
+    context.lineTo(48, y);
+    context.stroke();
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = false;
+  return texture;
+}
+
+/**
+ * 开局指路的浮动箭头，来自 main 分支的引导逻辑。
+ * 尖端位于局部 y=0，摆放时可以直接使用目标顶部坐标。
+ */
+function createGuideArrowView(): THREE.Mesh {
+  const head = new THREE.ConeGeometry(0.72, 0.84, 4);
+  head.rotateX(Math.PI);
+  head.translate(0, 0.42, 0);
+  const shaft = new THREE.CylinderGeometry(0.24, 0.24, 0.84, 4);
+  shaft.translate(0, 1.26, 0);
+  const geometry = mergeGeometries([head, shaft]);
+  head.dispose();
+  shaft.dispose();
+  if (!geometry) throw new Error("guide arrow geometry merge failed");
+
+  const arrow = new THREE.Mesh(
+    geometry,
+    new THREE.MeshStandardMaterial({
+      // 青绿色沿用卡车地环：它表示同一条通关路线，而不是油桶本身的颜色。
+      color: 0x2fe0cf,
+      emissive: 0x0f9c90,
+      roughness: 0.45,
+      metalness: 0,
+      flatShading: true,
+    }),
+  );
+  arrow.castShadow = false;
+  arrow.receiveShadow = false;
+  arrow.visible = false;
+  return arrow;
+}
+
 interface BladeVisual {
   name: string;
   /** 刃宽倍率，基准是求生匕首的 0.25。 */
@@ -351,10 +426,16 @@ export class GameRenderer {
   private truckRing: THREE.Mesh | null = null;
   /** 车斗上那一排已装的油桶，按 loaded 逐个点亮。 */
   private readonly truckLoadViews: THREE.Object3D[] = [];
+  /** 车顶常显的六格装油进度：空格暗着，装一桶亮一格。 */
+  private readonly truckFuelPips: THREE.Sprite[] = [];
   /** 新装油桶的落位反馈；只属于渲染层，不参与装车判定。 */
   private fuelLoadFeedbackTime = 0;
   private fuelLoadFeedbackIndex = -1;
   private readonly barrelViews = new Map<number, THREE.Object3D>();
+  /** 开局第一桶油 → 车头的浮动指路箭头；第一桶装车后退场。 */
+  private readonly guideArrow = createGuideArrowView();
+  private readonly guideAnchor = new THREE.Vector3();
+  private guidePhase = 0;
   private readonly weaponMount: THREE.Group;
   private readonly blades: Map<WeaponKind, THREE.Group>;
   private readonly playerCoat: THREE.Group;
@@ -535,6 +616,7 @@ export class GameRenderer {
     this.buildWells();
     this.truckGroup = this.buildTruck();
     this.buildBarrels();
+    this.scene.add(this.guideArrow);
     this.playerBodyMaterial = makeMaterial(0x2f7b8d, 0.75);
     const player = this.buildPlayer();
     this.playerGroup = player.group;
@@ -581,6 +663,7 @@ export class GameRenderer {
     this.syncPlayer(delta);
     this.syncItems(delta);
     this.syncBarrels(delta);
+    this.syncGuideArrow(delta);
     this.syncCacti();
     this.syncIronNodes();
     this.syncTrees();
@@ -1259,6 +1342,22 @@ export class GameRenderer {
       this.truckLoadViews.push(slot);
     }
 
+    // 和井顶水珠同一套场景语汇，但换成桶形图标；六个空格始终可见，直接表达“还差几桶”。
+    const pipTexture = createFuelPipTexture();
+    for (let index = 0; index < FUEL_REQUIRED; index += 1) {
+      const pip = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: pipTexture,
+        color: 0x34524f,
+        transparent: true,
+        opacity: 0.48,
+        depthWrite: false,
+      }));
+      pip.position.set(-0.75 + (index - (FUEL_REQUIRED - 1) / 2) * 0.58, 4.05, 0);
+      pip.scale.set(0.54, 0.54, 1);
+      group.add(pip);
+      this.truckFuelPips.push(pip);
+    }
+
     this.buildTruckBeacon(group);
     this.scene.add(group);
     return group;
@@ -1338,6 +1437,18 @@ export class GameRenderer {
       slot.rotation.z = (1 - fall) * 0.24;
       slot.scale.set(0.82 * (1 + settle * 0.08), 0.82 * (1 - settle * 0.07), 0.82 * (1 + settle * 0.08));
     });
+    const departing = this.simulation.isDeparting();
+    this.truckFuelPips.forEach((pip, index) => {
+      const lit = index < truck.loaded;
+      const flash = feedbackActive && index === this.fuelLoadFeedbackIndex
+        ? Math.sin(feedbackProgress * Math.PI)
+        : 0;
+      pip.visible = !departing;
+      pip.position.y = 4.05 + Math.sin(this.time * 1.8 + index * 0.5) * 0.045;
+      pip.scale.setScalar(0.54 * (1 + flash * 0.24));
+      pip.material.color.setHex(lit ? 0xff8a36 : 0x34524f);
+      pip.material.opacity = lit ? 1 : 0.48;
+    });
     /*
      * 标记随进度收敛：油装得越满，光柱越淡 —— 它的职责是"把人引过来"，
      * 装满之后引导已经完成，再亮着只会挡视野。装满时环改为常亮不闪，
@@ -1352,12 +1463,47 @@ export class GameRenderer {
       const loadFlash = feedbackActive ? this.fuelLoadFeedbackTime / feedbackDuration : 0;
       material.opacity = Math.min(0.62, (full ? 0.5 : 0.22 + 0.16 * pulse) + loadFlash * 0.24);
       this.truckRing.scale.setScalar(1 + loadFlash * 0.12);
-      this.truckRing.visible = !this.simulation.isDeparting();
+      this.truckRing.visible = !departing;
     }
     this.fuelLoadFeedbackTime = Math.max(0, this.fuelLoadFeedbackTime - delta);
     // 驶离时玩家在车里。模拟层把人的坐标锁在车心，所以直接把人藏掉 ——
     // 否则最后 5 秒会看到一个人站在车斗中央被拖出地图。
-    this.playerGroup.visible = !this.simulation.isDeparting();
+    this.playerGroup.visible = !departing;
+  }
+
+  /**
+   * 第一趟装车的浮动指示：未拿时指最后压入的出生桶，扛起后指车头，
+   * 第一桶装车后退场。每帧从模拟状态现算，放下桶和软重启都无需额外状态机。
+   */
+  private syncGuideArrow(delta: number): void {
+    const fuel = this.simulation.getFuelProgress();
+    if (fuel.loaded >= 1) {
+      this.guideArrow.visible = false;
+      return;
+    }
+
+    if (fuel.carrying) {
+      // buildTruck 的驾驶室顶面约在 local y=2.7，再留 0.35 米净空。
+      this.guideAnchor.set(1.9, 3.05, 0);
+      this.truckGroup.localToWorld(this.guideAnchor);
+    } else {
+      // createWorld 最后压入的桶就是出生点教学桶；软重启后下标仍成立。
+      const first = this.simulation.barrels[this.simulation.barrels.length - 1];
+      if (!first || first.placement !== "ground") {
+        this.guideArrow.visible = false;
+        return;
+      }
+      this.guideAnchor.set(first.x, this.worldHeight(first.x, first.z) + 1.55, first.z);
+    }
+
+    this.guidePhase += delta;
+    this.guideArrow.visible = true;
+    this.guideArrow.position.set(
+      this.guideAnchor.x,
+      this.guideAnchor.y + Math.sin(this.guidePhase * 2.6) * 0.19,
+      this.guideAnchor.z,
+    );
+    this.guideArrow.rotation.y = this.guidePhase * 1.15;
   }
 
   /**

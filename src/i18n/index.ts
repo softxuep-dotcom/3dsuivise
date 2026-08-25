@@ -14,8 +14,8 @@ import { en } from "./locales/en";
  * ## 为什么除英文外都是动态 import
  *
  * 原先六种语言全是静态 import，于是**西班牙玩家要下载德语、意语、葡语、中文的
- * 全部文案**。实测语言表占整包 gzip 的 11%（37 KB / 336 KB），再补西/土/日/韩/俄/越
- * 会翻倍到 ~70 KB —— 而任何一个玩家用得上的只有其中一份。
+ * 全部文案**。实测语言表占整包 gzip 的 11%（37 KB / 336 KB），再补西/土/日/韩/俄/越/印尼
+ * 还会继续膨胀 —— 而任何一个玩家用得上的只有其中一份。
  *
  * 改成 `() => import()` 之后 Vite 会把每种语言切成独立 chunk，按需取。
  * **英文是唯一的例外，必须常驻主包** —— 它是逐键回退表（见 t()），
@@ -46,6 +46,7 @@ export const SUPPORTED_LOCALES = [
   { code: "ru", htmlLang: "ru", label: "Русский" },
   { code: "ko", htmlLang: "ko", label: "한국어" },
   { code: "vi", htmlLang: "vi", label: "Tiếng Việt" },
+  { code: "id", htmlLang: "id", label: "Bahasa Indonesia" },
 ] as const;
 
 export type Locale = (typeof SUPPORTED_LOCALES)[number]["code"];
@@ -67,6 +68,7 @@ const LOADERS: Record<Locale, () => Promise<Table>> = {
   ru: () => import("./locales/ru").then((m) => m.ru),
   ko: () => import("./locales/ko").then((m) => m.ko),
   vi: () => import("./locales/vi").then((m) => m.vi),
+  id: () => import("./locales/id").then((m) => m.id),
 };
 
 const FALLBACK: Locale = "en";

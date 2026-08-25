@@ -235,7 +235,7 @@
             放在这里既省掉状态栏一行，也和难度凑成一个完整的设置区。
           -->
           <!--
-            语言用原生 select 而不是难度那种按钮组：现在已有 12 种，按钮排不下；
+            语言用原生 select 而不是难度那种按钮组：现在已有 13 种，按钮排不下；
             原生 select 在手机上还会拉起系统选择器。
             选项文字永远用该语言自己的写法（English / 中文 / Deutsch），不翻译 ——
             找自己母语的人不认识 "German"。
@@ -259,7 +259,7 @@
           <h2 data-i18n="over.title">Buried by the sand</h2>
           <div class="game-over-actions">
             <button id="restart-button" class="primary-button" type="button" data-i18n="over.restart">Face another night</button>
-            <!-- 只有平台支持、次数尚余且本局值得挽救时才显示。 -->
+            <!-- 每次死亡且平台支持激励广告时显示。 -->
             <button id="revive-button" class="primary-button revive-button hidden" type="button"></button>
           </div>
           <div class="death-report" role="group" data-i18n-attr="aria-label:death.report">
@@ -315,7 +315,7 @@
           if (!tag) return null;
           var base = String(tag).trim().toLowerCase().replace("_", "-").split("-")[0];
           if (base === "pt") return "pt-BR";
-          return ["zh", "en", "fr", "de", "it", "es", "tr", "ja", "ru", "ko", "vi"].indexOf(base) >= 0 ? base : null;
+          return ["zh", "en", "fr", "de", "it", "es", "tr", "ja", "ru", "ko", "vi", "id"].indexOf(base) >= 0 ? base : null;
         }
         var initialLocale = matchInitialLocale(new URLSearchParams(location.search).get("lang"));
         if (!initialLocale) {
@@ -459,6 +459,17 @@
             "intro.verbs.aria": "Mục tiêu ngày và đêm",
             "boot.landscapeHint": "Trải nghiệm tốt nhất ở chế độ ngang",
             boot: "Đang tải trò chơi…",
+          },
+          id: {
+            "intro.title": "Last Truck Out",
+            "intro.tagline": "Temukan enam drum bahan bakar. Kabur dengan truk.",
+            "intro.phase.day": "Siang",
+            "intro.verb1": "Cari air dan bahan bakar",
+            "intro.phase.night": "Malam",
+            "intro.verb2": "Jaga api tetap menyala, halau kawanan anjing",
+            "intro.verbs.aria": "Tujuan siang dan malam",
+            "boot.landscapeHint": "Paling nyaman dimainkan dalam mode lanskap",
+            boot: "Memuat permainan…",
           },
         };
         var activeInitialCopy = initialCopy[initialLocale];

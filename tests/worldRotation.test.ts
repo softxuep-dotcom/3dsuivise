@@ -65,4 +65,14 @@ describe("出生营地轮换", () => {
       expect(d(spawn, world.truck), `${where} 的卡车离出生点太远`).toBeLessThan(20);
     }
   });
+
+  it("井离每个出生点至少 6 米，不再抢开场行动键", () => {
+    for (const run of [0, 1, 2, 3, 4]) {
+      const camp = pickStartCamp(run);
+      const world = createWorld(undefined, camp);
+      const spawn = new GameSimulation(world).player;
+      const nearestWell = Math.min(...world.wells.map((well) => d(spawn, well)));
+      expect(nearestWell, `营地 #${camp} 的井仍贴着出生点`).toBeGreaterThanOrEqual(5.99);
+    }
+  });
 });
