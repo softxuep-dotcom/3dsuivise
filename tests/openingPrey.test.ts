@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createWorld } from "../src/game/content/createWorld";
 import { GameSimulation } from "../src/game/simulation/GameSimulation";
-import { TUTORIAL_PREY } from "../src/game/simulation/GameSimulation";
+import { TUTORIAL_PREY } from "../src/game/balance/world";
 import { CRITTER_SPECS } from "../src/game/simulation/types";
 
 /**
@@ -81,7 +81,9 @@ describe("开局的第一刀", () => {
     const anchor = { x: sim.player.x, z: sim.player.z };
     for (const critter of sim.critters) {
       if (critter.kind === TUTORIAL_PREY && distance(anchor, critter) < 9) {
-        (sim as unknown as { killCritter(c: typeof critter): void }).killCritter(critter);
+        // 猎物已经归 CritterDirector 管；这里仍然从 sim 上取，只是多穿一层。
+        (sim as unknown as { critterDirector: { kill(c: typeof critter): void } })
+          .critterDirector.kill(critter);
       }
     }
     for (let step = 0; step * STEP <= 120; step += 1) {
