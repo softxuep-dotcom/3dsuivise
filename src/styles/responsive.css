@@ -1,0 +1,179 @@
+/*
+ * 按方向和高度收窄的那一批媒体查询。
+ *
+ * 从 styles.css 分出来的第 5 段。**顺序即层叠** —— styles.css 里的 @import
+ * 顺序就是原文件里的先后，改动顺序等于改动优先级，不要重排。
+ */
+/*
+ * 小屏竖屏（≤660px 高，比如 320×568）。
+ * 紧凑档原先只挂在横屏上，可竖屏一样缺纵向余量：状态栏固有高度 299px，在 568px 的屏上
+ * 就是 53%，把中央栏挤得没处放。这里只收密度、不动定位（定位归上面那个竖屏块管）。
+ */
+@media (orientation: portrait) and (max-height: 660px) {
+  .status-strip { padding: 6px 7px; }
+  .meter { margin-bottom: 3px; }
+  .meter i { height: 5px; }
+  .condition-badge { margin-bottom: 4px; padding: 3px 6px; font-size: 9px; }
+  .drain-note { display: none; }
+  .supply-line { margin-bottom: 3px; padding: 2px 5px; font-size: 8px; }
+  .top-stack { gap: 5px; }
+  .toast { padding: 6px 11px; font-size: 11px; }
+}
+
+@media (pointer: coarse) and (orientation: landscape) {
+  /*
+   * 横屏：四键真·弧形簇（MOBA 排法）。**这一块是弧形几何的唯一归属地**，
+   * 共享块和竖屏块都不碰它，所以调这里不会波及竖屏。
+   *
+   * 为什么必须是弧、而不是"一排带点高低差"：拇指绕掌指关节**转**，不平移。
+   * 弧的价值在于每颗键到转轴的距离都一样 —— 而旧写法（一个 flex 横排 + 三档
+   * margin-bottom）做不到这件事：实测四颗键到转轴 37 / 102 / 173 / 238px，
+   * **极差 201px**，最该"反射性按"的体温键反而离拇指最远。那不是弧，是斜线。
+   *
+   * 根因是横排太宽太平：四颗横跨 256px 却只抬高 111px。想让它们落在同一个圆上，
+   * 圆得穿过最左那颗（离转轴 221px），于是内侧的键会被抬到 y=72，一头撞进状态栏
+   * （状态栏底边 97px）。所以只要还用一个 flex 横排，弧就画不出来。
+   *
+   * 改成极坐标摆放：转轴取操作簇盒子的右下角，三颗功能键同半径 --arc-r，
+   * 攻击键单独落在更靠内的锚点上（它是拇指的自然停位）。
+   * translate(50%,50%) 把"盒子右下角对齐到目标点"换算成"中心对齐到目标点"，
+   * 这样三颗宽度不一的键才能真的同心。
+   */
+  /*
+   * 角度沿弧从外到内：体温 16° → 背包 48° → 行动 80°，攻击落在 45° 的内圈。
+   * 右/下偏移 = 半径 × cos/sin，写成小数常量，免得引入 CSS 三角函数（Safari 支持还不齐）。
+   *
+   * 32° 这个间隔不是random：相邻两键中心距 = 2R·sin(Δθ/2)，要装下两者的半尺寸
+   * 再留 8px 防误触，R=128 时至少要 30°。第一版用了 29°，实测背包和行动**重叠 6px**。
+   * 改半径的话这个角度也得跟着重算，别只动一个。
+   */
+  .left-stack { max-width: 32vw; }
+  .status-strip { width: 190px; }
+  .top-stack { max-width: 32vw; }
+  .prompt { bottom: calc(max(24px, env(safe-area-inset-bottom)) + 80px); }
+  .joystick { width: 94px; height: 94px; }
+  .joystick i { top: 28px; left: 28px; width: 38px; height: 38px; }
+  .utility-button,
+  .round-button { width: 64px; height: 64px; }
+  .round-button.action { width: 72px; height: 72px; }
+  .round-button.attack { width: 68px; height: 68px; }
+  .backpack-card { width: min(620px, 86vw); padding: 18px 22px; }
+  .inventory-slot { min-height: 68px; }
+}
+
+/*
+ * 矮横屏的紧凑档。
+ * 五轴改造后状态栏固有高度到了 228px，而右下动作按钮的顶边是 H-94，
+ * 所以 H < 344 时两者会重叠。这一档把行距、说明行和按钮都收紧，
+ * 让状态栏降到 ~175px，一直到 300px 高的横屏都还留有净空。
+ */
+@media (orientation: landscape) and (max-height: 400px) {
+  .status-strip { top: max(6px, env(safe-area-inset-top)); padding: 6px 7px; }
+  .meter { margin-bottom: 3px; }
+  .meter i { height: 5px; }
+  .condition-badge { margin-bottom: 4px; padding: 3px 6px; font-size: 9px; }
+  .drain-note { margin: -2px 0 4px; padding-left: 32px; font-size: 8px; }
+  .supply-line { margin-bottom: 3px; padding: 2px 5px; font-size: 8px; }
+  .top-stack { top: max(6px, env(safe-area-inset-top)); gap: 5px; }
+  .clock { padding: 4px 8px; }
+  .toast { padding: 6px 11px; font-size: 11px; }
+}
+
+/* 再矮一档：说明行是教学用的，最先让位。 */
+@media (orientation: landscape) and (max-height: 340px) {
+  /* 键变小了，弧也要跟着收，否则簇会往上顶进状态栏。 */
+  .bottom-right { --arc-r: 128px; }
+  .drain-note { display: none !important; }
+  .meter { margin-bottom: 2px; font-size: 8px; }
+  .utility-button,
+  .round-button { width: 56px; height: 56px; }
+  .round-button.action { width: 64px; height: 64px; }
+  .round-button.attack { width: 60px; height: 60px; }
+  /* 键缩到 56px，图标和标签也得跟着收，否则字会顶到圆边。 */
+  .utility-button .hud-sprite,
+  .round-button .hud-sprite { width: 26px; height: 26px; }
+  .round-button.attack .hud-sprite { width: 32px; height: 32px; }
+  .utility-button .button-label,
+  .round-button .button-label { max-width: 46px; font-size: 7px; }
+  /* #thermal-state 的常规 9px 规则优先级更高，需要在紧凑档明确缩小。 */
+  #thermal-state { font-size: 7px; }
+  .joystick { width: 82px; height: 82px; }
+  .joystick i { top: 24px; left: 24px; width: 34px; height: 34px; }
+  .prompt { bottom: calc(max(24px, env(safe-area-inset-bottom)) + 72px); }
+}
+
+/*
+ * 极矮横屏（≤320px 高）。右侧状态栏此时几乎顶到屏幕底部，"动作键正上方"那块地方
+ * 已经被它占了 —— 行动提示改到底部中央那条空带（摇杆和动作键之间本来就是空的）。
+ * 那里贴着屏幕最下沿，不算侵占视野中央。
+ */
+@media (orientation: landscape) and (max-height: 320px) {
+  .bottom-right { --arc-r: 118px; }
+  .prompt {
+    right: auto;
+    /* 卡在摇杆和右下操作簇之间那条空带里，左对齐贴着摇杆走 —— 居中会撞上操作簇。 */
+    left: calc(max(20px, env(safe-area-inset-left)) + 96px);
+    bottom: max(8px, env(safe-area-inset-bottom));
+    max-width: 34vw;
+    transform: none;
+    text-align: left;
+  }
+}
+
+@media (max-height: 520px) {
+  .intro-card { padding-top: 18px; padding-bottom: 16px; }
+  /*
+   * h2 是后补的。原先只写了 h1，而死亡页和通关页用的是 h2 ——
+   * 于是矮屏保护对"玩家看得最多的那两张卡"完全不生效。
+   */
+  .intro-card h1 { font-size: 38px; }
+  .game-over-card h2,
+  .victory-card h2 { font-size: 26px; }
+  .game-over-card,
+  .victory-card { padding: 14px 24px 12px; }
+  .death-report { gap: 7px; margin: 8px 0 6px; }
+  .death-report > div { padding: 7px 9px; }
+  .death-report strong { font-size: 13px; }
+  .death-report-advice strong,
+  .death-report small { font-size: 10px; line-height: 1.3; }
+  .game-over-card p:not(.eyebrow),
+  .victory-card p:not(.eyebrow) { margin: 8px 0 12px; line-height: 1.4; font-size: 14px; }
+  .tagline { margin: 7px 0 10px; }
+  .verb-row { margin: 10px 0 14px; }
+  /*
+   * 暂停页也是设置页，底部“继续”必须始终可触达。长语言在 800×360 下会把
+   * 默认 58px 标题和三张难度说明一起顶出视口，因此矮屏单独收紧密度。
+   */
+  #pause-overlay { padding: 6px; }
+  .pause-card { max-height: calc(100vh - 12px); padding: 10px 24px 9px; overflow-y: auto; }
+  .pause-card h2 { font-size: 32px; line-height: 1.05; letter-spacing: .06em; }
+  .pause-card .difficulty-picker { gap: 3px; }
+  .pause-card .difficulty-options { gap: 5px; }
+  .pause-card .difficulty-option { gap: 2px; padding: 4px 5px; }
+  .pause-card .difficulty-option b { font-size: 11px; }
+  .pause-card .difficulty-option span { font-size: 8px; line-height: 1.15; }
+  .pause-card .settings-select { padding: 4px 8px; font-size: 13px; }
+  .pause-card .secondary-button { padding: 6px 14px; font-size: 12px; }
+  .pause-card > p { margin: 7px 0; font-size: 13px; line-height: 1.2; }
+  .pause-card .primary-button { padding: 9px 20px; font-size: 14px; }
+  .backpack-card {
+    max-height: calc(100vh - 12px);
+    padding: 12px 16px;
+    overflow-y: auto;
+  }
+  .backpack-card header { margin-bottom: 8px; }
+  .backpack-card h2 { font-size: 24px; }
+  .equipment-row { gap: 6px; margin-bottom: 8px; }
+  .equipment-row > div { padding: 6px 9px; }
+  .stat-row { gap: 5px; margin-bottom: 8px; }
+  .inventory-grid { gap: 6px; }
+  .inventory-slot { min-height: 52px; padding: 5px; }
+  .inventory-slot .item-icon { width: 24px; height: 24px; }
+  .craft-button { margin-top: 8px; padding: 8px; }
+  .craft-list { gap: 5px; }
+  .inventory-help { margin-top: 6px; line-height: 1.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
+}

@@ -1,6 +1,5 @@
 import "./styles.css";
-import { applyStaticText, detectLocale, getLocale, getSupportedLocales, onLocaleChange, setLocale, t } from "./i18n";
-import type { Locale } from "./i18n";
+import { applyStaticText, detectLocale, setLocale, t } from "./i18n";
 import { SynthAudio } from "./audio/SynthAudio";
 import { createWorld, pickStartCamp } from "./game/content/createWorld";
 import { InputController } from "./game/input/InputController";
@@ -10,9 +9,9 @@ import { FirstBarrelHint } from "./ui/FirstBarrelHint";
 import { HudController } from "./ui/HudController";
 import { NightIntro } from "./ui/NightIntro";
 import { shouldBreakBeforeRestart } from "./ui/RetentionPolicy";
+import { bindShell } from "./ui/shell";
 import { TutorialStage } from "./ui/TutorialStage";
-import { bumpRunIndex, loadDifficulty, loadRunIndex, saveDifficulty } from "./ui/Settings";
-import { normalizeDifficulty } from "./game/simulation/difficulty";
+import { bumpRunIndex, loadDifficulty, loadRunIndex } from "./ui/Settings";
 import { createPlatform } from "./platform";
 
 /**
@@ -294,27 +293,6 @@ async function bootstrap(): Promise<void> {
   });
 
   /*
-   * 重开前插一次插屏广告。
-   *
-   * 时机是**点了"再来一局"之后**而不是死亡的那一刻 —— 这是平台反复强调的：
-   * 广告要放在玩家已经表达"我要继续"的自然断点上。放不放由平台自己决定。
-   *
-   * 按钮点完立刻置灰，否则连点两下会叠两次广告请求。
-   */
-  /*
-   * 换难度要整页刷新。
-   *
-   * 狼的数值是生成时按难度算进去的，而难度在 bootstrap 开头只读一次
-   * （见 difficulty.ts 顶部）。这条路很少走，留着最保险的做法。
-   */
-  const reloadWithBreak = async (button: HTMLElement | null): Promise<void> => {
-    if (button instanceof HTMLButtonElement) button.disabled = true;
-    bumpRunIndex();
-    await platform.commercialBreak();
-    window.location.reload();
-  };
-
-  /*
    * "再来一局"：软重启，不刷页。
    *
    * 平台录像显示长会话是**重开叠出来的**（有人 10 分钟开了 5、6 局），也就是说
@@ -358,86 +336,8 @@ async function bootstrap(): Promise<void> {
     if (button instanceof HTMLButtonElement) button.disabled = false;
   };
 
-  for (const id of ["restart-button", "victory-restart-button"]) {
-    const button = document.getElementById(id);
-    button?.addEventListener("click", () => { void softRestart(button); });
-  }
-  // 齿轮即暂停键：底排腾出来只放四个操作键，而暂停控件仍然看得见、点得到。
-  document.getElementById("settings-button")?.addEventListener("click", () => hud.togglePause());
-  document.getElementById("pause-resume")?.addEventListener("click", () => hud.setPaused(false));
 
-  /*
-   * 难度：点一下就存下来（下次自然重开即生效），同时亮出"重开一局"。
-   * 不做热切换 —— 狼的数值是生成时算的，跑到一半换档只会让新旧狼混在同一夜里。
-   */
-  const difficultyRestart = document.getElementById("difficulty-restart");
-  for (const option of document.querySelectorAll<HTMLButtonElement>("#difficulty-options [data-difficulty]")) {
-    option.addEventListener("click", () => {
-      const picked = normalizeDifficulty(option.dataset.difficulty);
-      saveDifficulty(picked);
-      hud.setDifficultySelection(picked);
-      difficultyRestart?.classList.toggle("hidden", picked === difficulty);
-    });
-  }
-  difficultyRestart?.addEventListener("click", () => { void reloadWithBreak(difficultyRestart); });
-  /*
-   * 声音按钮的文字**不能**交给 applyStaticText 重刷。
-   *
-   * `#sound-state` 上写的是 data-i18n="sound.on"，而它的真实内容取决于当前开关状态。
-   * 切语言时 applyStaticText 会把所有 data-i18n 节点重填一遍 —— 那会把"已关闭"
-   * 硬改回"已开启"。所以单独抽出来，切语言时调这个而不是让它走通用路径。
-   */
-  const syncSoundLabel = (): void => {
-    const button = document.getElementById("sound-button");
-    const state = document.getElementById("sound-state");
-    if (state) state.textContent = t(audio.enabled ? "sound.on" : "sound.off");
-    button?.setAttribute("aria-pressed", String(audio.enabled));
-  };
-  document.getElementById("sound-button")?.addEventListener("click", async () => {
-    await audio.unlock().catch(() => { /* 同上 */ });
-    audio.toggle();
-    syncSoundLabel();
-  });
-
-  /*
-   * 设置里的语言选择。
-   *
-   * 选项文字用各语言自己的写法，不随界面语言变，所以切完不需要重建 select。
-   * 切换是异步的（语言表按需下载），失败时 setLocale 返回 false 并保持原语言，
-   * 这里把下拉的选中值拨回去，免得显示的和实际用的不一致。
-   */
-  const languageSelect = document.getElementById("language-select") as HTMLSelectElement | null;
-  if (languageSelect) {
-    for (const meta of getSupportedLocales()) {
-      const option = document.createElement("option");
-      option.value = meta.code;
-      option.textContent = meta.label;
-      languageSelect.append(option);
-    }
-    languageSelect.value = getLocale();
-    languageSelect.addEventListener("change", () => {
-      void (async () => {
-        // remember=true：设置里选过就存下来，下次开局它压过浏览器语言，见 detectLocale。
-        const ok = await setLocale(languageSelect.value as Locale, true);
-        if (!ok) languageSelect.value = getLocale();
-      })();
-    });
-  }
-
-  /*
-   * 切语言后重刷界面。
-   *
-   * 目标行、时钟、行动键这些每 80ms 自己重算，不用管；要管的是**只写一次**的那些：
-   * 所有 data-i18n 静态节点、声音状态、纪录行。
-   */
-  onLocaleChange(() => {
-    applyStaticText();
-    syncSoundLabel();
-    hud.refreshRecordsLine();
-    // 结算页的死因三段也是只写一次的，同 syncSoundLabel 一个道理。
-    hud.refreshGameOverText();
-    if (languageSelect) languageSelect.value = getLocale();
-  });
+  bindShell({ hud, audio, platform, difficulty, softRestart });
 
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {

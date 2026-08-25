@@ -1,0 +1,360 @@
+/*
+ * 五轴表、状态徽章、补给行、右下四键与键名角标。
+ *
+ * 从 styles.css 分出来的第 2 段。**顺序即层叠** —— styles.css 里的 @import
+ * 顺序就是原文件里的先后，改动顺序等于改动优先级，不要重排。
+ */
+/*
+ * 标签轨道 38px → 56px。中文四个字在 11px 下只有 22px，原先的 38px 是照着中文
+ * 定的；英文最长的 "Stamina" 在 11px/700 下约 50px，一换语言就压到血条上。
+ * 状态栏内容宽 208px，扣掉 56 + 28 + 两道 7px 间距，血条还剩 110px。
+ */
+.meter {
+  display: grid;
+  grid-template-columns: 56px 1fr 28px;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 7px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.meter i {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 9px;
+  background: rgba(255,255,255,.12);
+}
+
+.meter i b {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  transition: width .18s ease;
+}
+
+.health i b { background: linear-gradient(90deg, #c8443d, #ef7269); }
+.warmth i b { background: linear-gradient(90deg, #3f77c9, #e7782e 45%, #ffc05e); }
+.hunger i b { background: linear-gradient(90deg, #62a84f, #a6d966); }
+.water i b { background: linear-gradient(90deg, #2f7fa8, #6cc6e8); }
+.stamina i b { background: linear-gradient(90deg, #8a6bc4, #c3a2f0); }
+.meter em { color: #bcd0d7; font-size: 10px; font-style: normal; text-align: right; }
+.meter.critical { color: #ff9b85; }
+.meter.critical i { box-shadow: 0 0 0 1px rgba(255, 99, 74, .45), 0 0 10px rgba(226, 67, 47, .24); }
+
+/* 体温条同时标出白天地板与夜晚天花板：越界的那一段视觉上就是"危险区"。 */
+.meter.warmth i {
+  position: relative;
+  background:
+    linear-gradient(90deg,
+      rgba(80, 150, 235, .34) 0 15%,
+      rgba(255,255,255,.12) 15% 80%,
+      rgba(255, 140, 60, .34) 80% 100%);
+}
+
+.condition-badge {
+  margin: 0 0 8px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-align: center;
+}
+.condition-badge.heatstroke { background: rgba(226, 108, 40, .22); border: 1px solid rgba(255, 160, 80, .5); color: #ffc48a; }
+.condition-badge.hypothermia { background: rgba(60, 128, 214, .22); border: 1px solid rgba(120, 180, 255, .5); color: #a8ccff; }
+.condition-badge.exhausted { background: rgba(140, 110, 200, .2); border: 1px solid rgba(180, 150, 240, .48); color: #cdb6f5; }
+
+/* 体力恒定流失是本作最容易被误读成"被隐形攻击"的机制，所以常驻一行说明。 */
+.drain-note {
+  margin: -3px 0 7px;
+  padding-left: 45px;
+  color: #8d9aa0;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .02em;
+}
+.drain-note.healing { color: #8fd6a8; }
+
+/*
+ * 随身补给：**只读**。攻/防那一行删了（几乎是静态数字，背包里本来就有同样的两个），
+ * 换成这一行 —— "还有没有水"是每隔几秒就要瞄一眼的决策信息，不该只藏在背包里。
+ * 四项位置固定、有无都在，为 0 时淡掉：位置稳定比省那点密度重要。
+ */
+.supply-line {
+  display: flex;
+  gap: 6px;
+  justify-content: space-between;
+  margin: 1px 0 6px;
+  padding: 5px 7px;
+  border-radius: 7px;
+  background: rgba(255,255,255,.045);
+  color: #a9bdc4;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.supply-line b { color: #f2d29e; }
+.supply-line span.empty { opacity: .34; }
+.supply-line span.empty b { color: inherit; }
+
+/*
+ * 状态栏现在**只读**：五条状态轴 + 补给计数，一个可点元素都没有了。
+ * 声音开关搬进了设置面板（Poki 只要求广告期间自动静音，没要求主界面自带开关），
+ * 随之 .inventory-button / .hud-actions / .sound-button 三组样式一起删掉 —— 已无引用。
+ */
+
+/*
+ * 右下操作簇：[体温][背包]  ⟨大间距⟩  [攻击][行动]。
+ * 排成一行而不是叠两层 —— 340px 高的横屏上多一层就会把行动提示顶进画面中央。
+ * 中间那道 18px 的间距是防误触的：体温和攻击挨着就会点错。
+ */
+.bottom-right {
+  right: max(18px, env(safe-area-inset-right));
+  bottom: max(18px, env(safe-area-inset-bottom));
+  display: flex;
+  align-items: flex-end;
+  gap: 18px;
+  /* 弧形容器有大量透明空隙；只让按钮接点击，空隙继续用于点地移动。 */
+  pointer-events: none;
+}
+
+.bottom-right button { pointer-events: auto; }
+
+.utility-buttons { display: flex; gap: 8px; }
+
+/*
+ * 右下四颗键长同一个样。
+ *
+ * 原先体温和背包是圆角矩形（.utility-button）、行动和攻击是圆（.round-button），
+ * 四颗排在同一道弧上却分成两种形状 —— 读起来像两组不相干的控件，
+ * 而它们其实是同一层级的四个操作。现在统一成圆。
+ *
+ * 攻击仍然大一圈（78 对 68）：它是主操作、也是唯一需要盲按的键，
+ * 而且外面那道连击弧要贴着它画。那是**同一种形状内部的层级**，不是两种形状。
+ */
+.utility-button,
+.round-button {
+  position: relative;
+  display: grid;
+  gap: 1px;
+  align-content: center;
+  justify-items: center;
+  width: 68px;
+  height: 68px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, .25);
+  border-radius: 50%;
+  background: rgba(30, 55, 68, .72);
+  color: #f2f7f9;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .03em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .5);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+/*
+ * 键名角标。**只在键鼠档出现** —— 触屏没有键盘，那枚 Q 只会让人困惑。
+ *
+ * 它解决的是一个很具体的缺口：键鼠玩家原先只在"还没动过"的那几秒看得到一行
+ * 操作说明（hud.pcControls），一移动就永远消失；此后唯一会再出现的键提示是 E，
+ * 而且要走到可交互物旁边才冒出来。空格、B、Q 从头到尾没人说过。
+ *
+ * 钉在按钮上而不是再写一行常驻说明：这样"这个功能"和"这颗键"是同一个东西，
+ * 不需要玩家自己在两处之间对应；而且开场教学点亮某颗键时，键名正好跟着一起亮。
+ */
+.key-hint {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  z-index: 1;
+  display: none;
+  min-width: 18px;
+  padding: 1px 5px;
+  border: 1px solid rgba(255, 255, 255, .28);
+  border-radius: 6px;
+  background: rgba(12, 26, 32, .92);
+  color: #cfe4ea;
+  font-family: inherit;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1.5;
+  letter-spacing: .04em;
+  text-align: center;
+  text-shadow: none;
+}
+
+/* 攻击键大一圈，角标跟着往外挪一点，别压在连击弧上。 */
+.round-button.action .key-hint { top: -2px; right: -2px; }
+
+@media (pointer: fine) {
+  .key-hint { display: block; }
+}
+
+.utility-button b { color: #ffcf9e; font-size: 12px; }
+.utility-button:disabled { opacity: .42; cursor: default; }
+/* 冷却中的体温键：整颗压暗，数字仍然读得出来还要等多久。 */
+.utility-button:disabled b { color: #9fb4bd; }
+
+/*
+ * 4×4 动作图集。图片本身没有文字，按钮标题仍由 i18n 输出。
+ * 512px 图集对应每格 128px，缩到 34–42px 后仍有足够轮廓细节。
+ */
+.hud-sprite {
+  display: block;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  background-image: url("./assets/action-icon-atlas.webp");
+  background-repeat: no-repeat;
+  background-size: 400% 400%;
+  filter: drop-shadow(0 2px 2px rgba(0,0,0,.38));
+  pointer-events: none;
+}
+
+.hud-sprite[data-icon="attack"]   { background-position: 0 0; }
+.hud-sprite[data-icon="backpack"] { background-position: 33.333% 0; }
+.hud-sprite[data-icon="juice"]    { background-position: 66.667% 0; }
+.hud-sprite[data-icon="water"]    { background-position: 100% 0; }
+.hud-sprite[data-icon="ignite"]   { background-position: 0 33.333%; }
+.hud-sprite[data-icon="feed"]     { background-position: 33.333% 33.333%; }
+.hud-sprite[data-icon="cool"]     { background-position: 66.667% 33.333%; }
+.hud-sprite[data-icon="warm"]     { background-position: 100% 33.333%; }
+.hud-sprite[data-icon="pickup"]   { background-position: 0 66.667%; }
+.hud-sprite[data-icon="drop"]     { background-position: 33.333% 66.667%; }
+.hud-sprite[data-icon="mine"]     { background-position: 66.667% 66.667%; }
+.hud-sprite[data-icon="load"]     { background-position: 100% 66.667%; }
+.hud-sprite[data-icon="drive"]    { background-position: 0 100%; }
+.hud-sprite[data-icon="action"]   { background-position: 33.333% 100%; }
+.hud-sprite[data-icon="build"]    { background-position: 66.667% 100%; }
+.hud-sprite[data-icon="consume"]  { background-position: 100% 100%; }
+
+.button-label {
+  display: grid;
+  min-height: 17px;
+  place-items: center;
+  color: #f5f8f8;
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 1;
+  text-align: center;
+  text-shadow: 0 1px 2px rgba(0,0,0,.72);
+}
+
+#backpack-button .button-label {
+  /* 名称和容量分两行；长语言若拼在同一行，极矮横屏会被 56px 圆键裁掉。 */
+  display: grid;
+  gap: 1px;
+}
+
+/* 四个右下操作键在所有设备上都可见；输入方式不同，HUD 不分两套。 */
+.action-buttons { display: flex; align-items: flex-end; gap: 8px; }
+
+.round-button {
+  position: relative;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 0;
+  width: 68px;
+  height: 68px;
+  padding: 3px;
+  border: 1px solid rgba(255,255,255,.25);
+  border-radius: 50%;
+  color: white;
+  font-size: 12px;
+  font-weight: 900;
+  text-shadow: 0 1px 2px rgba(0,0,0,.5);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.utility-button .hud-sprite,
+.round-button .hud-sprite { width: 32px; height: 32px; }
+.round-button.attack .hud-sprite { width: 35px; height: 35px; }
+
+/*
+ * 三档尺寸：主位（行动 78）> 攻击（72）> 背包 / 体温（68）。
+ * 攻击只让出了 6px 和那个角，仍然明显比另外两颗大 —— 它没有被降级，
+ * 只是不再是最优先的那一颗。
+ */
+.round-button.action { width: 78px; height: 78px; background: rgba(48, 110, 127, .7); }
+.round-button.attack { width: 72px; height: 72px; background: rgba(147, 62, 48, .72); }
+.round-button.action .hud-sprite { width: 38px; height: 38px; }
+
+/* 触屏玩家不必一路试按：够得着交互物才亮；不设 disabled，保留平台输入上报。 */
+@media (pointer: coarse) {
+  #action-button { transition: opacity .14s ease-out, background-color .14s ease-out; }
+  #action-button:not(.armed) { opacity: .42; background: rgba(48, 110, 127, .55); }
+  #action-button.armed { background: rgba(64, 148, 170, .88); }
+}
+
+/*
+ * 圆形按钮要覆盖十三种语言。实测俄语、西语和德语的短标签最容易碰边；
+ * 62px 能容纳两行，同时在 78px 圆内保留两侧各 8px 的安全边距。
+ */
+.utility-button .button-label,
+.round-button .button-label {
+  display: -webkit-box;
+  overflow: hidden;
+  max-width: 62px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 8px;
+  line-height: 1.15;
+}
+
+/*
+ * 体温键的状态字是四颗键里最长的一条：法语 "Température normale" 是中文"体温适宜"
+ * 的四倍长，而它要塞进 64px 的圆。跟着 .button-label 走两行截断，字号比别的键小一号；
+ * 完整文案一直在 aria-label 里（hud.thermal.aria），读屏拿得到。
+ */
+#thermal-state { font-size: 9px; }
+
+/*
+ * 右下四键固定使用参考图里的弧形：取暖左下、背包中间、行动右上、攻击右下。
+ * 这套几何不再依赖 pointer 类型或朝向，避免电脑端隐藏攻击键、竖屏又换一套位置。
+ */
+.bottom-right {
+  --arc-r: 140px;
+  width: calc(var(--arc-r) + 52px);
+  height: calc(var(--arc-r) + 52px);
+}
+
+.utility-buttons,
+.action-buttons { display: contents; }
+
+.bottom-right > * > .round-button,
+#thermal-button,
+#backpack-button,
+#action-button,
+#attack-button {
+  position: absolute;
+  transform: translate(50%, 50%);
+}
+
+#thermal-button  { right: calc(var(--arc-r) * 0.961); bottom: calc(var(--arc-r) * 0.276); }
+#backpack-button { right: calc(var(--arc-r) * 0.669); bottom: calc(var(--arc-r) * 0.743); }
+/*
+ * 拇指落点（弧内侧那个角）给**行动键**，攻击退到弧上。
+ *
+ * 原来是反过来的，理由是"攻击是反射动作，得在拇指下"。数据否掉了它：
+ * 两轮测试 20 个人里只有 3~4 个捡过柴，带教学那轮也没好转 ——
+ * 而柴是唯一决定能不能活过第一夜的东西。
+ *
+ * 而且"攻击要反射"这条在**决定生死的那段时间里根本不成立**：第一天白天
+ * 野狼只有被激怒才追，攻击一点都不紧急；真正紧急的是把柴捡回来生火。
+ * 等到夜里攻击变紧急时，玩家已经玩过一整天，那时按哪颗键早就是肌肉记忆了。
+ *
+ * 误触的代价也是不对称的：行动键在什么都够不着时按下去毫无反应，
+ * 而攻击误触要扣劳力、还可能惊动附近的狗。放在拇指下的应该是更安全的那颗。
+ */
+#action-button   { right: calc(var(--arc-r) * 0.257); bottom: calc(var(--arc-r) * 0.257); }
+#attack-button   { right: calc(var(--arc-r) * 0.174); bottom: calc(var(--arc-r) * 0.985); }
+
+.round-button:active,
+.utility-button:active { transform: translate(50%, 50%) scale(.94); filter: brightness(1.2); }

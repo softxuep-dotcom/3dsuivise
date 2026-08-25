@@ -1,0 +1,189 @@
+/*
+ * 变量、页面骨架、HUD 外壳、目标行与状态条。
+ *
+ * 从 styles.css 分出来的第 1 段。**顺序即层叠** —— styles.css 里的 @import
+ * 顺序就是原文件里的先后，改动顺序等于改动优先级，不要重排。
+ */
+/*
+ * 字体栈先西文后中文。
+ *
+ * 原来把 "Microsoft YaHei" 排在第一位 —— 而它是 **每一台 Windows 都预装**的，
+ * 于是英/美玩家的整个界面都在用雅黑的拉丁字形：它们是从 CJK 字体里派生的，
+ * 字宽比 Segoe UI 宽 8.5%（实测 16px 下同一串文字 253.7px vs 233.8px），
+ * 小字号 hinting 也差，一眼就是"中文软件"的观感。macOS 上 PingFang SC 同理。
+ *
+ * CSS 的字体回退是 **逐字符** 的，所以把西文字体提到前面不会弄坏中文：
+ * Segoe UI / SF Pro 都没有汉字，汉字自然落到后面的雅黑 / 苹方。
+ * 中文 Windows 上 system-ui 本来就是雅黑，中文玩家看到的效果一字不变。
+ */
+:root {
+  font-family: system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Microsoft YaHei", "PingFang SC", sans-serif;
+  color: #f4f8fb;
+  background: #101821;
+  font-synthesis: none;
+  --panel: rgba(14, 24, 32, 0.84);
+  --line: rgba(231, 243, 248, 0.18);
+  --ice: #9ad8ea;
+  --ember: #ff9d43;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #game-root, #render-root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+
+body {
+  overscroll-behavior: none;
+  touch-action: none;
+  user-select: none;
+}
+
+canvas { display: block; }
+button { font: inherit; }
+
+.hidden { display: none !important; }
+
+#render-root {
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(circle at 50% 35%, #7592a2, #1c2a34 75%);
+}
+
+.version-label {
+  position: fixed;
+  z-index: 30;
+  left: max(8px, env(safe-area-inset-left));
+  bottom: max(6px, env(safe-area-inset-bottom));
+  color: rgba(232, 240, 243, 0.58);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  line-height: 1;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, .72);
+  pointer-events: none;
+}
+
+/*
+ * z-index 写成显式的 2，不再靠 auto。
+ *
+ * #hud 和教学幕布都是 position: fixed —— 而 fixed **本身就创建层叠上下文**，
+ * 与有没有 z-index 无关。所以只要幕布的 z 比这里高，整块 HUD 就被盖死，
+ * 里面任何子元素调多大的 z-index 都爬不出去（这正是"点亮某颗键"第一版失败的原因）。
+ * 现在顺序写死：场景 → 幕布(1) → HUD(2) → 教学字幕(14) → 各种遮罩(20/35)。
+ */
+#hud {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.left-stack,
+.status-strip,
+.top-stack,
+.prompt,
+.bottom-right {
+  position: absolute;
+  z-index: 5;
+}
+
+/*
+ * HUD 的三个角面板共用一条横向预算，加起来必须小于视口宽度，否则在矮横屏上会互相压。
+ * 左列和中列都用 vw 表达，右侧状态栏是固定 232px（五条状态轴需要稳定的列宽）：
+ *   30vw + 34vw + 232px，780px 宽时合计 731px，1280px 时 1012px —— 都有净空。
+ */
+.left-stack {
+  top: max(18px, env(safe-area-inset-top));
+  left: max(18px, env(safe-area-inset-left));
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: min(360px, 30vw);
+}
+
+/*
+ * 这一列的顺序是「目标条 → 齿轮」：目标行贴着视口顶端开始，
+ * 齿轮排在它下面。见 index.html 那段注释。
+ */
+
+/*
+ * 顶部中央栏：时钟 / 吐司 / 状态提示排成一列，靠 flex 自己让位。
+ * 宽度卡在 44vw 以内，两侧给左上目标条和右上状态栏留出通道 —— 屏幕中央那一块
+ * 是玩家真正在看的地方，任何常驻元素都不许落进去。
+ */
+.top-stack {
+  top: max(18px, env(safe-area-inset-top));
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  width: max-content;
+  max-width: min(34vw, 420px);
+  transform: translateX(-50%);
+}
+
+/*
+ * toast 说话时目标条让位。见 HudController.showToast。
+ * 0.42 而不是更低：还要看得见它在哪，只是不再抢"现在做什么"这件事。
+ */
+.settings-select {
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: rgba(10, 17, 23, .85);
+  color: #e8eef1;
+  font: inherit;
+  font-size: 15px;
+}
+
+.objective-chip.muted { opacity: .42; }
+
+.objective-chip {
+  transition: opacity .18s ease;
+  padding: 11px 16px 13px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--ember);
+  border-radius: 5px 14px 14px 5px;
+  background: linear-gradient(120deg, rgba(11, 18, 25, 0.92), rgba(24, 37, 46, 0.72));
+  box-shadow: 0 12px 35px rgba(3, 8, 12, 0.2);
+  backdrop-filter: blur(8px);
+}
+
+.eyebrow {
+  display: block;
+  margin: 0 0 4px;
+  color: #a9c8d2;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+}
+
+.objective-chip strong { display: block; font-size: 14px; letter-spacing: .02em; }
+
+.objective-progress {
+  display: block;
+  margin-top: 5px;
+  color: #d6c3a2;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .04em;
+}
+
+.status-strip {
+  top: max(18px, env(safe-area-inset-top));
+  right: max(18px, env(safe-area-inset-right));
+  width: 232px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  backdrop-filter: blur(8px);
+}

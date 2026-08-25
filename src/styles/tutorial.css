@@ -1,0 +1,268 @@
+/*
+ * 第一夜教学、数值飘字、提示搏动。
+ *
+ * 从 styles.css 分出来的第 6 段。**顺序即层叠** —— styles.css 里的 @import
+ * 顺序就是原文件里的先后，改动顺序等于改动优先级，不要重排。
+ */
+/*
+ * ============================================================================
+ * 开场教学
+ * ============================================================================
+ *
+ * 场景里的压暗**不在这里** —— 那是渲染层的一盏聚光灯（GameRenderer.spotlightOn）。
+ * 曾经是一张 z-index 12 的 SVG 幕布盖住全屏、在目标位置挖洞，已经整个删掉：
+ * 平台的会话录像抓画布不抓 DOM 覆盖层，幕布在回放里根本不存在；而一整屏 78%
+ * 的黑，对新玩家的第一眼来说也太重了。
+ *
+ * 留在 DOM 这边的只有 #hud.tutorial-dim（把没被点名的面板和按键压下去）
+ * 和这一层字幕。整个 .tutorial 是 pointer-events: none，只有"跳过"按钮自己
+ * 收回点击 —— 教学每一步都要玩家真的去按那颗键。
+ */
+/* 字幕层：在 HUD 之上（z 14），但在暂停/结算/背包那几层遮罩之下（20 / 35）。 */
+.tutorial {
+  position: fixed;
+  inset: 0;
+  z-index: 14;
+  pointer-events: none;
+}
+
+.tutorial.hidden { display: none; }
+
+/*
+ * 文案：**不给框**。
+ *
+ * 幕布已经把整屏压到两成亮度，再套一个描边圆角面板就是在暗背景上又叠一层暗背景 ——
+ * 那块板子会比它要说的话更显眼。这里只留字，靠字重和投影拉开层次，
+ * 教学因此看起来像"画面上的一句话"，而不是"弹出来的一个控件"。
+ *
+ * 位置在底部居中：手机横屏时左下是摇杆、右下是那道四键弧，正下方是唯一两边都不压的地方。
+ */
+.tutorial-caption {
+  position: absolute;
+  left: 50%;
+  bottom: 13%;
+  transform: translateX(-50%);
+  display: grid;
+  justify-items: center;
+  gap: 9px;
+  width: max-content;
+  max-width: min(440px, 82vw);
+  text-align: center;
+}
+
+.tutorial-caption strong {
+  color: #fff;
+  font-size: 25px;
+  font-weight: 800;
+  line-height: 1.25;
+  letter-spacing: .01em;
+  /* 两层投影：贴身那层描边保可读，外扩那层在亮沙地上压出一圈暗底。 */
+  text-shadow: 0 2px 6px rgba(0, 0, 0, .9), 0 0 26px rgba(0, 0, 0, .75);
+}
+
+.tutorial-caption span {
+  color: rgba(198, 224, 236, .86);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  text-shadow: 0 1px 5px rgba(0, 0, 0, .9);
+}
+
+/* 四颗点 = 四步。玩家一眼知道这段还有多长，比任何"教学 2/4"的文字都短。 */
+.tutorial-dots { display: flex; gap: 7px; margin-top: 2px; }
+
+.tutorial-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .22);
+  transition: background .25s ease, transform .25s ease;
+}
+
+.tutorial-dots i.done { background: rgba(255, 207, 158, .5); }
+
+.tutorial-dots i.on {
+  background: #ffcf9e;
+  transform: scale(1.45);
+  box-shadow: 0 0 9px rgba(255, 207, 158, .75);
+}
+
+/* 十秒还没做出来：只让主文案轻轻搏动。不换文案，也不动副行和点。 */
+.tutorial-caption.urgent strong { animation: tutorial-pulse 1.15s ease-in-out infinite; }
+
+@keyframes tutorial-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.055); opacity: .88; }
+}
+
+/*
+ * 收尾那句要压在背包遮罩（z 35）之上。
+ *
+ * **必须抬整个字幕层**，不能只给这行字加 z-index —— .tutorial 是 position: fixed，
+ * 自己就是一个层叠上下文，里面的子元素调多大都出不去。同一个坑这个文件里踩过两次了。
+ */
+.tutorial.over-pack { z-index: 40; }
+
+.tutorial-caption.over-pack { bottom: 7%; }
+
+/*
+ * 跳过键单独放在底部正中、文案下面 —— 不塞进文案那一组。
+ *
+ * 顶部四角全被占着（左上目标条、中上时钟、右上状态栏），而它是整块幕布上唯一
+ * 可点的东西，压低、缩小、降对比才不会跟正文抢注意力。
+ */
+.tutorial-skip {
+  position: absolute;
+  left: 50%;
+  bottom: max(20px, calc(env(safe-area-inset-bottom) + 12px));
+  transform: translateX(-50%);
+  padding: 6px 16px;
+  border: 1px solid rgba(255, 255, 255, .17);
+  border-radius: 999px;
+  background: rgba(8, 14, 18, .42);
+  color: rgba(206, 228, 238, .72);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  cursor: pointer;
+  /* 幕布整体不吃点击，这颗键要自己收回来。 */
+  pointer-events: auto;
+  touch-action: manipulation;
+  backdrop-filter: blur(5px);
+}
+
+.tutorial-skip.hidden { display: none; }
+.tutorial-skip:active { filter: brightness(1.3); }
+
+/*
+ * ── 吃喝的即时反馈：数字飘在对应的那条轴上 ────────────────────────────────
+ *
+ * 不发吐司。五条状态轴对新玩家是五条无名的彩条，而"喝了一口水"正是唯一能说清
+ * 哪条是水、哪条是体温的时机 —— 数字必须落在那两条上。喝水会同时飘 +水 和 −体温，
+ * 那一眼就是这个游戏的核心取舍：补水要付体温的账。
+ *
+ * 元素是 <u>（纯粹图省事：状态栏里没有别的 u，选择器不会误伤），
+ * 动画结束由 JS 摘掉，所以连点几下会各自计时、互不干扰。
+ */
+.meter { position: relative; }
+
+/*
+ * 数字飘在面板**左侧**、和自己那一行齐平，不是飘在条的上方。
+ *
+ * 上方那一版有个硬伤：体力是最上面一条，它的飘字起点就在视口顶端之外（实测 top −2），
+ * 再往上飘 17px 等于整个飞出屏幕 —— 而体力恰恰是最需要被看见的那条。
+ * 挪到左边之后五条一视同仁：状态栏贴着屏幕右缘，左边全是空的，怎么飘都在画面里；
+ * 而且不会盖住行尾那个数值，"22 变成 44"和"+22"可以同时看见。
+ */
+.meter-delta {
+  position: absolute;
+  top: 50%;
+  right: 100%;
+  margin-right: 7px;
+  font-size: 12px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+  white-space: nowrap;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, .9);
+  pointer-events: none;
+  animation: meter-delta-float 1.2s cubic-bezier(.2, .7, .3, 1) forwards;
+}
+
+.meter-delta.gain { color: #8ff0b4; }
+.meter-delta.loss { color: #ffb08a; }
+
+/* translateY(-50%) 是那一行的垂直居中，每一帧都得带着，否则字会往上跳半个身位。 */
+@keyframes meter-delta-float {
+  0% { opacity: 0; transform: translate(10px, -50%) scale(.86); }
+  16% { opacity: 1; transform: translate(0, -50%) scale(1.1); }
+  38% { transform: translate(-2px, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-22px, -50%) scale(1); }
+}
+
+/*
+ * ── 教学期间的界面明暗：逐元素给，不挖洞也不抬层 ──────────────────────────
+ *
+ * 走到这一版之前错过两次，都值得记下来：
+ *
+ * 一、**幕布上挖洞照亮按键**。洞是圆的、必须比按钮大，而右下四颗键排在半径 140px
+ *     的弧上、彼此只隔 77~89px —— 照亮背包的洞半径 97px，会把攻击、行动、体温
+ *     一起照进去。最需要精确指认的那一步反而指不准。
+ *
+ * 二、**把那颗键的容器 z-index 抬到幕布之上**。抬不动：`position: fixed` 本身就
+ *     创建层叠上下文，而 #hud 正是 fixed，整块 HUD 被幕布盖死，子元素的 z-index
+ *     再大也出不去。computed z-index 确实变成了 13，但绘制顺序纹丝不动 ——
+ *     这种错只有拿 elementFromPoint 量真实命中才看得出来。
+ *
+ * 现在幕布整个挪到 HUD 下面，界面明暗改成 CSS 按元素给：面板整块压暗，
+ * 按键逐颗压暗、被点名的那颗不压并加一圈光。想只亮一颗，那就该按颗给。
+ */
+#hud.tutorial-dim .left-stack,
+#hud.tutorial-dim .top-stack,
+#hud.tutorial-dim .status-strip,
+#hud.tutorial-dim .prompt { opacity: .2; }
+
+/*
+ * 按键逐颗给。**不能压在容器上** —— 子元素的 opacity 不可能超过父元素的，
+ * 压了 .bottom-right 就再也没法把其中一颗提回全亮。
+ */
+#hud.tutorial-dim .bottom-right button:not(.tutorial-lit),
+#hud.tutorial-dim .joystick:not(.tutorial-lit) { opacity: .14; }
+
+#hud.tutorial-dim .left-stack,
+#hud.tutorial-dim .top-stack,
+#hud.tutorial-dim .status-strip,
+#hud.tutorial-dim .prompt,
+#hud.tutorial-dim .bottom-right button,
+#hud.tutorial-dim .joystick { transition: opacity .28s ease; }
+
+/*
+ * "这颗键现在按有用"。替掉了门禁式的开场教学，理由见 HudController 里 attackHintUsed 那段。
+ *
+ * 比 .tutorial-lit 轻一档：那个是教学在点名（配聚光灯和字幕），这个只是让眼睛
+ * 往那儿瞟一下，玩家该能忽略它继续做自己的事。所以只有一圈呼吸的描边，
+ * 不放大、不改底色、不遮挡。
+ */
+.hint-pulse { animation: hint-pulse 1.35s ease-in-out infinite; }
+
+@keyframes hint-pulse {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(255, 214, 170, .5), 0 0 9px 1px rgba(255, 214, 170, .2); }
+  50% { box-shadow: 0 0 0 2px rgba(255, 214, 170, .95), 0 0 18px 5px rgba(255, 214, 170, .42); }
+}
+
+/* 教学点名时它自己让位 —— 两层光叠在同一颗键上只会互相打架。 */
+.tutorial-lit.hint-pulse { animation: tutorial-key-glow 1.5s ease-in-out infinite; }
+
+.tutorial-lit {
+  animation: tutorial-key-glow 1.5s ease-in-out infinite;
+}
+
+@keyframes tutorial-key-glow {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(255, 207, 158, .8), 0 0 15px 3px rgba(255, 207, 158, .34); }
+  50% { box-shadow: 0 0 0 3px rgba(255, 207, 158, 1), 0 0 27px 9px rgba(255, 207, 158, .56); }
+}
+
+/* 摇杆本身是半透明的显示件，光圈按它的圆形走。 */
+.joystick.tutorial-lit { border-radius: 50%; }
+
+/*
+ * 状态条里的某一条被点名时（第一夜教学要指的是体温条），压暗必须让位。
+ *
+ * 和上面 .bottom-right 那条是同一个教训、同一个原因：**子元素的 opacity
+ * 爬不出父元素**。.status-strip 是整块压到 .2 的，只给里面那一条挂
+ * .tutorial-lit 不会让它变亮 —— 得先把整块放回全亮，再把没被点名的
+ * 兄弟条单独压下去。
+ */
+#hud.tutorial-dim .status-strip:has(.tutorial-lit) { opacity: 1; }
+#hud.tutorial-dim .status-strip:has(.tutorial-lit) .meter:not(.tutorial-lit) { opacity: .22; }
+
+/* 进度条行本身没有底板，光圈得自己带个圆角，否则贴着文字画出一个直角框。 */
+.meter.tutorial-lit { border-radius: 10px; }
+
+/* 矮屏（手机横屏）整体缩一档，别顶到状态条也别压住底部那排键。 */
+@media (pointer: coarse) and (orientation: landscape) {
+  .tutorial-caption { bottom: 22%; gap: 7px; }
+  .tutorial-caption strong { font-size: 19px; }
+  .tutorial-caption span { font-size: 11px; }
+  .tutorial-skip { bottom: max(12px, calc(env(safe-area-inset-bottom) + 8px)); padding: 5px 13px; }
+}

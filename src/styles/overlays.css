@@ -1,0 +1,495 @@
+/*
+ * 卡车指示器、时钟、提示、Toast，以及所有全屏卡片。
+ *
+ * 从 styles.css 分出来的第 3 段。**顺序即层叠** —— styles.css 里的 @import
+ * 顺序就是原文件里的先后，改动顺序等于改动优先级，不要重排。
+ */
+/*
+ * 卡车的屏幕边缘指示器。
+ * 用 translate(-50%,-50%) 把自己的中心对到算出来的那个点，箭头用 rotate 指向车。
+ * pointer-events: none —— 它压在画面上，绝不能吃掉点击（那是移动指令）。
+ *
+ * z-index 4 < .bottom-right 的 5：指示器沿视口内缘走，车在右下方向时会正好压在
+ * 四颗操作键上，而那四颗是要按的、它只是要看的。两者同为 #hud 里的 absolute
+ * 子元素、同一个层叠上下文，所以这里比大小是有效的（幕布那次不生效是因为
+ * #hud 自己是 position: fixed，见文件末尾那段）。
+ */
+.truck-pointer {
+  position: absolute;
+  z-index: 4;
+  display: grid;
+  gap: 2px;
+  place-items: center;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,.55));
+}
+
+/*
+ * 中间那枚圆牌。做成圆而不是继续用裸三角，是因为三角只说得出"那边"，
+ * 说不出"那边有什么" —— 而这是全局唯一的通关物，认出身份比认出方向更重要。
+ * 尺寸和右下四颗键同一档（44 对 56~68），一眼能看出它是同一套 HUD 里的东西。
+ */
+.truck-chip {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 2px solid #36d9cc;
+  border-radius: 50%;
+  background: rgba(8, 32, 36, .82);
+  box-shadow: 0 0 12px rgba(54, 217, 204, .35);
+}
+
+.truck-chip .hud-sprite { width: 26px; height: 26px; }
+
+/*
+ * 箭头绕着圆牌转。
+ *
+ * 它是一个比圆牌大一圈的透明盒子，三角用 ::before 贴在盒子顶边 ——
+ * 于是旋转这个盒子，三角就沿着圆牌外缘画圆，而中间的卡车图标始终是正的。
+ * （直接旋转三角自己的话，得手算圆周上的坐标，还得反向转图标。）
+ */
+.truck-arrow {
+  position: absolute;
+  inset: -13px;
+  pointer-events: none;
+}
+
+.truck-arrow::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-bottom: 12px solid #36d9cc;
+  transform: translateX(-50%);
+}
+
+.truck-pointer b {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(10, 30, 34, .72);
+  color: #8ff0e6;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .03em;
+  white-space: nowrap;
+}
+
+.clock {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 8px 13px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  font-size: 12px;
+  backdrop-filter: blur(8px);
+}
+
+.clock b { min-width: 42px; color: #d8eef5; font-variant-numeric: tabular-nums; }
+.clock.night { border-color: rgba(118, 150, 211, .45); background: rgba(10, 15, 33, .86); }
+
+/*
+ * 声音开关是状态栏里唯一剩下的按钮，靠右收成一颗小的。
+ * 它的可视高度只有 20px，远低于能可靠点中的尺寸 —— 用一层透明的伪元素把命中区域
+ * 向外扩 12px，视觉不变、面板也不长高。面板里已经没有别的可点元素，扩出去不会抢点击。
+ */
+.prompt {
+  bottom: max(34px, calc(env(safe-area-inset-bottom) + 18px));
+  left: 50%;
+  max-width: min(80vw, 560px);
+  padding: 9px 14px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 999px;
+  background: rgba(9, 16, 21, .84);
+  color: #eef7f9;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  backdrop-filter: blur(7px);
+}
+
+.prompt kbd {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 2px 7px;
+  border: 1px solid rgba(255,255,255,.25);
+  border-radius: 5px;
+  background: rgba(255,255,255,.1);
+  color: var(--ember);
+  font: inherit;
+}
+
+.toast {
+  padding: 9px 15px;
+  border-radius: 9px;
+  background: rgba(11, 18, 25, .88);
+  box-shadow: 0 14px 35px rgba(0,0,0,.25);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: .03em;
+  line-height: 1.45;
+  text-align: center;
+  backdrop-filter: blur(7px);
+}
+
+.status-pill {
+  padding: 7px 13px;
+  border: 1px solid rgba(151, 218, 191, .35);
+  border-radius: 999px;
+  background: rgba(22, 55, 50, .82);
+  color: #c7f0df;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+  backdrop-filter: blur(7px);
+}
+
+.overlay {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    linear-gradient(180deg, rgba(9, 14, 19, .34), rgba(5, 9, 12, .76)),
+    radial-gradient(circle at 50% 30%, rgba(95, 142, 160, .4), rgba(9, 17, 22, .82));
+  backdrop-filter: blur(5px);
+}
+
+.intro-card {
+  width: min(660px, 94vw);
+  padding: 36px 38px 28px;
+  border: 1px solid rgba(222, 240, 246, .2);
+  border-radius: 22px;
+  background: linear-gradient(150deg, rgba(18, 29, 37, .96), rgba(10, 16, 22, .94));
+  box-shadow: 0 35px 100px rgba(0,0,0,.46);
+  text-align: center;
+}
+
+/* 加载页只交代目标与最基本操作；详细规则进入游戏后用情境提示教。 */
+.loading-card {
+  width: min(520px, 92vw);
+  padding: 30px 34px 24px;
+}
+
+.intro-card.loading-card h1 {
+  max-width: 100%;
+  font-size: clamp(36px, 6vw, 56px);
+  letter-spacing: .04em;
+  overflow-wrap: anywhere;
+}
+
+html[lang="zh-CN"] .intro-card.loading-card h1 { letter-spacing: .12em; }
+
+.intro-card h1, .intro-card h2 {
+  margin: 0;
+  color: #fbfaf2;
+  font-size: clamp(42px, 8vw, 72px);
+  font-weight: 900;
+  letter-spacing: .12em;
+  text-shadow: 0 4px 24px rgba(244, 159, 73, .2);
+}
+
+.intro-card h2 { font-size: clamp(34px, 7vw, 58px); }
+.intro-card .eyebrow { color: var(--ember); }
+.tagline { margin: 13px 0 22px; color: #bcd0d7; font-size: 17px; }
+
+.pause-card {
+  text-align: center;
+}
+
+/* 韩文与越南文的音节/单词本身已经有清晰分隔，不再叠加标题页的大字距。 */
+html[lang="ko"] .pause-card h2,
+html[lang="vi"] .pause-card h2 { letter-spacing: .04em; }
+
+/* 看广告续命：和"再来一局"区分开 —— 它是主动作，用暖色。 */
+.revive-button {
+  margin-bottom: 10px;
+  border-color: rgba(242, 186, 106, .5);
+  background: linear-gradient(180deg, rgba(242, 186, 106, .22), rgba(242, 186, 106, .1));
+  color: #f7dcae;
+}
+
+/* 暂停键做成方形小键，和背包键并排；II 是通用暂停符号，不吃翻译。 */
+#pause-button {
+  min-width: 44px;
+  font-family: ui-monospace, monospace;
+  letter-spacing: .12em;
+}
+
+/* 通关页的下一步提示：比正文弱一档，别抢"你赢了"的风头。 */
+.victory-hint {
+  margin: 10px 0 0;
+  padding: 8px 12px;
+  border: 1px dashed rgba(242, 210, 158, .32);
+  border-radius: 10px;
+  color: #d8c3a6;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.records-line {
+  margin: 14px 0 0;
+  padding: 7px 12px;
+  border: 1px solid rgba(242, 210, 158, .28);
+  border-radius: 999px;
+  background: rgba(242, 210, 158, .08);
+  color: #f2d29e;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .02em;
+  text-align: center;
+}
+
+.verb-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 18px auto 20px;
+}
+
+.verb-row span {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: #dbe7ea;
+  font-size: 12px;
+}
+
+/* 数字和文案要分成两个节点，data-i18n 才能只重填文案而不擦掉数字。 */
+.verb-row i { font-style: normal; }
+
+.verb-row b {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(255, 156, 66, .18);
+  color: var(--ember);
+}
+
+.primary-button {
+  min-width: 190px;
+  padding: 13px 24px;
+  border: 0;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #f18a39, #ffb957);
+  color: #28160d;
+  box-shadow: 0 12px 35px rgba(221, 112, 35, .24);
+  font-size: 16px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.primary-button:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.primary-button:active { transform: translateY(1px); }
+
+/* 次要动作（重开一局）。刻意不用主按钮的橙色：这一页的主动作是"继续"。 */
+.secondary-button {
+  padding: 9px 18px;
+  border: 1px solid rgba(196, 151, 91, .5);
+  border-radius: 9px;
+  background: rgba(24, 36, 44, .8);
+  color: #e3d3b6;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.secondary-button:active { transform: translateY(1px); filter: brightness(1.15); }
+
+/* 设置齿轮，排在左上角目标条下面。它同时是暂停键，见 index.html 那段注释。 */
+.icon-button {
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(150, 204, 221, .32);
+  border-radius: 9px;
+  background: rgba(9, 17, 22, .62);
+  color: #cfe5ec;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.icon-button:active { transform: translateY(1px); filter: brightness(1.2); }
+
+.difficulty-picker { display: flex; flex-direction: column; gap: 7px; width: 100%; }
+.settings-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; }
+.settings-label { color: #91a9b1; font-size: 11px; letter-spacing: .04em; }
+.difficulty-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+
+.difficulty-option {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 6px;
+  border: 1px solid rgba(150, 204, 221, .26);
+  border-radius: 9px;
+  background: rgba(12, 21, 27, .62);
+  color: #a9c0c8;
+  cursor: pointer;
+  text-align: center;
+}
+.difficulty-option b { color: #d7e5ea; font-size: 13px; }
+.difficulty-option span { font-size: 10px; line-height: 1.3; opacity: .8; }
+/* 选中的那一档：留边框和底色两重标记，别只靠颜色 —— 色觉障碍下要还能分辨。 */
+.difficulty-option[aria-checked="true"] {
+  border-color: rgba(255, 185, 87, .85);
+  background: rgba(80, 52, 22, .6);
+}
+.difficulty-option[aria-checked="true"] b { color: #ffcf9e; }
+
+/*
+ * 开场加载条。它顶替"踏入沙海"按钮的位置，所以高度要接近，免得整张卡片跳一下。
+ * 前半段由 index.html 的内联脚本驱动（那时主包还没到），后半段是真实进度。
+ */
+.boot-progress {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  width: min(320px, 82%);
+  margin: 6px auto 0;
+  padding: 6px 0;
+}
+
+.boot-progress i {
+  display: block;
+  overflow: hidden;
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(233, 240, 243, .12);
+}
+
+.boot-progress b {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #f18a39, #ffb957);
+  box-shadow: 0 0 14px rgba(241, 138, 57, .45);
+  transition: width .3s ease-out;
+}
+
+.boot-progress span {
+  color: #9fb4bd;
+  font-size: 12px;
+  letter-spacing: .04em;
+}
+
+.boot-progress .landscape-hint {
+  color: #f2d29e;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .06em;
+}
+/*
+ * 结算页（死亡 / 通关）自成一档，不跟标题页共用排版。
+ *
+ * `.intro-card h1, .intro-card h2` 那条是给**标题页**写的：58px、900 字重、
+ * 字间距 .12em。标题页一局只看一次，铺满是对的；结算页不是 —— 平台录像显示
+ * 玩家一次会话要重开 5、6 次，也就是**这张卡他要看五六遍**。它该是"扫一眼、
+ * 手指已经在按钮上"的东西，不是开屏。
+ *
+ * 原先它有多大：iPhone 横屏 852×393 下标题 58px（占屏高 20%）、卡片 340px
+ * （占屏高 87%）。而"Buried by the sand"单行要 674px，卡片一窄就折两行，
+ * 折了之后标题吃掉近 30% 屏高。
+ *
+ * 还有一个漏洞：样式表里本来有矮屏保护 `@media (max-height: 520px)`，
+ * 但那条只写了 `.intro-card h1` —— 而结算页用的是 `h2`，整条保护对它无效。
+ * 见文件末尾那段，已经一起补上。
+ *
+ * 现在：字号 clamp 到 40px 封顶、字间距 .12em → .06em，单行需要的宽度
+ * 从 674px 降到约 400px，手机横屏上不再折行；内边距与行高一起收紧。
+ */
+.game-over-card,
+.victory-card {
+  /*
+   * 宽度保持 660 —— 别收窄。两颗按钮（"看广告续命" + "再来一局"）加起来约 571px，
+   * 收到 560 会让它们换行，而换行多吃 57px 竖直空间，比收窄省下的还多。
+   * 结算页缺的是**高度**，不是宽度。
+   */
+  width: min(660px, 94vw);
+  padding: 22px 30px 20px;
+}
+
+/* 继续游戏的动作先于长报告出现；重开排第一，复活只在值得挽救时出现。 */
+.game-over-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.game-over-actions .primary-button { margin: 0; }
+
+.game-over-card h2,
+.victory-card h2 {
+  font-size: clamp(26px, 4.2vw, 40px);
+  letter-spacing: .06em;
+  line-height: 1.12;
+}
+
+.game-over-card .eyebrow,
+.victory-card .eyebrow { font-size: 12px; }
+
+.death-report {
+  display: grid;
+  grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
+  gap: 10px;
+  margin: 12px 0 10px;
+  text-align: left;
+}
+
+.objective-progress.fuel-loaded {
+  animation: fuel-progress-pop .58s cubic-bezier(.2, .78, .28, 1);
+}
+
+@keyframes fuel-progress-pop {
+  0% { color: #fff3d2; transform: scale(1); text-shadow: 0 0 0 rgba(255, 157, 67, 0); }
+  35% { color: #ffbe72; transform: scale(1.2); text-shadow: 0 0 14px rgba(255, 157, 67, .72); }
+  100% { color: #d6c3a2; transform: scale(1); text-shadow: 0 0 0 rgba(255, 157, 67, 0); }
+}
+
+.death-report > div {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, .11);
+  border-radius: 10px;
+  background: rgba(5, 12, 17, .48);
+}
+
+.death-report-cause { border-left: 3px solid #d76650 !important; }
+.death-report-advice { border-left: 3px solid var(--ember) !important; }
+
+.death-report-label {
+  display: block;
+  margin-bottom: 4px;
+  color: #91a9b2;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+}
+
+.death-report strong {
+  display: block;
+  color: #fff0e5;
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.death-report-advice strong { color: #ffe0b8; font-size: 13px; }

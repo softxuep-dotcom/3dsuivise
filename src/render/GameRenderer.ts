@@ -1,41 +1,25 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
-import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { GameSimulation } from "../game/simulation/GameSimulation";
 import { clamp, lerp, mulberry32 } from "../game/simulation/geometry";
-import type { CampDefinition, CritterState, GroundItem, Vec2, WeaponKind, WolfState, WorldDefinition, WorldDrop } from "../game/simulation/types";
-import { BARRIER_STATS, CRITTER_SPECS, FUEL_REQUIRED } from "../game/simulation/types";
+import type { CampDefinition, GroundItem, Vec2, WeaponKind, WorldDefinition } from "../game/simulation/types";
+import { BARRIER_STATS, FUEL_REQUIRED } from "../game/simulation/types";
 import { distanceToCampApproach, terrainHeightAt, terrainMoistureAt, terrainSaltAt, terrainSlopeAt } from "../game/terrain/TerrainModel";
-import { instantiateAnimal, loadAnimal, type AnimalAsset, type AnimalInstance } from "./AnimalModels";
-import { createCritterMesh } from "./CritterModels";
+import { loadAnimal, type AnimalAsset } from "./AnimalModels";
+import { CreatureViews } from "./entities/CreatureViews";
+import {
+  BARRIER_DAMAGE_TINT, CACTUS_ELBOW_GEOMETRY, CACTUS_FLOWER_GEOMETRY, CACTUS_SPINE_GEOMETRY, IRON_ORE_GEOMETRY, IRON_SHARDS, IRON_SHARD_GEOMETRIES, STONE_COLOR, WEAPON_VISUALS, WOOD_COLOR, createBarrelView, createFuelPipTexture, createGuideArrowView, makeMaterial,
+} from "./visuals/models";
+import type { BladeVisual } from "./visuals/models";
+import {
+  DAY_HEMI_GROUND, DAY_HEMI_INTENSITY, DAY_HEMI_SKY, DAY_SKY, DAY_SUN, DAY_SUN_INTENSITY, NIGHT_HEMI_GROUND, NIGHT_HEMI_SKY, NIGHT_SKY, NIGHT_SUN, smoothTerrainBlend, 
+} from "./visuals/palette";
+
 
 interface CampView {
   flame: THREE.Group;
   glow: THREE.Mesh<THREE.CircleGeometry, THREE.MeshBasicMaterial>;
-}
-
-interface WolfView {
-  group: THREE.Group;
-  /** Quaternius 狼的实例；资源没加载成功时是 null，此时 group 里是程序化替身。 */
-  animal: AnimalInstance | null;
-  /** 受击闪红要作用到的材质。狼模型有毛色与腹面两份，替身只有一份。 */
-  tinted: THREE.MeshStandardMaterial[];
-  /** 上一帧的世界坐标；模型朝向与步态都以真实位移为准，不直接照搬寻路的瞬时 facing。 */
-  lastPosition: THREE.Vector2;
-  /** 已平滑的显示朝向。狼停住时保持这个角度，避免原地左右甩身。 */
-  visualHeading: number;
-  /** 真实移动方向的低通结果；寻路连续左右试探时不会把抖动直接传给模型。 */
-  travelDirection: THREE.Vector2;
-  /** 0..1 的移动权重，给起步与停步留一个很短的缓冲。 */
-  moveAmount: number;
-  /** 头顶血条：受伤后短暂浮现。挂在场景根上而不是狼身上，免得继承死亡侧翻。 */
-  bar: THREE.Group;
-  barFill: THREE.Sprite;
-  /** 血条剩余显示秒数。 */
-  barTimer: number;
-  /** 上一帧的血量，用来发现"这一刻挨打了"。 */
-  lastHealth: number;
 }
 
 /**
@@ -49,344 +33,8 @@ interface WolfView {
 const PORTRAIT_CAMERA_SCALE = 1.08;
 const LANDSCAPE_CAMERA_SCALE = 0.64;
 
-/** 可搬运物的本色，以及被啃到快碎时染向的暗红。 */
-const STONE_COLOR = 0x748084;
-const WOOD_COLOR = 0x65432d;
-const BARRIER_DAMAGE_TINT = new THREE.Color(0x47231c);
-
-/* 参数固定的几何体跨实例共享，避免掉落物过期后持续遗留 GPU 缓冲。 */
-const DROP_HIDE_GEOMETRY = new THREE.CircleGeometry(0.62, 5);
-const DROP_MEAT_GEOMETRY = new THREE.DodecahedronGeometry(0.42, 0);
-const DROP_BONE_GEOMETRY = new THREE.CylinderGeometry(0.07, 0.07, 0.82, 6);
-const CACTUS_SPINE_GEOMETRY = new THREE.ConeGeometry(0.04, 0.2, 4);
-const CACTUS_ELBOW_GEOMETRY = new THREE.CapsuleGeometry(0.18, 0.34, 3, 6);
-const CACTUS_FLOWER_GEOMETRY = new THREE.IcosahedronGeometry(0.16, 0);
-
-/** [绕 Y 的方位, 离心距, 高度, 外倾角]；每座矿脉复用同一组几何体。 */
-const IRON_SHARDS: ReadonlyArray<readonly [number, number, number, number]> = [
-  [0.0, 0.0, 2.05, 0.0],
-  [1.9, 0.46, 1.42, 0.26],
-  [3.6, 0.52, 1.68, 0.19],
-  [5.2, 0.40, 1.15, 0.31],
-];
-const IRON_SHARD_GEOMETRIES = IRON_SHARDS.map(
-  ([, , height]) => new THREE.CylinderGeometry(0.05, 0.3, height, 5),
-);
-const IRON_ORE_GEOMETRY = new THREE.OctahedronGeometry(0.34, 0);
-
-/** 长角羚的沙褐主色。 */
-const ORYX_COAT = 0xc19a63;
-
 /** 动物素材下载的重试退避（毫秒）。长度 = 重试次数，所以一共尝试 3 次。 */
 const ANIMAL_ASSET_RETRY_BACKOFF: readonly number[] = [700, 1800];
-/** 长角羚的站立高度：2.3，比壮犬(1.7)高、比玩家(2.6)矮 —— 最值得追的那个剪影。 */
-const ORYX_HEIGHT = 2.3;
-
-/**
- * 狗的程序化替身。
- *
- * 只在 Wolf.glb 加载失败时用得上（GitHub Pages 从子目录发布，资源路径出过一次
- * 404）。**刻意做得很潦草**：它的存在意义是"别让夜里的狗变成隐形的"，
- * 不是备用美术方案 —— 做得越像，越会掩盖资源没加载成功这件事。
- */
-function createFallbackDog(color: number): { mesh: THREE.Object3D; material: THREE.MeshStandardMaterial } {
-  const material = makeMaterial(color, 0.95);
-  const group = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.17, 0.44, 3, 6), material);
-  body.rotation.z = Math.PI / 2;
-  body.position.y = 0.28;
-  body.castShadow = true;
-  group.add(body);
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.2, 0.18), material);
-  head.position.set(0.42, 0.36, 0);
-  group.add(head);
-  for (const [x, z] of [[0.24, 0.11], [0.24, -0.11], [-0.24, 0.11], [-0.24, -0.11]]) {
-    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.04, 0.28, 4), material);
-    leg.position.set(x, 0.14, z);
-    group.add(leg);
-  }
-  return { mesh: group, material };
-}
-
-const wolfBarScale = (wolf: WolfState): number => (
-  wolf.kind === "elite" ? 1.6 : wolf.kind === "large" ? 1.15 : 0.9
-);
-
-/** 头顶血条：受伤后显示多久。够看清掉了多少，又不至于夜里几十条一直挂着。 */
-const WOLF_BAR_SECONDS = 2.6;
-const WOLF_BAR_WIDTH = 1.15;
-const WOLF_BAR_HEIGHT = 0.15;
-
-/** 沿最短圆弧平滑角度，跨过 ±π 时不会整圈回转。 */
-const dampAngle = (current: number, target: number, speed: number, delta: number): number => {
-  const difference = Math.atan2(Math.sin(target - current), Math.cos(target - current));
-  return current + difference * (1 - Math.exp(-speed * delta));
-};
-
-/**
- * 每只狼一套血条材质，不共用 —— 淡出是逐条各自算的，共用材质会让全场血条一起闪。
- * 精灵本来就不合批，两个精灵两次绘制，隐藏时直接跳过，所以这点开销是值的。
- */
-const createWolfBar = (wolf: WolfState): { bar: THREE.Group; fill: THREE.Sprite } => {
-  const group = new THREE.Group();
-  const back = new THREE.Sprite(new THREE.SpriteMaterial({
-    color: 0x0a0f13, transparent: true, opacity: 0.72, depthWrite: false,
-  }));
-  const fill = new THREE.Sprite(new THREE.SpriteMaterial({
-    color: wolf.kind === "elite" ? 0xff8a3d : 0xe2564a, transparent: true, depthWrite: false,
-  }));
-  const barScale = wolfBarScale(wolf);
-  back.scale.set(WOLF_BAR_WIDTH * barScale + 0.06, WOLF_BAR_HEIGHT * barScale + 0.05, 1);
-  fill.scale.set(WOLF_BAR_WIDTH * barScale, WOLF_BAR_HEIGHT * barScale, 1);
-  // 填充画在底板之上；两者都不写深度，避免互相打架。
-  back.renderOrder = 8;
-  fill.renderOrder = 9;
-  group.add(back, fill);
-  group.visible = false;
-  return { bar: group, fill };
-};
-
-interface CritterView {
-  group: THREE.Group;
-  bodyMaterial: THREE.MeshStandardMaterial;
-  /** 只有长角羚用 Quaternius 的鹿；其余七种仍是程序化几何。 */
-  animal: AnimalInstance | null;
-  /** 没受击时该显示的颜色。程序化几何是白（顶点色自带配色），鹿是它的沙褐主色。 */
-  baseColor: number;
-}
-
-const makeMaterial = (color: THREE.ColorRepresentation, roughness = 0.9): THREE.MeshStandardMaterial => (
-  new THREE.MeshStandardMaterial({ color, roughness, flatShading: true })
-);
-
-/**
- * 汽油桶。**整张图上唯一的锈红色**——沙丘、砾石、枯木、铁矿全是黄褐到灰的
- * 一族，所以这个色相在远处就是一个"那边有东西"的信号。没有小地图，
- * 桶能不能被看见完全取决于它在沙色里跳不跳得出来。
- */
-function createBarrelView(): THREE.Group {
-  const group = new THREE.Group();
-  const shell = makeMaterial(0xb43a24, 0.65);
-  const band = makeMaterial(0x6f2416, 0.6);
-  const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.44, 0.44, 1.18, 12), shell);
-  drum.castShadow = true;
-  group.add(drum);
-  for (const y of [-0.3, 0.3]) {
-    const hoop = new THREE.Mesh(new THREE.CylinderGeometry(0.47, 0.47, 0.1, 12), band);
-    hoop.position.y = y;
-    group.add(hoop);
-  }
-  const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.14, 8), band);
-  cap.position.set(0.2, 0.62, 0);
-  group.add(cap);
-  return group;
-}
-
-/**
- * 车顶装油进度使用的桶形图标。白色主体由 SpriteMaterial.color 着色，
- * 深色桶箍保留轮廓，因此未点亮的格子在沙地和夜色里也都能读出来。
- */
-function createFuelPipTexture(): THREE.CanvasTexture {
-  const canvas = document.createElement("canvas");
-  canvas.width = 64;
-  canvas.height = 64;
-  const context = canvas.getContext("2d");
-  if (!context) throw new Error("fuel pip canvas context unavailable");
-
-  context.beginPath();
-  context.moveTo(20, 10);
-  context.lineTo(44, 10);
-  context.lineTo(49, 17);
-  context.lineTo(49, 47);
-  context.lineTo(44, 54);
-  context.lineTo(20, 54);
-  context.lineTo(15, 47);
-  context.lineTo(15, 17);
-  context.closePath();
-  context.fillStyle = "#ffffff";
-  context.fill();
-  context.strokeStyle = "#172522";
-  context.lineWidth = 4;
-  context.lineJoin = "round";
-  context.stroke();
-  for (const y of [20, 44]) {
-    context.beginPath();
-    context.moveTo(16, y);
-    context.lineTo(48, y);
-    context.stroke();
-  }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.minFilter = THREE.LinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-  texture.generateMipmaps = false;
-  return texture;
-}
-
-/**
- * 开局指路的浮动箭头，来自 main 分支的引导逻辑。
- * 尖端位于局部 y=0，摆放时可以直接使用目标顶部坐标。
- */
-function createGuideArrowView(): THREE.Mesh {
-  const head = new THREE.ConeGeometry(0.72, 0.84, 4);
-  head.rotateX(Math.PI);
-  head.translate(0, 0.42, 0);
-  const shaft = new THREE.CylinderGeometry(0.24, 0.24, 0.84, 4);
-  shaft.translate(0, 1.26, 0);
-  const geometry = mergeGeometries([head, shaft]);
-  head.dispose();
-  shaft.dispose();
-  if (!geometry) throw new Error("guide arrow geometry merge failed");
-
-  const arrow = new THREE.Mesh(
-    geometry,
-    new THREE.MeshStandardMaterial({
-      // 青绿色沿用卡车地环：它表示同一条通关路线，而不是油桶本身的颜色。
-      color: 0x2fe0cf,
-      emissive: 0x0f9c90,
-      roughness: 0.45,
-      metalness: 0,
-      flatShading: true,
-    }),
-  );
-  arrow.castShadow = false;
-  arrow.receiveShadow = false;
-  arrow.visible = false;
-  return arrow;
-}
-
-interface BladeVisual {
-  name: string;
-  /** 刃宽倍率，基准是求生匕首的 0.25。 */
-  width: number;
-  /** 刃长倍率，基准是求生匕首的 0.95。 */
-  length: number;
-  /** 剑是双刃对称，刀是单刃（背侧拉直）。 */
-  doubleEdged: boolean;
-  color: number;
-  roughness: number;
-  metalness: number;
-  gripColor: number;
-  emissive?: number;
-  emissiveIntensity?: number;
-  /** 三阶长剑的独立刃口 mesh 颜色。 */
-  edgeColor?: number;
-  /** 剑线连击时刃身发什么光。 */
-  comboGlow?: number;
-}
-
-/**
- * 七把武器的外观。
- *
- * 只有一个劈砍动画，七把武器挥起来是同一个动作 —— 所以**区分全靠剪影与颜色**。
- * 规则是色相分线、明度与自发光分阶：
- *
- *   刀线走冷色，越往上越"热"（铁被反复锻打）：生铁灰 → 淬蓝钢 → 暗铁 + 赤热纹
- *   剑线走暖色，越往上越"黑"（骨 → 牙 → 淬过的齿）：骨白 → 琥珀牙黄 → 墨黑 + 白刃口
- *
- * 刀越往上越宽越长（最宽 ×1.85），剑越往上越窄越长（最窄 ×0.70）。
- * 宽刀砍下去像斧，窄剑砍下去像削。
- */
-const WEAPON_VISUALS: Record<WeaponKind, BladeVisual> = {
-  "survival-knife": {
-    name: "SurvivalKnife", width: 1.00, length: 1.00, doubleEdged: false,
-    color: 0xb8c1bd, roughness: 0.42, metalness: 0.52, gripColor: 0x4b3023,
-  },
-
-  "saber-1": {
-    name: "IronCleaver", width: 1.35, length: 1.10, doubleEdged: false,
-    color: 0x8a9299, roughness: 0.62, metalness: 0.35, gripColor: 0x4b3023,
-  },
-  "saber-2": {
-    name: "ForgedBroadsaber", width: 1.55, length: 1.20, doubleEdged: false,
-    color: 0x6f8ba8, roughness: 0.34, metalness: 0.72, gripColor: 0x3e2a1c,
-  },
-  "saber-3": {
-    name: "SlagHeavysaber", width: 1.85, length: 1.30, doubleEdged: false,
-    color: 0x4a4f57, roughness: 0.30, metalness: 0.80, gripColor: 0x2f2119,
-    emissive: 0x8c2a10, emissiveIntensity: 0.55,
-  },
-
-  "sword-1": {
-    name: "BoneShortsword", width: 0.85, length: 1.05, doubleEdged: true,
-    color: 0xe4dcc4, roughness: 0.75, metalness: 0.05, gripColor: 0x5a4632,
-    comboGlow: 0xfff0d0,
-  },
-  "sword-2": {
-    name: "FangRapier", width: 0.75, length: 1.15, doubleEdged: true,
-    color: 0xd9a441, roughness: 0.55, metalness: 0.15, gripColor: 0x4e3a24,
-    comboGlow: 0xffc861,
-  },
-  "sword-3": {
-    name: "SplitToothLongsword", width: 0.70, length: 1.28, doubleEdged: true,
-    color: 0x2b2622, roughness: 0.45, metalness: 0.25, gripColor: 0x2a2119,
-    edgeColor: 0xf2ece0, comboGlow: 0xf2ece0,
-  },
-};
-
-const smoothTerrainBlend = (edge0: number, edge1: number, value: number): number => {
-  const t = clamp((value - edge0) / Math.max(0.0001, edge1 - edge0), 0, 1);
-  return t * t * (3 - 2 * t);
-};
-
-// 精英狼比大狼再大一档，但不再是全场唯一的 BOSS 剪影。
-/**
- * 三档狗的**站立高度**（世界单位）。模型按高度归一化到 1，所以这里就是高度本身。
- *
- * 尺子是玩家：玩家 2.6 高。于是野狗到腰（1.15）、壮犬到胸（1.7）、
- * 头犬比你还高一头（2.7）—— 等距视角下判断"这只咬不咬得动"靠的是剪影，不是血条，
- * 所以这三档必须一眼分得开。狼的高/长是 0.51，换算回体长是 2.3 / 3.3 / 5.3。
- */
-const wolfScale = (wolf: WolfState): number => (
-  wolf.kind === "elite" ? 2.7 : wolf.kind === "large" ? 1.7 : 1.15
-);
-
-/*
- * 昼夜光照配色表。**改这里就是改整个游戏的气质**，所以摊开写成常量而不是散在函数里。
- *
- * 白天走"暖主光 + 冷填充"，夜晚走"冷到底 + 一盏篝火"。见 syncDayNight 里那段。
- * 想回到 1.0.14 的全暖白天：DAY_SKY=d8bf8d、DAY_HEMI_SKY=ffeec4、
- * DAY_HEMI_GROUND=8a6a44、DAY_HEMI_INTENSITY=2.2、DAY_SUN_INTENSITY=3.2。
- */
-const DAY_SKY = new THREE.Color(0xc9c3b4);
-const DAY_HEMI_SKY = new THREE.Color(0xcdd8e6);
-const DAY_HEMI_GROUND = new THREE.Color(0x8a7250);
-const DAY_SUN = new THREE.Color(0xfff0cc);
-const DAY_HEMI_INTENSITY = 1.15;
-const DAY_SUN_INTENSITY = 4.1;
-
-const NIGHT_SKY = new THREE.Color(0x2c3d5c);
-const NIGHT_HEMI_SKY = new THREE.Color(0x8fa6cf);
-const NIGHT_HEMI_GROUND = new THREE.Color(0x3a4356);
-const NIGHT_SUN = new THREE.Color(0xa8bce0);
-
-/** 腹面与口鼻的浅色。跟主色同色相、抬明度，模型自带的 Main_Light 槽正好吃这个。 */
-const wolfBellyColor = (wolf: WolfState): number => {
-  if (wolf.kind === "elite") return 0x7d5a3f;
-  if (wolf.role === "guard") return 0x8e8f86;
-  if (wolf.kind === "large") return 0xc98d55;
-  return 0xf0d3a0;
-};
-
-/**
- * 三档狗的毛色。
- *
- * 分档规则是**明度**而不是色相：夜里只有篝火一盏光源，色相差在暗处基本读不出来，
- * 而明暗差还在。所以从白天的野狗到头犬是一路压暗，头犬几乎是黑褐色的一块。
- */
-const wolfBodyColor = (wolf: WolfState): number => {
-  if (wolf.kind === "elite") return 0x4a2f1e;
-  // 守巢犬单独一个色：它和白天的壮犬同为 large，但玩家要学会的是
-  // "巢边那三只不一样、碰它就得打完"。走**冷灰褐**而不是继续在暖褐里分深浅 ——
-  // 全场只有它们不是沙漠色系，远远一眼就能认出来那圈是谁在守着。
-  if (wolf.role === "guard") return 0x5b5f57;
-  if (wolf.kind === "large") return 0x8f5228;
-  if (wolf.role === "wild") return 0xd9a95f;
-  return wolf.raider ? 0xc07a34 : 0xcf9a56;
-};
-
-/** 猎物配色：整体压在沙色系里，靠明度和一点点色相区分，不抢狼的戏。 */
 export class GameRenderer {
   readonly canvas: HTMLCanvasElement;
 
@@ -395,15 +43,6 @@ export class GameRenderer {
   private world: WorldDefinition;
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.PerspectiveCamera(47, 1, 0.1, 320);
-  /*
-   * 低功耗档下，超过这个距离的狗和猎物直接不画。
-   *
-   * 45 米的依据：相机看得到的范围本来就有限，而雾（FogExp2 密度 0.0075）
-   * 在 45 米外已经把东西糊成背景色 —— 剔掉它们肉眼看不出来。
-   * 夜里一口气 30 只狗、白天 52 只猎物，绝大多数时刻都在这个半径之外。
-   * 注意只关**渲染**，模拟层照跑：狗该来还是会来，只是走到近处才画出来。
-   */
-  private static readonly LOW_POWER_DRAW_DISTANCE = 45;
 
   /** 触屏 / 窄屏走低功耗档：无 AA、pixelRatio 1、无实时阴影、远处实体剔除。 */
   private readonly lowPower: boolean;
@@ -462,9 +101,29 @@ export class GameRenderer {
   private readonly structureViews = new Map<number, THREE.Object3D>();
   /** 井顶水珠的浮动相位。 */
   private wellBob = 0;
-  private readonly wolfViews = new Map<number, WolfView>();
-  private readonly critterViews = new Map<number, CritterView>();
-  private readonly dropViews = new Map<number, THREE.Object3D>();
+  /**
+   * 会动的三类（狼、猎物、掉落物）的视图池。
+   *
+   * 端口用**适配器对象**而不是直接把 this 传进去，这样渲染器的字段一个都不用公开。
+   * 里面用 getter 是必需的：simulation 会被 resetRun 换掉，time 每帧在变。
+   */
+  private readonly creatures = this.createCreatureViews();
+
+  private createCreatureViews(): CreatureViews {
+    const renderer = this;
+    return new CreatureViews({
+      get scene() { return renderer.scene; },
+      get simulation() { return renderer.simulation; },
+      get time() { return renderer.time; },
+      get lowPower() { return renderer.lowPower; },
+      get wolfAsset() { return renderer.wolfAsset; },
+      get deerAsset() { return renderer.deerAsset; },
+      get dropHideMaterial() { return renderer.dropHideMaterial; },
+      get dropMeatMaterial() { return renderer.dropMeatMaterial; },
+      get dropBoneMaterial() { return renderer.dropBoneMaterial; },
+      worldHeight: (x, z) => renderer.worldHeight(x, z),
+    });
+  }
   /* 材质跟随渲染器实例共享；软重开不会为每份掉落物再造一套。 */
   private readonly dropHideMaterial = makeMaterial(0x7a4931, 1);
   private readonly dropMeatMaterial = makeMaterial(0x9e3f3d, 0.9);
@@ -669,9 +328,9 @@ export class GameRenderer {
     this.syncTrees();
     this.syncWells(delta);
     this.syncStructures();
-    this.syncCritters(delta);
-    this.syncWolves(delta);
-    this.syncDrops();
+    
+    this.creatures.sync(delta);
+    
     this.syncFires();
     // 排在 syncDayNight 之前：那一步要按这一步算出的 tutorialLight 去压环境光。
     this.updateTutorialLight(delta);
@@ -2372,329 +2031,6 @@ export class GameRenderer {
     tie.position.y = 1.15;
     group.add(tie);
     return group;
-  }
-
-  private syncCritters(delta: number): void {
-    const liveIds = new Set<number>();
-    for (const critter of this.simulation.critters) {
-      liveIds.add(critter.id);
-      let view = this.critterViews.get(critter.id);
-      if (!view) {
-        view = this.createCritterView(critter);
-        this.critterViews.set(critter.id, view);
-        this.scene.add(view.group);
-      }
-      if (this.lowPower) {
-        const far = Math.hypot(critter.x - this.simulation.player.x, critter.z - this.simulation.player.z)
-          > GameRenderer.LOW_POWER_DRAW_DISTANCE;
-        view.group.visible = !far;
-        if (far) continue;
-      }
-      const spec = CRITTER_SPECS[critter.kind];
-      const terrainY = this.worldHeight(critter.x, critter.z);
-      view.animal?.mixer.update(delta);
-      view.group.position.set(critter.x, terrainY, critter.z);
-      // 朝向走**最短弧**插值，不能直接赋值也不能对角度做朴素 lerp：
-      // 后者在 ±π 交界处会绕远路转一整圈，正好发生在猎物调头的那一刻。
-      // 模拟层已经限了转向速率（CritterSpec.turnRate），这里是第二层保险，
-      // 专治地形推挤造成的单帧抖动。
-      view.group.rotation.y = dampAngle(
-        view.group.rotation.y, -Math.atan2(critter.facing.z, critter.facing.x), 14, delta,
-      );
-      const fade = critter.mode === "dead" ? clamp(critter.deathTimer / 0.7, 0, 1) : 1;
-      view.group.scale.setScalar((view.animal ? ORYX_HEIGHT : spec.scale) * fade);
-      if (critter.mode === "dead") {
-        // 有 Death 片段的就让片段自己演；程序化几何没有动画，只能靠侧翻表达倒地。
-        // 两者都保留"缩小消失"，那是尸体退场的统一语言。
-        if (view.animal) view.animal.play("Death", { loop: false, fade: 0.08 });
-        else view.group.rotation.z = lerp(view.group.rotation.z, Math.PI / 2, delta * 8);
-      } else {
-        view.group.rotation.z = 0;
-        if (view.animal) {
-          // 逃跑用 Gallop、吃草用 Walk。播放速度跟着实际移速走 ——
-          // 长角羚吃草 1.4、逃跑 10.5，同一个 Walk 拿来两用会像开了快进。
-          view.animal.play(critter.mode === "flee" ? "Gallop" : "Walk", {
-            timeScale: clamp(critter.mode === "flee" ? spec.fleeSpeed / 7 : spec.grazeSpeed / 1.1, 0.6, 1.9),
-          });
-        } else {
-          // 使用连续的落脚曲线，避免 abs(sin) 在触地瞬间形成尖角，看起来像模型发抖。
-          const bounce = critter.mode === "flee" ? 0.07 : 0.012;
-          const rate = critter.mode === "flee" ? 10 : 2.5;
-          const stride = (1 - Math.cos(this.time * rate + critter.id * 0.83)) * 0.5;
-          view.group.position.y = terrainY + stride * bounce;
-        }
-      }
-      // 顶点色是被 material.color 乘上去的，所以程序化猎物平时保持纯白；
-      // 鹿没有顶点色，平时要保持它自己的沙褐主色。
-      view.bodyMaterial.color.setHex(critter.hurtFlash > 0 ? 0xff5a55 : view.baseColor);
-    }
-    for (const [id, view] of this.critterViews) {
-      if (liveIds.has(id)) continue;
-      this.disposeCritterView(view);
-      this.critterViews.delete(id);
-    }
-  }
-
-  private createCritterView(critter: CritterState): CritterView {
-    // 几何按种类共享（见 CritterModels 的缓存），材质每只一份 ——
-    // 受击闪红是逐只的，共享材质会让同种猎物一起变红。
-    const group = new THREE.Group();
-    // 长角羚是唯一一个**玩家会专门去追**的猎物（90 血 / 肉 + 皮 + 水），
-    // 也是唯一大到能看清动作的 —— 所以只有它值得一份带骨骼的素材。
-    // 其余七种都在半米上下，从等距视角看就是几个色块，程序化几何足够。
-    if (critter.kind === "oryx" && this.deerAsset) {
-      const animal = instantiateAnimal(this.deerAsset);
-      group.add(animal.root);
-      // 剑羚的配色：沙褐身子 + 近白的腹面 + 近黑的面部与腿纹。
-      // 素材自带的三个色槽正好对上，不用改一个顶点。
-      const main = animal.materials.get("Main");
-      const light = animal.materials.get("Main_Light");
-      const dark = animal.materials.get("Main_Dark");
-      if (main) main.color.setHex(ORYX_COAT);
-      if (light) light.color.setHex(0xefe3cd);
-      if (dark) dark.color.setHex(0x2e2620);
-      return { group, bodyMaterial: main ?? makeMaterial(ORYX_COAT, 0.95), animal, baseColor: ORYX_COAT };
-    }
-    const { mesh, material } = createCritterMesh(critter.kind);
-    group.add(mesh);
-    return { group, bodyMaterial: material, animal: null, baseColor: 0xffffff };
-  }
-
-  private syncWolves(delta: number): void {
-    const liveIds = new Set<number>();
-    for (const wolf of this.simulation.wolves) {
-      liveIds.add(wolf.id);
-      let view = this.wolfViews.get(wolf.id);
-      if (!view) {
-        view = this.createWolfView(wolf);
-        this.wolfViews.set(wolf.id, view);
-        this.scene.add(view.group);
-        this.scene.add(view.bar);
-      }
-      if (this.lowPower) {
-        const far = Math.hypot(wolf.x - this.simulation.player.x, wolf.z - this.simulation.player.z)
-          > GameRenderer.LOW_POWER_DRAW_DISTANCE;
-        // 远处的狗跳过全部同步：动画混合器、朝向插值、血条、材质染色都不用算。
-        // 近处的血条交回 syncWolfBar 决定（它只在受伤后亮 2.6 秒）。
-        view.group.visible = !far;
-        if (far) { view.bar.visible = false; continue; }
-      }
-      this.syncWolfBar(wolf, view, delta);
-      const movedX = wolf.x - view.lastPosition.x;
-      const movedZ = wolf.z - view.lastPosition.y;
-      const movedDistance = Math.hypot(movedX, movedZ);
-      // 只让真正的位移改变显示朝向。寻路会在障碍前左右试探 facing；狼没有移动时
-      // 跟着它转，会表现成站在原地高频甩身。
-      const movingNow = wolf.mode !== "dead" && movedDistance > Math.max(0.003, delta * 0.12);
-      if (movingNow && wolf.hurtFlash <= 0) {
-        const inverseDistance = 1 / movedDistance;
-        const directionBlend = 1 - Math.exp(-delta * 10);
-        view.travelDirection.x = lerp(view.travelDirection.x, movedX * inverseDistance, directionBlend);
-        view.travelDirection.y = lerp(view.travelDirection.y, movedZ * inverseDistance, directionBlend);
-        if (view.travelDirection.lengthSq() > 0.01) view.travelDirection.normalize();
-        const travelHeading = -Math.atan2(view.travelDirection.y, view.travelDirection.x);
-        const turnSpeed = wolf.mode === "chase" || wolf.mode === "retreating" ? 11 : 7;
-        view.visualHeading = dampAngle(view.visualHeading, travelHeading, turnSpeed, delta);
-      }
-      const actualSpeed = delta > 0 ? movedDistance / delta : 0;
-      const targetMoveAmount = movingNow ? clamp(actualSpeed / Math.max(wolf.speed, 0.1), 0, 1) : 0;
-      const movementBlend = 1 - Math.exp(-delta * (movingNow ? 18 : 14));
-      view.moveAmount = lerp(view.moveAmount, targetMoveAmount, movementBlend);
-      view.lastPosition.set(wolf.x, wolf.z);
-      view.group.position.set(wolf.x, this.worldHeight(wolf.x, wolf.z) + (wolf.mode === "dead" ? 0.2 : 0), wolf.z);
-      view.group.rotation.y = view.visualHeading;
-      view.group.scale.setScalar(wolfScale(wolf));
-      view.animal?.mixer.update(delta);
-      if (view.animal) {
-        // 手工摆骨头那一整套（迈腿、点头、张嘴、翘尾、倒地侧翻）全删了 ——
-        // 现在由素材自带的片段承担。侧翻尤其不能留：Death 片段本身就是倒地，
-        // 再叠一个 90° 侧滚会把狗翻到肚皮朝天。
-        view.group.rotation.z = 0;
-        this.syncWolfAnimation(wolf, view);
-      } else if (wolf.mode === "dead") {
-        view.group.rotation.z = lerp(view.group.rotation.z, Math.PI / 2, delta * 8);
-      } else {
-        view.group.rotation.z = 0;
-      }
-      const bodyColor = wolf.hurtFlash > 0 ? 0xe04a46
-        : wolf.mode === "retreating" ? 0x7d9094
-          : wolfBodyColor(wolf);
-      const bellyColor = wolf.hurtFlash > 0 ? 0xe04a46
-        : wolf.mode === "retreating" ? 0x9fb0b4
-          : wolfBellyColor(wolf);
-      view.tinted.forEach((material, index) => {
-        material.color.setHex(index === 0 ? bodyColor : bellyColor);
-        material.emissive.setHex(wolf.mode === "chase" ? 0x160000 : 0x000000);
-      });
-    }
-    for (const [id, view] of this.wolfViews) {
-      if (liveIds.has(id)) continue;
-      this.disposeWolfView(view);
-      this.wolfViews.delete(id);
-    }
-  }
-
-  /**
-   * 头顶血条的显示规则。
-   *
-   * 不常驻：夜里地图上有几十只狼，全挂血条就是一片红。只在**这一刻挨了打**之后
-   * 亮 2.6 秒，够看清掉了多少血、够判断还要几刀。所有狼统一遵守这条规则，
-   * 精英狼也不再占用一条常驻 BOSS 血槽。
-   */
-  private syncWolfBar(wolf: WolfState, view: WolfView, delta: number): void {
-    if (wolf.health < view.lastHealth) view.barTimer = WOLF_BAR_SECONDS;
-    view.lastHealth = wolf.health;
-    view.barTimer = Math.max(0, view.barTimer - delta);
-
-    const visible = wolf.mode !== "dead" && view.barTimer > 0;
-    view.bar.visible = visible;
-    if (!visible) return;
-
-    const barScale = wolfBarScale(wolf);
-    const ratio = clamp(wolf.health / wolf.maxHealth, 0, 1);
-    // 精灵缩放以中心为基准，所以填充条要一边缩一边往左挪，左端才钉得住。
-    const width = WOLF_BAR_WIDTH * barScale;
-    view.barFill.scale.set(width * ratio, WOLF_BAR_HEIGHT * barScale, 1);
-    view.barFill.position.x = -width * (1 - ratio) * 0.5;
-    // wolfScale 就是这只狗的世界高度，所以血条直接挂在"头顶再抬 0.45"。
-    view.bar.position.set(
-      wolf.x,
-      this.worldHeight(wolf.x, wolf.z) + wolfScale(wolf) + 0.45,
-      wolf.z,
-    );
-    // 最后 0.5 秒淡出，避免"啪"地消失。
-    const opacity = clamp(view.barTimer / 0.5, 0, 1);
-    view.barFill.material.opacity = opacity;
-    (view.bar.children[0] as THREE.Sprite).material.opacity = opacity * 0.72;
-  }
-
-  private syncDrops(): void {
-    const liveIds = new Set<number>();
-    for (const drop of this.simulation.drops) {
-      if (!drop.active) continue;
-      liveIds.add(drop.id);
-      let view = this.dropViews.get(drop.id);
-      if (!view) {
-        view = this.createDropView(drop);
-        this.dropViews.set(drop.id, view);
-        this.scene.add(view);
-      }
-      const age = this.simulation.elapsed - drop.createdAt;
-      const burst = clamp(age / 0.42, 0, 1);
-      const hop = Math.sin(burst * Math.PI) * 1.15;
-      view.position.set(drop.x, this.worldHeight(drop.x, drop.z) + 0.25 + hop, drop.z);
-      view.rotation.y = drop.burstAngle + this.time * 0.8;
-      const timeLeft = drop.expiresAt - this.simulation.elapsed;
-      view.visible = timeLeft > 20 || Math.floor(this.time * 7) % 2 === 0;
-    }
-    for (const [id, view] of this.dropViews) {
-      if (liveIds.has(id)) continue;
-      this.scene.remove(view);
-      this.dropViews.delete(id);
-    }
-  }
-
-  private createDropView(drop: WorldDrop): THREE.Object3D {
-    if (drop.kind === "hide") {
-      const hide = new THREE.Mesh(DROP_HIDE_GEOMETRY, this.dropHideMaterial);
-      hide.rotation.x = -Math.PI / 2;
-      hide.scale.set(1.25, 0.82, 1);
-      // 兽皮是一张贴地的圆片，影子和它自己基本重合 —— 低功耗档不投影，看不出来。
-      hide.castShadow = !this.lowPower;
-      return hide;
-    }
-    const group = new THREE.Group();
-    const meat = new THREE.Mesh(DROP_MEAT_GEOMETRY, this.dropMeatMaterial);
-    meat.scale.set(1.25, 0.65, 0.9);
-    // 夜里一场仗能掉几十份肉皮牙，全在玩家脚边 —— 正好落在阴影相机里。
-    meat.castShadow = !this.lowPower;
-    group.add(meat);
-    const bone = new THREE.Mesh(DROP_BONE_GEOMETRY, this.dropBoneMaterial);
-    bone.rotation.z = Math.PI / 2;
-    bone.position.y = 0.08;
-    group.add(bone);
-    return group;
-  }
-
-  private disposeWolfView(view: WolfView): void {
-    this.scene.remove(view.group);
-    this.scene.remove(view.bar);
-    view.animal?.dispose();
-    for (const material of view.tinted) material.dispose();
-    for (const child of view.bar.children) (child as THREE.Sprite).material.dispose();
-  }
-
-  private disposeCritterView(view: CritterView): void {
-    this.scene.remove(view.group);
-    view.animal?.dispose();
-    view.bodyMaterial.dispose();
-  }
-
-  private createWolfView(wolf: WolfState): WolfView {
-    const group = new THREE.Group();
-    const animal = this.wolfAsset ? instantiateAnimal(this.wolfAsset) : null;
-    const tinted: THREE.MeshStandardMaterial[] = [];
-    if (animal) {
-      group.add(animal.root);
-      // 只染毛色与腹面：鼻头和眼睛留素材原样，不然整只狗糊成一个色块。
-      const main = animal.materials.get("Main");
-      const light = animal.materials.get("Main_Light");
-      if (main) { main.color.setHex(wolfBodyColor(wolf)); tinted.push(main); }
-      if (light) { light.color.setHex(wolfBellyColor(wolf)); tinted.push(light); }
-    } else {
-      const fallback = createFallbackDog(wolfBodyColor(wolf));
-      group.add(fallback.mesh);
-      tinted.push(fallback.material);
-    }
-    const { bar, fill } = createWolfBar(wolf);
-    return {
-      group,
-      animal,
-      tinted,
-      lastPosition: new THREE.Vector2(wolf.x, wolf.z),
-      visualHeading: -Math.atan2(wolf.facing.z, wolf.facing.x),
-      travelDirection: new THREE.Vector2(wolf.facing.x, wolf.facing.z).normalize(),
-      moveAmount: 0,
-      bar,
-      barFill: fill,
-      barTimer: 0,
-      lastHealth: wolf.health,
-    };
-  }
-
-  /**
-   * 狗该播哪个片段。
-   *
-   * 驱动量用的是 `view.moveAmount`（真实位移 / 名义移速）而不是 `wolf.mode` ——
-   * 那是主线为了修"原地甩身"引进来的量，正好也是动画最该跟的量：
-   * 被地形卡住的狗 moveAmount 会掉到 0，于是它站着喘气而不是原地滑步。
-   */
-  private syncWolfAnimation(wolf: WolfState, view: WolfView): void {
-    const animal = view.animal;
-    if (!animal) return;
-    if (wolf.mode === "dead") {
-      animal.play("Death", { loop: false, fade: 0.08 });
-      return;
-    }
-    // 咬击：AI 咬完把冷却重置到 1.15 秒。取前 0.53 秒当扑咬窗口，配 2.5 倍速 ——
-    // Attack 片段本身 1.33 秒，正好在窗口里播完一遍。窗口再短就只能看到片段的
-    // 前三分之一，那看着不像咬，像抽搐。
-    if (wolf.mode === "chase" && wolf.attackCooldown > 0.62) {
-      animal.play("Attack", { loop: false, fade: 0.05, timeScale: 2.5 });
-      return;
-    }
-    if (view.moveAmount <= 0.035) {
-      animal.play("Idle");
-      return;
-    }
-    // 跑的播放速度跟着这只狗的实际移速走 —— 每夜 +4% 移速的成长曲线，
-    // 玩家因此能从"腿倒得更快"上看出来，而不只是数值上快了。
-    const pace = wolf.speed * view.moveAmount;
-    if (wolf.mode === "chase" || wolf.mode === "raid" || wolf.mode === "retreating") {
-      animal.play("Gallop", { timeScale: clamp(pace / 3.4, 0.7, 1.8) });
-      return;
-    }
-    animal.play("Walk", { timeScale: clamp(pace / 3.0, 0.6, 1.5) });
   }
 
   private syncFires(): void {

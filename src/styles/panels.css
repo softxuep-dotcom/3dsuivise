@@ -1,0 +1,449 @@
+/*
+ * 背包与装备面板：格子、造物按钮、分叉卡、连击弧。
+ *
+ * 从 styles.css 分出来的第 4 段。**顺序即层叠** —— styles.css 里的 @import
+ * 顺序就是原文件里的先后，改动顺序等于改动优先级，不要重排。
+ */
+.death-report small {
+  display: block;
+  margin-top: 3px;
+  color: #aebfc5;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+@media (max-width: 560px) {
+  .death-report { grid-template-columns: 1fr; }
+}
+
+.game-over-card p:not(.eyebrow) { margin: 12px 0 16px; color: #c3d3d8; line-height: 1.5; font-size: 15px; }
+
+.victory-card .eyebrow { color: #ffd479; }
+.victory-card h2 { color: #fff4d8; }
+.victory-card p:not(.eyebrow) { margin: 12px 0 16px; color: #d9d0bb; line-height: 1.5; font-size: 15px; }
+
+.inventory-overlay {
+  z-index: 35;
+  background: rgba(5, 10, 14, .68);
+  overflow: auto;
+}
+
+.backpack-card {
+  width: min(560px, 92vw);
+  padding: 24px;
+  border: 1px solid rgba(221, 239, 245, .2);
+  border-radius: 20px;
+  background: linear-gradient(150deg, rgba(20, 33, 42, .98), rgba(10, 18, 24, .98));
+  box-shadow: 0 35px 100px rgba(0,0,0,.5);
+}
+
+.backpack-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.backpack-card h2 {
+  margin: 0;
+  color: #f5f3e9;
+  font-size: 32px;
+  letter-spacing: .12em;
+}
+
+.close-button,
+.craft-button {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: #e9f3f5;
+  background: rgba(255,255,255,.07);
+  cursor: pointer;
+}
+
+.close-button { padding: 8px 14px; }
+
+.equipment-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+/*
+ * 标签在上、值在下，**不并排**。
+ *
+ * 原先是 flex + space-between：一列在手机上只有约 100px，而值可以长到
+ * "Knife · Attack 30"。两边各自换行之后，标签会垂直居中卡进值的两行之间，
+ * 出来是「Knife · / Weapon / Attack 30」这种读不出主谓的东西。
+ * 竖排就没有这个问题：一行标签、一到两行值，多长都只是往下走。
+ */
+.equipment-row > div {
+  display: grid;
+  gap: 3px;
+  align-content: start;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255,255,255,.035);
+  min-width: 0;
+}
+
+.equipment-row span {
+  color: #7e969e;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+
+.equipment-row strong {
+  color: #f1e7d1;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.3;
+  /* 值本身可能带 " · " 分隔的两段，允许换行但不许撑破格子。 */
+  overflow-wrap: anywhere;
+}
+
+/*
+ * 四条属性，四列 —— 原先写的是三列，于是第四个「Defence」永远单独掉一行、
+ * 还被拉成整行宽，看着像个没放对地方的按钮。
+ */
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin: -4px 0 14px;
+}
+
+.stat-row span {
+  display: grid;
+  gap: 2px;
+  padding: 7px 4px;
+  border-radius: 8px;
+  background: rgba(124, 151, 157, .08);
+  text-align: center;
+  min-width: 0;
+}
+
+.stat-row i {
+  color: #7e969e;
+  font-size: 9px;
+  font-weight: 800;
+  font-style: normal;
+  letter-spacing: .06em;
+  overflow-wrap: anywhere;
+  text-transform: uppercase;
+}
+
+.stat-row b {
+  color: #f2d29e;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.inventory-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 9px;
+}
+
+.inventory-slot {
+  position: relative;
+  min-height: 82px;
+  padding: 8px;
+  border: 1px solid rgba(207, 229, 236, .18);
+  border-radius: 12px;
+  background: rgba(2, 9, 13, .38);
+  color: #f2f6f7;
+  cursor: pointer;
+}
+
+.inventory-slot:not(:empty):hover { border-color: rgba(255, 168, 79, .65); background: rgba(255, 146, 57, .08); }
+.inventory-slot.empty { cursor: default; opacity: .56; }
+.inventory-slot .item-icon { display: block; width: 30px; height: 30px; margin: 0 auto 3px; }
+.inventory-slot .item-name { display: block; color: #bcd0d6; font-size: 10px; }
+.inventory-slot .item-count { position: absolute; right: 8px; bottom: 6px; font-size: 13px; font-weight: 900; }
+
+.craft-button {
+  width: 100%;
+  margin-top: 14px;
+  padding: 11px;
+  border-color: rgba(196, 151, 91, .4);
+  background: rgba(108, 72, 39, .44);
+  color: #f0d4ac;
+}
+
+.craft-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+/* === 装备升级区 ===
+   三种形态共用同一个容器：分叉卡（两栏）、升级卡（当前↓下阶）、满级总览。 */
+.upgrade-slot { margin-top: 10px; }
+.upgrade-head { margin: 0 0 5px; color: #91a9b1; font-size: 11px; letter-spacing: .04em; }
+/* 未解锁那一行：压暗一档，说明它是"以后会有"，不是"现在坏了"。 */
+.upgrade-head.locked { color: #6d818a; font-style: italic; letter-spacing: 0; }
+.tier-pips { color: #d7c08a; letter-spacing: .12em; }
+
+.fork-card { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.fork-column {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 9px 10px; border-radius: 8px;
+  background: rgba(18, 26, 30, .58);
+  /* 左边这道色条和世界里那把刀是同一个颜色 —— 一眼对得上。 */
+  border-left: 3px solid var(--line, #8a8072);
+}
+.fork-title { color: var(--line, #f1e7d1); font-size: 13px; }
+.fork-personality { color: #b9c9ce; font-size: 11px; line-height: 1.5; }
+.fork-item { color: #f1e7d1; font-size: 12px; margin-top: 3px; }
+.fork-blurb, .fork-finale { color: #849ba5; font-size: 10px; line-height: 1.45; }
+.fork-cost { display: flex; flex-wrap: wrap; gap: 6px; font-size: 10px; }
+.fork-cost .ok, .fork-fire .ok { color: #8fbf86; }
+.fork-cost .missing, .fork-fire .missing { color: #d08b6a; }
+.fork-fire { font-size: 10px; }
+.fork-finale { margin-top: 2px; }
+
+.upgrade-card {
+  display: flex; flex-direction: column; gap: 5px;
+  padding: 9px 10px; border-radius: 8px;
+  background: rgba(18, 26, 30, .58);
+  border-left: 3px solid var(--line, #8a8072);
+}
+.upgrade-row { display: flex; align-items: baseline; gap: 7px; font-size: 11px; }
+.upgrade-row em { color: #6f858c; font-style: normal; font-size: 10px; min-width: 24px; }
+.upgrade-row b { color: #d6cbb2; }
+.upgrade-row span { color: #849ba5; font-size: 10px; }
+.upgrade-row.next b { color: var(--line, #f1e7d1); }
+.upgrade-arrow { color: #4f6068; font-size: 10px; margin-left: 26px; line-height: 1; }
+.upgrade-card.maxed span { color: #849ba5; font-size: 10px; }
+
+.upgrade-slot button {
+  margin-top: 4px; padding: 7px; border: 0; border-radius: 6px;
+  background: rgba(122, 95, 56, .82); color: #f6ecd8;
+  font: inherit; font-size: 11px; cursor: pointer;
+}
+.upgrade-slot button:disabled { opacity: .4; cursor: default; }
+.switch-row { display: flex; gap: 8px; margin-top: 6px; }
+.switch-button {
+  flex: 1; background: rgba(30, 40, 45, .8) !important;
+  color: var(--line, #b9c9ce) !important; font-size: 10px !important;
+}
+.confirm-bar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-top: 6px; padding: 8px 10px; border-radius: 7px;
+  background: rgba(96, 40, 28, .55); border-left: 3px solid #c2603c;
+}
+.confirm-bar span { flex: 1 1 100%; color: #f0cdb8; font-size: 10px; line-height: 1.5; }
+.confirm-bar button { flex: 1; margin-top: 0; }
+
+/* 攻击按钮外圈的连击弧。conic-gradient 直接按层数扫出扇形，不需要 SVG。 */
+.combo-arc {
+  position: absolute; inset: -4px; border-radius: 50%; pointer-events: none;
+  opacity: 0; transition: opacity .12s linear;
+  background: conic-gradient(var(--combo-color, #ffe6b0) calc(var(--combo, 0) * 360deg), transparent 0);
+  -webkit-mask: radial-gradient(circle, transparent 0 calc(100% - 3px), #000 calc(100% - 3px));
+  mask: radial-gradient(circle, transparent 0 calc(100% - 3px), #000 calc(100% - 3px));
+}
+.combo-arc.active { opacity: 1; }
+.combo-arc.full { animation: combo-breathe 1.1s ease-in-out infinite; }
+@keyframes combo-breathe { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+
+.craft-button:disabled { opacity: .4; cursor: default; }
+/*
+ * 说明段落左对齐，不居中。居中排版只适合两三行的短句；这是一段五六行的连续说明，
+ * 居中之后每一行的起点都不一样，眼睛每换一行都要重新找头 —— 长段落最难读的排法。
+ */
+.inventory-help {
+  margin: 12px 2px 0;
+  color: #849ba5;
+  font-size: 10px;
+  line-height: 1.65;
+  text-align: left;
+}
+
+#touch-controls { display: none; }
+
+@media (pointer: coarse), (max-width: 760px) {
+  .left-stack {
+    top: max(10px, env(safe-area-inset-top));
+    left: max(10px, env(safe-area-inset-left));
+    gap: 8px;
+    /* 触屏档右侧状态栏收窄到 142px，左列的预算相应放宽。 */
+    max-width: min(300px, 38vw);
+  }
+
+  .objective-chip { padding: 8px 10px; }
+  .objective-chip strong { font-size: 12px; }
+  .status-strip {
+    top: max(10px, env(safe-area-inset-top));
+    right: max(10px, env(safe-area-inset-right));
+    width: 142px;
+    padding: 8px;
+  }
+
+  /*
+   * 标签轨道 28px → 46px：中文四字在 9px 下只有 18px，当初根本没留余量；
+   * 英文 "Warmth" 是 37.1px、最长的 "Stamina" 约 41px，都装不进 28px。
+   * 多占的 18px 从进度条的 1fr 里出，它还剩 73px，依然读得出刻度。
+   */
+  .meter { grid-template-columns: 46px 1fr; gap: 5px; margin-bottom: 5px; font-size: 9px; }
+  .meter em { display: none; }
+  /*
+   * gap 6 → 4：justify-content: space-between 把 gap 当硬下限，
+   * 英文四个标签在 6px 间距下会冲出 142px 面板。
+   */
+  .supply-line { gap: 4px; margin-bottom: 4px; padding: 3px 5px; font-size: 9px; }
+  .top-stack { top: max(10px, env(safe-area-inset-top)); gap: 6px; }
+  .clock { padding: 5px 10px; }
+  .toast { padding: 7px 12px; font-size: 12px; }
+  .status-pill { padding: 5px 11px; font-size: 10px; }
+
+  /*
+   * 触屏上的行动提示挪到右下"行动"键的正上方、右对齐。
+   * 原先它吊在屏幕底部正中，在矮横屏上等于落进画面中央；而且提示里的按键标签
+   * 和下面那颗按钮说的是同一件事 —— 那份重复由 HudController 去掉，这里只留细节文案。
+   */
+  .prompt {
+    left: auto;
+    right: max(20px, env(safe-area-inset-right));
+    bottom: calc(max(24px, env(safe-area-inset-bottom)) + 88px);
+    max-width: min(58vw, 320px);
+    padding: 7px 12px;
+    transform: none;
+    font-size: 11px;
+    text-align: right;
+  }
+
+  #touch-controls {
+    position: absolute;
+    z-index: 8;
+    inset: 0;
+    display: block;
+    pointer-events: none;
+  }
+
+  /*
+   * 摇杆是**纯显示**的：pointer-events 关掉，触摸一律落到底下的 canvas，
+   * 由 InputController.startJoystick 把它挪到手指落点（见那里的注释）。
+   * 角落里这个位置只是"待机位"，让玩家知道左半屏能推。
+   */
+  .joystick {
+    position: absolute;
+    left: max(20px, env(safe-area-inset-left));
+    bottom: max(22px, env(safe-area-inset-bottom));
+    width: 104px;
+    height: 104px;
+    border: 1px solid rgba(255,255,255,.18);
+    border-radius: 50%;
+    background: rgba(11, 19, 25, .32);
+    box-shadow: inset 0 0 24px rgba(255,255,255,.03);
+    pointer-events: none;
+    opacity: .5;
+    transition: opacity .18s ease;
+  }
+
+  /* 推着的时候：left/top 由 JS 写成行内样式，bottom 必须让开。 */
+  .joystick.floating {
+    bottom: auto;
+    opacity: 1;
+    transition: none;
+  }
+
+  .joystick i {
+    position: absolute;
+    top: 31px;
+    left: 31px;
+    width: 42px;
+    height: 42px;
+    border: 1px solid rgba(255,255,255,.25);
+    border-radius: 50%;
+    background: rgba(198, 225, 233, .3);
+    box-shadow: 0 5px 15px rgba(0,0,0,.2);
+  }
+
+  .bottom-right {
+    right: max(20px, env(safe-area-inset-right));
+    bottom: max(24px, env(safe-area-inset-bottom));
+  }
+
+  /*
+   * 这里只放**两个朝向都要的**东西：显示、间距、触控尺寸。
+   * 排布方式（横屏弧形 / 竖屏两层）各自写在下面的朝向块里 ——
+   * 以前弧形几何写在这个共享块里，竖屏只能靠"把它清零"来自保，
+   * 于是每次调横屏都会顺手改到竖屏的基线。
+   */
+  .action-buttons { display: flex; align-items: flex-end; gap: 8px; }
+  .bottom-right { gap: 8px; }
+  .utility-buttons { gap: 6px; align-items: flex-end; }
+  /*
+   * 四颗键统一成圆之后，直径就是触控尺寸，不再需要靠 padding 把高度顶上去
+   * （旧版体温键是圆角矩形，7px padding 下只有 29px 高，远低于 44pt 下限）。
+   * 下面几档只调直径，四颗一起调 —— 漏掉任何一颗，同一道弧上就会出现两种大小。
+   */
+  .utility-button { font-size: 9px; }
+  .utility-button b { font-size: 11px; }
+
+  .intro-card { padding: 25px 20px 20px; }
+  .verb-row { gap: 6px; }
+  .verb-row span { padding: 10px 5px; font-size: 10px; }
+}
+
+/*
+ * 竖屏。
+ * 本作按横屏设计，但不阻断竖屏游玩。竖屏没有横向余量：375px 宽的屏幕上，
+ * 顶部中央栏和右上状态栏必然抢同一段横向空间。所以整条中央栏改为**沉到两个角面板下面**
+ * 靠左排列 —— 它不再和任何东西争位置，也不用再为每个子元素各算一次偏移。
+ */
+@media (pointer: coarse) and (orientation: portrait),
+       (max-width: 760px) and (orientation: portrait) {
+  /*
+   * 中央栏改为**吊在行动提示上方、向上生长**。
+   * 竖屏顶部两个角面板加起来占掉 10~309px，而它们的高度都随内容变（状态徽章、说明行、
+   * 目标文案换行），任何写死的 top 都只是在赌当下这一屏 —— 上一版赌输了，正好压在两者身上。
+   * 底部锚点则相反：往上生长的方向全是空地，最坏情况也够不到状态栏。
+   */
+  /*
+   * 曾经这里把四键拆成两层，因为一排要 282px，而 375px 宽减去摇杆占的 124px 不够。
+   * 弧形排布之后不用拆了：**四颗在纵向上是错开的，横向就可以叠着放**。
+   * 收掉组间距、让两组各自往右咬进去一点，总宽压到约 240px，塞得进 251px 的净空。
+   *
+   * 摇杆那 124px 现在也只是个待机位的视觉标记 —— 浮动摇杆的触发区是左半屏，
+   * 见 InputController.startJoystick，不再是一块必须让开的死区。
+   *
+   * 下面两个 bottom 偏移和动作簇的高度是连着算的（数字都是量出来的，别凭感觉改）：
+   *   动作簇 24..163 → 行动提示 176..207 → 中央栏从 219 起往上长。
+   * 两层的总高 139px 来自：动作键 78 + 层间距 10 + 工具键 51。
+   * 加大 .utility-button 的 padding 会把这条链整体抬高，改之前先量。
+   */
+  /*
+   * **竖屏不用弧形，改回两层。**
+   *
+   * 弧形是横屏的解法：它把四颗键沿拇指转动轨迹向左铺开，而横屏有那个宽度。
+   * 竖屏只有 390px，四颗一横排要 239px，左边缘会顶到 124px 处的摇杆待机位
+   * （实测只剩 7px 间隙）—— 体温和背包被推到屏幕中下方，那是**左手拇指的地盘**，
+   * 右手够不舒服、左手还容易误碰。
+   *
+   * 竖屏真正富裕的是纵向，所以还是两层：工具键(体温/背包)在上、动作键在下，
+   * 两层都右对齐，整簇待在右拇指的扇形里。移除暂停键之后上层从三颗降到两颗，
+   * 这一层的宽度本来就宽松了。
+   */
+  .prompt { bottom: calc(max(24px, env(safe-area-inset-bottom)) + 210px); }
+
+  .top-stack {
+    top: auto;
+    bottom: calc(max(24px, env(safe-area-inset-bottom)) + 253px);
+    left: max(10px, env(safe-area-inset-left));
+    align-items: flex-start;
+    max-width: calc(100vw - 20px);
+    transform: none;
+  }
+
+  /* Toast 独立居中悬在角色上方，不跟中央栏沉进左下角或拇指操作区。 */
+  #toast {
+    position: fixed;
+    left: 50%;
+    bottom: 62%;
+    width: max-content;
+    max-width: min(84vw, 320px);
+    transform: translateX(-50%);
+  }
+}
