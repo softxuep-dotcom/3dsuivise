@@ -20,9 +20,16 @@ describe("Poki 进度节点上报", () => {
 
   /** 假背包：材料节点只读 getInventoryCount，别的都用不到。 */
   let bag: Record<string, number>;
+  /** 白天节点只在 day 1 的白天收口，所以假 sim 要能表达相位。 */
+  let phase: { day: number; phase: "day" | "night"; clockStarted: boolean };
   const world = {
     get simulation() {
-      return { getInventoryCount: (k: string) => bag[k] ?? 0 } as unknown as GameSimulation;
+      return {
+        getInventoryCount: (k: string) => bag[k] ?? 0,
+        get day() { return phase.day; },
+        get phase() { return phase.phase; },
+        get clockStarted() { return phase.clockStarted; },
+      } as unknown as GameSimulation;
     },
     measure(category: string, what: string, action: ProgressAction) {
       calls.push(`${category}/${what} ${action}`);
@@ -39,6 +46,7 @@ describe("Poki 进度节点上报", () => {
   beforeEach(() => {
     calls = [];
     bag = {};
+    phase = { day: 1, phase: "day", clockStarted: false };
     progress = new RunProgress(world);
     progress.beginRun();
     calls = [];   // 开局那一批 start 各用例自己按需检查，别污染后面的断言
@@ -51,7 +59,35 @@ describe("Poki 进度节点上报", () => {
       "fuel/1 start", "equip/first start",
       "mat/hide start", "mat/wood2 start", "equip/ready start",
       "camp/fire start", "ui/pack start",
+      "day1/move start", "day1/attack start", "day1/kill start", "day1/wood start",
     ]);
+  });
+
+  it("第一个白天的四拍：迈步、攻击、击杀、捡柴", () => {
+    phase.clockStarted = true;
+    feed({ type: "attack" });
+    expect(calls).toContain("day1/move complete");
+    expect(calls).toContain("day1/attack complete");
+    feed({ type: "critter-killed", critterId: 1, kind: "beetle" });
+    expect(calls).toContain("day1/kill complete");
+    feed({ type: "pickup", kind: "wood" });
+    expect(calls).toContain("day1/wood complete");
+  });
+
+  it("入夜之后再做到就不算 —— 那 40 秒没做到就是没做到", () => {
+    // 天黑：还开着的白天节点全部收成 fail
+    feed({ type: "phase", phase: "night", day: 1 });
+    expect(calls).toContain("day1/attack fail");
+    expect(calls).toContain("day1/kill fail");
+    calls = [];
+    phase.phase = "night";
+    feed({ type: "attack" }, { type: "pickup", kind: "wood" });
+    expect(calls.some((c) => c.startsWith("day1/"))).toBe(false);
+  });
+
+  it("没迈过第一步就天黑（挂着没动的人），day1/move 收 fail", () => {
+    feed({ type: "phase", phase: "night", day: 1 });
+    expect(calls).toContain("day1/move fail");
   });
 
   it("拿到兽皮就收口 mat/hide；但只有皮没柴，equip/ready 不收", () => {

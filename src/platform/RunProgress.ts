@@ -66,6 +66,29 @@ const EQUIP_READY: Node = "equip|ready";
 const CAMP_FIRE: Node = "camp|fire";
 const UI_PACK: Node = "ui|pack";
 
+/*
+ * 第一个白天的四拍。
+ *
+ * 731 局实测：645 局开跑，只有 412 局撑到入夜 —— **36% 在第一个白天就结束了**。
+ * 而第一个白天只有 **40 秒**（FIRST_DAY_DURATION），我们对这 40 秒内部零分辨率：
+ * 漏斗里最靠前的节点是 fuel|1，它整局挂着，说不出人卡在哪一拍。
+ *
+ * 这四个把那 40 秒拆开，都是现成事件，纯观测不改行为：
+ *
+ *   day1|move    迈第一步     —— 分开"根本没进游戏"和"进了但走了"
+ *   day1|attack  按过攻击键   —— 知不知道有攻击这回事
+ *   day1|kill    打死过东西   —— 按了，但打得中吗
+ *   day1|wood    捡到第一根柴 —— 唯一的燃料，也是 sword-1 缺的那两根
+ *
+ * 全部在**第一个白天之内**收口：入夜之后再做到就不算了（见 handle 里的相位判断），
+ * 否则它们会退化成"整局有没有做过"，失去"这 40 秒够不够用"的意义。
+ */
+const DAY1_MOVE: Node = "day1|move";
+const DAY1_ATTACK: Node = "day1|attack";
+const DAY1_KILL: Node = "day1|kill";
+const DAY1_WOOD: Node = "day1|wood";
+const DAY1_NODES = [DAY1_MOVE, DAY1_ATTACK, DAY1_KILL, DAY1_WOOD] as const;
+
 /** sword-1 = 兽皮×1 + 枯木×2，是全部一阶里最便宜、且不要火的一件。 */
 const READY_HIDE = 1;
 const READY_WOOD = 2;
@@ -145,6 +168,7 @@ export class RunProgress {
     this.start(EQUIP_READY);
     this.start(CAMP_FIRE);
     this.start(UI_PACK);
+    for (const node of DAY1_NODES) this.start(node);
   }
 
   /**
@@ -165,6 +189,27 @@ export class RunProgress {
    * 枯木是从地上捡的、还有别的路径会改背包，逐个去认容易漏。
    * 这几个检查都是读三个整数 + Set 查找，一局几百次事件也无所谓。
    */
+  /**
+   * 收口一个白天节点。只在**第一个白天之内**算数 —— 入夜之后再做到就不收，
+   * 让它落进 fail（那正是"这 40 秒没做到"）。
+   */
+  private closeDay1(node: Node): void {
+    const sim = this.ctx.simulation;
+    if (sim.day !== 1 || sim.phase !== "day") return;
+    this.close(node, "complete");
+  }
+
+  /**
+   * 玩家迈出了第一步。
+   *
+   * 用 clockStarted 而不是"有没有位移"：世界时钟就是被第一次真实移动打开的
+   * （见 GameSimulation.noteActivity），语义正好是"他真的开始玩了"。
+   * 每个事件查一次，幂等。
+   */
+  private checkStarted(): void {
+    if (this.ctx.simulation.clockStarted) this.closeDay1(DAY1_MOVE);
+  }
+
   private checkMaterials(): void {
     const sim = this.ctx.simulation;
     const hide = sim.getInventoryCount("hide");
@@ -188,8 +233,16 @@ export class RunProgress {
     switch (event.type) {
       case "phase":
         // 第一夜是这个游戏的闸门，单独立一个节点。
-        if (event.phase === "night" && event.day === 1) this.start(NIGHT_ONE);
+        if (event.phase === "night" && event.day === 1) {
+          this.start(NIGHT_ONE);
+          // 白天那四拍到此为止：还开着的就是"这 40 秒没做到"，收成 fail。
+          for (const node of DAY1_NODES) this.close(node, "fail");
+        }
         else if (event.phase === "day" && event.day === 2) this.close(NIGHT_ONE, "complete");
+        break;
+
+      case "pickup":
+        if (event.kind === "wood") this.closeDay1(DAY1_WOOD);
         break;
 
       case "fuel-loaded": {
@@ -202,6 +255,15 @@ export class RunProgress {
       case "craft-weapon":
       case "craft-coat":
         this.close(EQUIP_FIRST, "complete");
+        break;
+
+      case "attack":
+        this.closeDay1(DAY1_ATTACK);
+        break;
+
+      case "critter-killed":
+      case "wolf-killed":
+        this.closeDay1(DAY1_KILL);
         break;
 
       case "feed-fire":
@@ -235,6 +297,7 @@ export class RunProgress {
       default:
         break;
     }
+    this.checkStarted();
     this.checkMaterials();
   }
 }
