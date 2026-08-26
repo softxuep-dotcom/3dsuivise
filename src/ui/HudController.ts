@@ -233,6 +233,12 @@ export class HudController {
   private inventoryOpen = false;
   private adPlaying = false;
   private paused = false;
+  /**
+   * 三选一弹层开着没有。**并进 isGameplayBlocked** —— 弹层期间世界要冻结
+   * （昼夜、代谢、狼、移动、攻击全停），行为和打开背包一致。
+   * 由 main.ts 每帧灌进来：真相在 FuelPerkOverlay，这里只是个镜像。
+   */
+  private fuelPerkOpen = false;
   private readonly pauseOverlay = required<HTMLElement>("pause-overlay");
   private readonly reviveButton = required<HTMLButtonElement>("revive-button");
   private lastPlatformIdle = false;
@@ -322,7 +328,12 @@ export class HudController {
 
   /** 模拟层是否应冻结。背包打开时世界仍然需要暂停。 */
   isGameplayBlocked(): boolean {
-    return this.inventoryOpen || this.adPlaying || this.paused;
+    return this.inventoryOpen || this.adPlaying || this.paused || this.fuelPerkOpen;
+  }
+
+  /** 三选一弹层的开合。main.ts 每帧同步一次。 */
+  setFuelPerkOpen(open: boolean): void {
+    this.fuelPerkOpen = open;
   }
 
   /**

@@ -493,3 +493,119 @@ html[lang="vi"] .pause-card h2 { letter-spacing: .04em; }
 }
 
 .death-report-advice strong { color: #ffe0b8; font-size: 13px; }
+
+/*
+ * 搬油三选一。规格见 docs/搬油三选一-开发交接.md §8 / §9。
+ *
+ * 三条线各有一个色相：搬运沙黄、战斗锈红、生存青绿。**颜色只辅助分类** ——
+ * 卡面的名称和效果句必须自足，色盲玩家和黑白截图里都要读得懂。
+ *
+ * 卡片固定三层信息：路线 / 名称 / 一句效果，外加一行层数。
+ * 层数那一行是唯一能区分「同一张卡第二次出现」的东西，不能省。
+ */
+.fuel-perk-overlay { z-index: 60; }
+
+.fuel-perk-card {
+  width: min(760px, 94vw);
+  padding: 20px 22px 22px;
+  border: 1px solid rgba(222, 240, 246, .2);
+  border-radius: 22px;
+  background: linear-gradient(150deg, rgba(18, 29, 37, .97), rgba(10, 16, 22, .96));
+  box-shadow: 0 35px 100px rgba(0, 0, 0, .5);
+  text-align: center;
+}
+
+.fuel-perk-card h2 {
+  margin: 2px 0 16px;
+  font-size: clamp(19px, 3.4vw, 26px);
+  letter-spacing: .04em;
+  line-height: 1.2;
+}
+
+/*
+ * 桌面和横屏三张横排，竖屏纵向排 —— 竖屏上三张横排每张只有 30vw，
+ * 长语种（德/俄/越）的效果句会挤成四五行。
+ */
+.fuel-perk-choices {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.fuel-perk-choice {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-height: 128px;
+  padding: 14px 12px 12px;
+  border: 1px solid rgba(232, 213, 176, .3);
+  border-radius: 16px;
+  background: linear-gradient(160deg, rgba(31, 50, 51, .9), rgba(11, 20, 23, .92));
+  color: #f4efe3;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform .12s ease, border-color .12s ease;
+}
+.fuel-perk-choice:hover,
+.fuel-perk-choice:focus-visible { transform: translateY(-3px); outline: none; }
+
+/* 键盘角标：1 / 2 / 3。触屏上没用，但留着也不碍事（右上角，卡片内）。 */
+.fuel-perk-key {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  min-width: 17px;
+  padding: 1px 5px;
+  border: 1px solid rgba(255, 255, 255, .26);
+  border-radius: 6px;
+  background: rgba(12, 26, 32, .9);
+  color: #cfe4ea;
+  font-size: 9px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.fuel-perk-line {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+.fuel-perk-name { font-size: 15px; letter-spacing: .02em; }
+.fuel-perk-desc { color: #c3d3d8; font-size: 11px; line-height: 1.45; }
+.fuel-perk-level {
+  margin-top: auto;
+  color: #8fa6ad;
+  font-size: 10px;
+  letter-spacing: .06em;
+}
+
+/* 三条线的色相。只染边框、路线标签和一道顶光，正文颜色不动。 */
+.fuel-perk-choice.line-carry   { border-color: rgba(233, 196, 122, .5); }
+.fuel-perk-choice.line-combat  { border-color: rgba(226, 122, 96, .5); }
+.fuel-perk-choice.line-survival{ border-color: rgba(116, 214, 205, .5); }
+.fuel-perk-choice.line-carry   .fuel-perk-line { color: #e9c47a; }
+.fuel-perk-choice.line-combat  .fuel-perk-line { color: #e27a60; }
+.fuel-perk-choice.line-survival .fuel-perk-line { color: #74d6cd; }
+.fuel-perk-choice.line-carry:hover   { border-color: rgba(233, 196, 122, .9); }
+.fuel-perk-choice.line-combat:hover  { border-color: rgba(226, 122, 96, .9); }
+.fuel-perk-choice.line-survival:hover{ border-color: rgba(116, 214, 205, .9); }
+
+@media (orientation: portrait) {
+  .fuel-perk-choices { grid-template-columns: 1fr; gap: 9px; }
+  .fuel-perk-choice { min-height: 0; flex-direction: row; flex-wrap: wrap; align-items: baseline; }
+  .fuel-perk-name { flex: 0 0 auto; }
+  .fuel-perk-desc { flex: 1 1 100%; }
+  .fuel-perk-level { margin: 0 0 0 auto; }
+}
+
+/* 矮横屏：卡片压扁，别让三张顶出视口。 */
+@media (orientation: landscape) and (max-height: 400px) {
+  .fuel-perk-card { padding: 12px 14px 14px; }
+  .fuel-perk-card h2 { margin-bottom: 10px; font-size: 17px; }
+  .fuel-perk-choice { min-height: 96px; padding: 10px 10px 9px; }
+  .fuel-perk-name { font-size: 13px; }
+  .fuel-perk-desc { font-size: 10px; line-height: 1.35; }
+}

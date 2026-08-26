@@ -161,6 +161,22 @@
         </div>
       </div>
 
+      <!--
+        搬油三选一。装车完成后弹出，见 docs/搬油三选一-开发交接.md §8。
+
+        三张卡由 FuelPerkOverlay 现填 —— 卡面内容不写死在这里，因为哪三张是
+        每次抽的。这里只留容器和标题，标题走 i18n。
+
+        不允许 ESC 关闭、不允许跳过：奖励是这一趟运输的结算，跳过等于白跑一趟。
+      -->
+      <div id="fuel-perk-overlay" class="overlay fuel-perk-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="fuel-perk-title">
+        <div class="fuel-perk-card">
+          <p class="eyebrow" data-i18n="perk.eyebrow">Fuel loaded</p>
+          <h2 id="fuel-perk-title" data-i18n="perk.title">Pick one for the next run</h2>
+          <div id="fuel-perk-choices" class="fuel-perk-choices" role="group"></div>
+        </div>
+      </div>
+
       <div id="inventory-overlay" class="overlay inventory-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="inventory-title">
         <div class="backpack-card">
           <header>

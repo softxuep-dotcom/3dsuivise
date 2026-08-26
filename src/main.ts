@@ -6,6 +6,7 @@ import { InputController } from "./game/input/InputController";
 import { GameSimulation } from "./game/simulation/GameSimulation";
 import { GameRenderer } from "./render/GameRenderer";
 import { FirstBarrelHint } from "./ui/FirstBarrelHint";
+import { FuelPerkOverlay } from "./ui/FuelPerkOverlay";
 import { HudController } from "./ui/HudController";
 import { NightIntro } from "./ui/NightIntro";
 import { shouldBreakBeforeRestart } from "./ui/RetentionPolicy";
@@ -283,6 +284,15 @@ async function bootstrap(): Promise<void> {
   });
   firstBarrelHint.reset();
 
+  /*
+   * 搬油三选一的弹层。见 ui/FuelPerkOverlay.ts —— 它不持有奖励状态，
+   * 每帧问模拟层"此刻有没有待选的三张"，有就开、被选掉就关。
+   */
+  const fuelPerkOverlay = new FuelPerkOverlay({
+    get simulation() { return simulation; },
+    cancelMoveTarget: () => input.cancelMoveTarget(),
+  });
+
   if (import.meta.env.DEV) {
     /*
      * 把教学和渲染层也挂上调试句柄。
@@ -372,6 +382,7 @@ async function bootstrap(): Promise<void> {
     hud.resetRun(simulation);
     nightIntro.reset();
     firstBarrelHint.reset();
+    fuelPerkOverlay.close();
     input.cancelMoveTarget();
     started = false;
     previousTime = performance.now();
@@ -416,6 +427,8 @@ async function bootstrap(): Promise<void> {
           renderer.impact(0.035);
           renderer.barrierHit(event.itemId);
         }
+        // 死亡和通关都强制收掉三选一，别让它盖在结算页上。
+        if (event.type === "game-over" || event.type === "victory") fuelPerkOverlay.close();
         if (event.type === "game-over") input.cancelMoveTarget();
         // 结算页不算在玩。这一对信号报得越准，平台越不会把广告插在
         // 玩家正被狗围着的时候。
@@ -428,6 +441,13 @@ async function bootstrap(): Promise<void> {
         world.camps,
         started && simulation.running && !hud.isGameplayBlocked(),
       );
+      /*
+       * 三选一：先问模拟层要不要开弹层，再把结果灌给 HUD 的冻结判据。
+       * 排在 hud.update 之前 —— 同一帧内 isGameplayBlocked() 就该已经包含它，
+       * 否则弹层开着的那一帧世界还会再走一步。
+       */
+      fuelPerkOverlay.update();
+      hud.setFuelPerkOpen(fuelPerkOverlay.isOpen());
       hud.update(delta);
       /*
        * 「打开过背包没有」。

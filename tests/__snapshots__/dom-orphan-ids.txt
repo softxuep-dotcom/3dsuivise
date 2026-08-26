@@ -5,6 +5,7 @@
   #boot-bar   ← 内联启动脚本在用
   #boot-progress   ← 内联启动脚本在用
   #boot-status   ← 内联启动脚本在用
+  #fuel-perk-title
   #game-root
   #inventory-grid
   #inventory-title
