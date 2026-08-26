@@ -201,6 +201,48 @@ describe("Poki 进度节点上报", () => {
     expect(calls.slice(1).every((c) => c.endsWith(" start"))).toBe(true);
   });
 
+  it("看广告续命也算「他回来了」，收 complete 而不是挂着落进 Left", () => {
+    feed(died);
+    expect(calls).toContain("run/restart start");
+    calls = [];
+    feed({ type: "revive" });
+    expect(calls).toEqual(["run/restart complete"]);
+  });
+
+  /**
+   * 这条锁的是**修一半会漏掉的那一半**。
+   *
+   * 只在 switch 里加一句 close(RESTART, "complete") 是不够的：那会把 RESTART 记进
+   * done，于是同一局里第二次死亡发出去的 start 再也收不了口，静默落进 Left ——
+   * 表面上"续命的 bug 修好了"，实际上换了个地方继续漏。
+   *
+   * 所以 RESTART 整个不走 open/done 那套记账，只由 restartPending 一个字段管。
+   */
+  it("续命之后再死一次，第二个「要不要再来」照样能收口", () => {
+    feed(died);
+    feed({ type: "revive" });
+    calls = [];
+    feed(died);
+    expect(calls).toContain("run/restart start");
+    calls = [];
+    progress.noteRestart();
+    expect(calls).toEqual(["run/restart complete"]);
+  });
+
+  it("续命之后一路通关：不该再冒出任何「要不要再来」的报告", () => {
+    feed(died);
+    feed({ type: "revive" });
+    calls = [];
+    feed({ type: "victory" });
+    progress.noteRestart();
+    expect(calls.some((c) => c.startsWith("run/restart"))).toBe(false);
+  });
+
+  it("没死过就收到 revive（不该发生）不发任何东西 —— 幂等，不凭空造一次 complete", () => {
+    feed({ type: "revive" });
+    expect(calls.some((c) => c.startsWith("run/restart"))).toBe(false);
+  });
+
   it("通关之后不给「要不要再来」收口 —— 那一局他是赢了走的，不是死了走的", () => {
     feed({ type: "victory" });
     calls = [];

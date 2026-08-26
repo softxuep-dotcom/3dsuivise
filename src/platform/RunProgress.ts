@@ -111,8 +111,11 @@ export class RunProgress {
   private readonly done = new Set<Node>();
   /**
    * 「死了之后要不要再来」这一节点**跨局**存在：start 在上一局的结算页，
-   * complete 在玩家点下重开、也就是新的一局 beginRun() 之前。
+   * complete 在玩家回来继续玩的那一刻（点重开，或者看广告续命）。
    * 所以它不能跟着 beginRun() 一起清掉，单独拿一个字段记。
+   *
+   * 这个字段**本身就是它的"开着没有"** —— 见 {@link closeRestart}，
+   * 那里解释了为什么它不能走 open/done 那套记账。
    */
   private restartPending = false;
 
@@ -221,12 +224,29 @@ export class RunProgress {
     if (hide >= READY_HIDE && wood >= READY_WOOD) this.close(EQUIP_READY, "complete");
   }
 
-  /** 玩家在结算页点了重开。 */
-  noteRestart(): void {
+  /**
+   * 收口「死了之后要不要再来」。
+   *
+   * ## 为什么它不走 open/done 那套记账
+   *
+   * 那套的规矩是"一局之内只收口一次"，而这一节点跟它对不上：它**跨局**，
+   * 而且一局之内可能开合好几次 —— 死 → 看广告续命 → 又死 → 点重开。
+   *
+   * 之前它是半走半不走的（start 直接 send、收口时手动 open.add），
+   * 于是续命一旦收口就把 RESTART 记进了 done，同一局里第二次死亡发出去的 start
+   * 就再也收不了口，静默落进 Left。这种错在表上看不出来，只会让 Left 慢慢变胖。
+   *
+   * 现在整个节点只由 restartPending 一个字段管：为真就是开着，收口就置假。
+   */
+  private closeRestart(): void {
     if (!this.restartPending) return;
     this.restartPending = false;
-    this.open.add(RESTART);
-    this.close(RESTART, "complete");
+    this.send(RESTART, "complete");
+  }
+
+  /** 玩家在结算页点了重开。 */
+  noteRestart(): void {
+    this.closeRestart();
   }
 
   handle(event: GameEvent): void {
@@ -286,10 +306,31 @@ export class RunProgress {
         this.send(RESTART, "start");
         break;
 
+      case "revive":
+        /*
+         * 看广告续命 —— 他回来继续玩了，「要不要再来」这一节点收成 complete。
+         *
+         * 不修的后果是这一行同时被两种噪声污染：续命的人永远不收口、落进 Left
+         * （而 Left 的语义是"关页面走了"，他明明还在玩）；而且续命之后再死一次，
+         * 会发出第二个 start，最多只可能有一次 complete。
+         *
+         * 收 complete 不收 fail：这一节点问的是"他回来继续玩了吗"，
+         * 续命的回答就是"是"，只不过花的是一支广告而不是一次重开。
+         * 收成 fail 会把"续命成功"记成"失败"，那才是真的读不懂。
+         *
+         * 注意别去动 open 里那些已经在 game-over 时收成 fail 的节点 ——
+         * 那一局还是同一局，只是没死成；节点已经报过结局，再报一次就违反"只收口一次"。
+         */
+        this.closeRestart();
+        break;
+
       case "victory":
         /*
          * 通关时故意**不**把剩下的节点收成 complete —— 比如 night|3 还开着，
          * 他确实没走完那一夜。留着让它落进 Left 才是实话。
+         *
+         * restartPending 置假是兜底：接上 revive 之后，"死过但没收口"到通关
+         * 这条路已经走不通了（要么重开、要么续命，两条都会收口）。
          */
         this.restartPending = false;
         break;
