@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { RunProgress } from "../src/platform/RunProgress";
-import type { GamePlatform, ProgressAction } from "../src/platform/GamePlatform";
+import type { ProgressAction } from "../src/platform/GamePlatform";
+import type { GameSimulation } from "../src/game/simulation/GameSimulation";
 import type { GameEvent } from "../src/game/simulation/types";
 
 /**
@@ -17,16 +18,12 @@ describe("Poki 进度节点上报", () => {
   let calls: string[];
   let progress: RunProgress;
 
-  const platform: GamePlatform = {
-    name: "fake",
-    supportsRewarded: false,
-    async init() { /* noop */ },
-    loadingFinished() { /* noop */ },
-    gameplayStart() { /* noop */ },
-    gameplayStop() { /* noop */ },
-    async commercialBreak() { /* noop */ },
-    async rewardedBreak() { return false; },
-    gameInteractive() { /* noop */ },
+  /** 假背包：材料节点只读 getInventoryCount，别的都用不到。 */
+  let bag: Record<string, number>;
+  const world = {
+    get simulation() {
+      return { getInventoryCount: (k: string) => bag[k] ?? 0 } as unknown as GameSimulation;
+    },
     measure(category: string, what: string, action: ProgressAction) {
       calls.push(`${category}/${what} ${action}`);
     },
@@ -41,12 +38,49 @@ describe("Poki 进度节点上报", () => {
 
   beforeEach(() => {
     calls = [];
-    progress = new RunProgress(platform);
+    bag = {};
+    progress = new RunProgress(world);
     progress.beginRun();
+    calls = [];   // 开局那一批 start 各用例自己按需检查，别污染后面的断言
   });
 
-  it("开局就把第一桶和第一件装备挂上 —— 没做到才叫漏在这一级", () => {
-    expect(calls).toEqual(["fuel/1 start", "equip/first start"]);
+  it("开局把整套节点挂上 —— 没做到才叫漏在这一级", () => {
+    calls = [];
+    progress.beginRun();
+    expect(calls).toEqual([
+      "fuel/1 start", "equip/first start",
+      "mat/hide start", "mat/wood2 start", "equip/ready start",
+      "camp/fire start", "ui/pack start",
+    ]);
+  });
+
+  it("拿到兽皮就收口 mat/hide；但只有皮没柴，equip/ready 不收", () => {
+    bag = { hide: 1 };
+    feed({ type: "attack" });
+    expect(calls).toContain("mat/hide complete");
+    expect(calls).not.toContain("equip/ready complete");
+  });
+
+  it("皮和柴**同时**齐了才收 equip/ready —— 时序错配正是要量的东西", () => {
+    bag = { wood: 2 };
+    feed({ type: "attack" });
+    expect(calls).toContain("mat/wood2 complete");
+    expect(calls).not.toContain("equip/ready complete");
+    bag = { wood: 2, hide: 1 };
+    feed({ type: "attack" });
+    expect(calls).toContain("equip/ready complete");
+  });
+
+  it("点着火收 camp/fire（添柴和点火是同一个事件，都算）", () => {
+    feed({ type: "feed-fire", campId: 0 });
+    expect(calls).toContain("camp/fire complete");
+  });
+
+  it("打开背包收 ui/pack，而且幂等 —— 开着的每一帧调都不会重复报", () => {
+    progress.notePackOpened();
+    progress.notePackOpened();
+    progress.notePackOpened();
+    expect(calls.filter((c) => c === "ui/pack complete")).toHaveLength(1);
   });
 
   it("活过第一夜：start 之后收 complete", () => {
@@ -125,8 +159,10 @@ describe("Poki 进度节点上报", () => {
     calls = [];
     progress.noteRestart();
     progress.beginRun();
+    // 锁的是**次序**不是节点清单：上一局的收口必须排在新一局的任何 start 之前。
+    // 加新节点不该让这条红。
     expect(calls[0]).toBe("run/restart complete");
-    expect(calls.slice(1)).toEqual(["fuel/1 start", "equip/first start"]);
+    expect(calls.slice(1).every((c) => c.endsWith(" start"))).toBe(true);
   });
 
   it("通关之后不给「要不要再来」收口 —— 那一局他是赢了走的，不是死了走的", () => {

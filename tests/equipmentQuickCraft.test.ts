@@ -37,9 +37,19 @@ describe("HUD 装备快捷制作候选", () => {
     expect(ids(hideArmor, "armor")).toEqual(["hide-1"]);
   });
 
-  it("需要锻火的铁线只有站在燃烧营地旁才出现", () => {
-    const simulation = simulationWith({ "iron-ore": 4 });
-    expect(ids(simulation, "weapon")).toEqual([]);
+  /*
+   * 2026-08-26：武器线整体取消 needsFire，护甲线保留。
+   *
+   * 原因见 balance/equipment.ts —— 731 局实测只有 5.9% 的玩家造出过任何装备，
+   * 而"不要兽皮的那条路"（铁线）卡在火上，火恰恰是玩家最不做的事。
+   * 取消之后铁线变成一条纯采集的路：挖到矿就能升一阶，不必打猎也不必生火。
+   *
+   * 护甲不动，是为了让"回营地"仍然有一个非燃料的理由 —— 这条测试锁的正是
+   * 这个**不对称**，而不是"要不要火"本身。
+   */
+  it("武器的铁线随处可造，护甲的铁线仍然只在火边出现", () => {
+    const simulation = simulationWith({ "iron-ore": 3, wood: 1 });
+    expect(ids(simulation, "weapon")).toEqual(["saber-1"]);
     expect(ids(simulation, "armor")).toEqual([]);
 
     const camp = simulation.world.camps[simulation.world.startCampId];
@@ -64,7 +74,7 @@ describe("HUD 装备快捷制作候选", () => {
     expect(ids(weapon, "weapon")).toEqual([]);
     expect(weapon.drainEvents().map((event) => event.type)).toContain("craft-weapon");
 
-    const armor = simulationWith({ hide: 4 });
+    const armor = simulationWith({ hide: 3 });   // hide-1 造价 4 → 3
     expect(armor.craftEquip("armor", "hide-1")).toBe(true);
     expect(armor.player.armor).toBe("hide-1");
     expect(armor.getInventoryCount("hide")).toBe(0);

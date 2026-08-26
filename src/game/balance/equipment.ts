@@ -55,28 +55,53 @@ export interface EquipTier {
  *
  * 现在每个槽位各有一条**不要兽皮**的路：
  *
- *   武器  砍刀Ⅰ = 铁矿 ×4          剑Ⅰ   = 兽皮 ×1 + 枯木 ×2
- *   护甲  铁甲Ⅰ = 铁矿 ×4          皮甲Ⅰ = 兽皮 ×4
+ *   武器  砍刀Ⅰ = 铁矿 ×2 + 枯木 ×1   剑Ⅰ   = 兽皮 ×1 + 枯木 ×2
+ *   护甲  铁甲Ⅰ = 铁矿 ×3            皮甲Ⅰ = 兽皮 ×3
  *
- * 换掉的兽皮按 1:1 折成铁矿（砍刀 3+1皮 → 4，铁甲 2+2皮 → 4），
- * 所以铁线的总成本没变松，只是把"要打猎"换成了"要挖矿"——
- * 而挖矿是随时能做的事。二三阶不动：那时候你早该出过门了。
+ * 把"要打猎"换成了"要挖矿"—— 而挖矿是随时能做的事。
+ * 二三阶不动：那时候你早该出过门了。
+ *
+ * **2026-08-26 一阶集体降价**（砍刀 铁4 → 铁2+柴1、铁甲 铁4 → 铁3、
+ * 皮甲 皮4 → 皮3）。依据是下面那段实测：94% 的玩家一件都没造出来，
+ * 而门槛不是 UI 而是材料。降价只动一阶 —— 二三阶留着原价，
+ * 让"第一件容易、后面要攒"这条曲线更陡而不是整体变平。
+ *
+ * ## 2026-08-26：武器全线取消 needsFire
+ *
+ * 上面那条"每个槽位各有一条不要兽皮的路"在纸面上成立，实际不成立 ——
+ * **不要兽皮的那条（砍刀线）卡在火上，而火是玩家最不做的事。**
+ *
+ * Poki 进度节点实测（731 局）：`equip/first` 的 Completed 只有 **5.9%**，
+ * 也就是 94% 的玩家整局没造出过任何一件装备。而 UI 早就不是瓶颈了 ——
+ * QuickCraftController 只在"此刻真的能造"时才出现，材料够它自己会弹。
+ *
+ * 于是两条路各有一道硬闸：
+ *
+ *   兽皮路（剑Ⅰ = 皮1 + 柴2）  要先杀掉一只长角羚或狼
+ *   铁矿路（砍刀Ⅰ = 铁4）      铁矿随时能挖，但要火
+ *
+ * 取消武器的火之后，铁矿线变成一条**纯采集**的路：挖 4 块铁就能升一阶，
+ * 不必打猎、不必生火。这正是那条路当初想提供的东西，只是火把它堵死了。
+ *
+ * 护甲**没动**：留着火这道闸，让"回营地"仍然有一个非燃料的理由。
+ * 代价是失去了"剑一阶是仅有的两件 needsFire: false 之一"那个差异化 ——
+ * 那句话现在不成立了，武器线整条都能在野外造。
  */
 export const WEAPON_TIERS: EquipTier[] = [
   { id: "survival-knife", line: "none", tier: 0, cost: [], needsFire: false, attack: 30 },
 
-  { id: "saber-1", line: "saber", tier: 1, needsFire: true, attack: 34,
-    cost: [["iron-ore", 4]] },
-  { id: "saber-2", line: "saber", tier: 2, needsFire: true, attack: 42,
+  { id: "saber-1", line: "saber", tier: 1, needsFire: false, attack: 34,
+    cost: [["iron-ore", 2], ["wood", 1]] },
+  { id: "saber-2", line: "saber", tier: 2, needsFire: false, attack: 42,
     cost: [["iron-ore", 4], ["hide", 2], ["wood", 2]] },
-  { id: "saber-3", line: "saber", tier: 3, needsFire: true, attack: 50,
+  { id: "saber-3", line: "saber", tier: 3, needsFire: false, attack: 50,
     cost: [["iron-ore", 5], ["hide", 2], ["wolf-fang", 3]] },
 
   { id: "sword-1", line: "sword", tier: 1, needsFire: false, attack: 38,
     cost: [["hide", 1], ["wood", 2]] },
-  { id: "sword-2", line: "sword", tier: 2, needsFire: true, attack: 45,
+  { id: "sword-2", line: "sword", tier: 2, needsFire: false, attack: 45,
     cost: [["hide", 3], ["wood", 3]] },
-  { id: "sword-3", line: "sword", tier: 3, needsFire: true, attack: 55,
+  { id: "sword-3", line: "sword", tier: 3, needsFire: false, attack: 55,
     cost: [["hide", 4], ["wood", 3], ["wolf-fang", 3]] },
 ];
 
@@ -92,14 +117,14 @@ export const ARMOR_TIERS: EquipTier[] = [
   { id: "none", line: "none", tier: 0, cost: [], needsFire: false, defense: 2 },
 
   { id: "scale-1", line: "scale", tier: 1, needsFire: true, defense: 8,
-    cost: [["iron-ore", 4]] },
+    cost: [["iron-ore", 3]] },
   { id: "scale-2", line: "scale", tier: 2, needsFire: true, defense: 13,
     cost: [["iron-ore", 3], ["hide", 3]] },
   { id: "scale-3", line: "scale", tier: 3, needsFire: true, defense: 18,
     cost: [["iron-ore", 4], ["hide", 3], ["wolf-fang", 2]] },
 
   { id: "hide-1", line: "hide", tier: 1, needsFire: false, defense: 5,
-    cost: [["hide", 4]] },
+    cost: [["hide", 3]] },
   { id: "hide-2", line: "hide", tier: 2, needsFire: true, defense: 6,
     cost: [["hide", 4], ["wood", 2]] },
   { id: "hide-3", line: "hide", tier: 3, needsFire: true, defense: 7,

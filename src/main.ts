@@ -154,7 +154,11 @@ async function bootstrap(): Promise<void> {
    *
    * 所以这里剩下的只有一次对象分配：两个空 Set，没有 IO、没有 postMessage。
    */
-  const runProgress = new RunProgress(platform);
+  const runProgress = new RunProgress({
+    // getter：软重启会换掉 simulation，这里读的必须是当前那一个。
+    get simulation() { return simulation; },
+    measure: (category, what, action) => platform.measure(category, what, action),
+  });
   if (import.meta.env.DEV) console.info(`[platform] ${platform.name}`);
 
   setProgress(0.58, t("boot.terrain"));
@@ -425,6 +429,14 @@ async function bootstrap(): Promise<void> {
         started && simulation.running && !hud.isGameplayBlocked(),
       );
       hud.update(delta);
+      /*
+       * 「打开过背包没有」。
+       *
+       * 看状态翻转而不是挂在开关的调用点上 —— 背包有**两个入口**
+       * （键盘 B/Tab 走 onInventory，HUD 那颗键在 HudController 里自己挂了监听），
+       * 挂其中一个会漏掉另一个。notePackOpened 是幂等的，开着的每一帧调都行。
+       */
+      if (hud.isInventoryOpen()) runProgress.notePackOpened();
       // 与第一夜教学共用聚光灯；NightIntro 随后执行，入夜时由教学取得最终控制权。
       firstBarrelHint.update(delta);
       // 教学走在 HUD 之后：它要读背包的开合状态，也要按最新的一帧投影去挖亮洞。

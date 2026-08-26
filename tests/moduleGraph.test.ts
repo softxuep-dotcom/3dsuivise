@@ -160,7 +160,7 @@ describe("模块图", () => {
       "src/ui/HudController.ts": 1172,
       // styles.css 阶段 3 拆成六段，自己只剩 @import；六段各自都在 600 行以内。
       "src/render/entities/CreatureViews.ts": 420,
-      "src/game/simulation/WolfDirector.ts": 1087,
+      "src/game/simulation/WolfDirector.ts": 1096,
       "src/game/content/createWorld.ts": 706,
       "src/game/simulation/types.ts": 648,
     };

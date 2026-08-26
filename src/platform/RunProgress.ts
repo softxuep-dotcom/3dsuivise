@@ -1,5 +1,6 @@
 import type { GameEvent } from "../game/simulation/types";
-import type { GamePlatform } from "./GamePlatform";
+import type { GameSimulation } from "../game/simulation/GameSimulation";
+import type { ProgressAction } from "./GamePlatform";
 
 /**
  * 把这一局的关键节点报给 Poki 的 **Progress Events**。
@@ -42,10 +43,43 @@ const NIGHT_ONE: Node = "night|1";
 const EQUIP_FIRST: Node = "equip|first";
 const RESTART: Node = "run|restart";
 
+/*
+ * 材料侧的四个节点。
+ *
+ * 731 局实测 equip/first 的 Completed 只有 5.9% —— 94% 的人整局没造出过任何装备。
+ * 而 UI 早就不是瓶颈：QuickCraftController 只在"此刻真的能造"时才出现。
+ * 所以卡点在材料，但**卡在哪一步完全不知道**，只能靠猜。这四个节点是来拆开它的：
+ *
+ *   mat|hide     拿到第一张兽皮   —— 兽皮只有两个来源（长角羚 4 只、狼），都要打
+ *   mat|wood2    攒到 2 根柴      —— 开局给 0 根，而柴同时是唯一的燃料
+ *   equip|ready  皮≥1 且 柴≥2     —— sword-1 的料**同时**齐了
+ *   ui|pack      打开过背包       —— 吃、烤、合成、建造的唯一入口
+ *
+ * equip|ready 和 equip|first 是**成对读**的：
+ *   ready 低              → 材料就没凑齐，该降造价或改掉落
+ *   ready 高而 first 低   → 凑齐了却没造，那是认知问题
+ * 这两种要用完全不同的办法修，混在一起就什么都读不出来。
+ */
+const MAT_HIDE: Node = "mat|hide";
+const MAT_WOOD2: Node = "mat|wood2";
+const EQUIP_READY: Node = "equip|ready";
+const CAMP_FIRE: Node = "camp|fire";
+const UI_PACK: Node = "ui|pack";
+
+/** sword-1 = 兽皮×1 + 枯木×2，是全部一阶里最便宜、且不要火的一件。 */
+const READY_HIDE = 1;
+const READY_WOOD = 2;
+
 const split = (node: Node): [string, string] => {
   const at = node.indexOf("|");
   return [node.slice(0, at), node.slice(at + 1)];
 };
+
+export interface RunProgressWorld {
+  /** getter 而不是值：软重启会换掉 simulation。 */
+  readonly simulation: GameSimulation;
+  measure(category: string, what: string, action: ProgressAction): void;
+}
 
 export class RunProgress {
   /** 已经 start、还没收口的节点。 */
@@ -59,11 +93,11 @@ export class RunProgress {
    */
   private restartPending = false;
 
-  constructor(private readonly platform: GamePlatform) {}
+  constructor(private readonly ctx: RunProgressWorld) {}
 
-  private send(node: Node, action: "start" | "complete" | "fail"): void {
+  private send(node: Node, action: ProgressAction): void {
     const [category, what] = split(node);
-    this.platform.measure(category, what, action);
+    this.ctx.measure(category, what, action);
   }
 
   private start(node: Node): void {
@@ -106,6 +140,40 @@ export class RunProgress {
     // 第一桶从开局就算在跑：他一进场就有机会去装，没装成就是漏在这一级。
     this.start("fuel|1");
     this.start(EQUIP_FIRST);
+    this.start(MAT_HIDE);
+    this.start(MAT_WOOD2);
+    this.start(EQUIP_READY);
+    this.start(CAMP_FIRE);
+    this.start(UI_PACK);
+  }
+
+  /**
+   * 打开过背包。
+   *
+   * 幂等，所以调用方不用自己判"是不是刚打开" —— 背包开着的每一帧调都行。
+   * 这很重要：背包有**两个入口**（键盘 B/Tab，和 HUD 上那颗键各自挂的监听），
+   * 挂在其中一个上会漏掉另一个。调用方改成看状态翻转，覆盖才是全的。
+   */
+  notePackOpened(): void {
+    this.close(UI_PACK, "complete");
+  }
+
+  /**
+   * 按背包里的存货收口材料节点。
+   *
+   * 每个事件都跑一次，而不是挂在某几个 pickup 事件上 —— 兽皮是从掉落物捡的、
+   * 枯木是从地上捡的、还有别的路径会改背包，逐个去认容易漏。
+   * 这几个检查都是读三个整数 + Set 查找，一局几百次事件也无所谓。
+   */
+  private checkMaterials(): void {
+    const sim = this.ctx.simulation;
+    const hide = sim.getInventoryCount("hide");
+    const wood = sim.getInventoryCount("wood");
+    if (hide >= 1) this.close(MAT_HIDE, "complete");
+    if (wood >= READY_WOOD) this.close(MAT_WOOD2, "complete");
+    // 注意是**同时**齐：兽皮夜里到手、柴白天才捡得到，而柴还随时可能被烧掉。
+    // 这个时序错配正是 equip|ready 要量的东西，分开看两个节点会漏掉它。
+    if (hide >= READY_HIDE && wood >= READY_WOOD) this.close(EQUIP_READY, "complete");
   }
 
   /** 玩家在结算页点了重开。 */
@@ -136,6 +204,12 @@ export class RunProgress {
         this.close(EQUIP_FIRST, "complete");
         break;
 
+      case "feed-fire":
+        // 添柴和点火发的是同一个事件（GameSimulation 只有那一处 emit），
+        // 而我们要问的是"这一局有没有烧起来过火"，两者都算。
+        this.close(CAMP_FIRE, "complete");
+        break;
+
       case "game-over":
         /*
          * 死亡把所有还开着的节点收成 fail —— 死在半路和关页面走人是两回事，
@@ -161,5 +235,6 @@ export class RunProgress {
       default:
         break;
     }
+    this.checkMaterials();
   }
 }
