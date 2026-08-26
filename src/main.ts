@@ -204,6 +204,17 @@ async function bootstrap(): Promise<void> {
    * 移动、点击地面、摇杆、攻击和场景行动这些真正的游戏输入上调用这里；开背包和
    * 暂停不算开始游戏。
    */
+  /*
+   * 当前页面会话内的重开次数。两个用处：第一次重开免插屏（第二次起交给 SDK 控频），
+   * 以及给遥测定局次（0 = 本次会话的第一局，见 RunProgress.beginRun）。
+   *
+   * **声明必须排在 enterGame 之前。** 它现在只被 enterGame 和 softRestart 读，
+   * 而这两个都是回调、执行时 bootstrap 早就跑完了，所以放在后面也不会炸。
+   * 但那是"碰巧安全"：中间一旦有人加一个 await，玩家正好在那一瞬点下去就是 TDZ 崩溃，
+   * 而且只在极窄的窗口里复现。提前声明的成本是零。
+   */
+  let restartsThisSession = 0;
+
   const enterGame = (): void => {
     if (started || hud.isGameplayBlocked()) return;
     started = true;
@@ -225,7 +236,8 @@ async function bootstrap(): Promise<void> {
      * enterGame 有 started 闸，一局只会进来一次；软重启把 started 退回 false，
      * 所以新的一局自动再报一次 —— softRestart 里不用也不该再调 beginRun()。
      */
-    runProgress.beginRun();
+    // 局次判据用现成的 restartsThisSession：0 = 本次会话的第一局。
+    runProgress.beginRun(restartsThisSession);
   };
 
   const input = new InputController({
@@ -365,8 +377,6 @@ async function bootstrap(): Promise<void> {
    * `started` 要退回 false：Poki 要求 gameplayStart 必须直接发生在玩家输入的调用栈里，
    * 所以新的一局同样要等他第一次真的动一下，跟刚打开页面时是同一条规矩。
    */
-  /** 当前页面会话内的重开次数；第一次重开免插屏，第二次起仍交给 SDK 控频。 */
-  let restartsThisSession = 0;
   const softRestart = async (button: HTMLElement | null): Promise<void> => {
     if (button instanceof HTMLButtonElement) button.disabled = true;
     const run = bumpRunIndex();
@@ -478,6 +488,9 @@ async function bootstrap(): Promise<void> {
    * 前者说"玩家现在能动了"。我们中间还隔着 showGame()，所以分开报。
    */
   platform.gameInteractive();
+  // 「加载完、看了一眼、没动就走」是现在唯一看不见的一段流失。
+  // 这是全仓唯一在玩家迈第一步之前就报的节点，理由见 RunProgress 的 ENTER。
+  runProgress.noteInteractive();
   // 场景可以先展示，但 gameplayStart 与模拟层都必须等玩家第一次实际游戏输入。
   // HUD 已经提示“移动或拿起枯木，开始第一天”，无需重新加一层开始按钮。
   hud.showGame();

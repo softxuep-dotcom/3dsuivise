@@ -21,7 +21,7 @@ describe("Poki 进度节点上报", () => {
   /** 假背包：材料节点只读 getInventoryCount，别的都用不到。 */
   let bag: Record<string, number>;
   /** 白天节点只在 day 1 的白天收口，所以假 sim 要能表达相位。 */
-  let phase: { day: number; phase: "day" | "night"; clockStarted: boolean };
+  let phase: { day: number; phase: "day" | "night"; clockStarted: boolean; elapsed: number };
   const world = {
     get simulation() {
       return {
@@ -29,6 +29,7 @@ describe("Poki 进度节点上报", () => {
         get day() { return phase.day; },
         get phase() { return phase.phase; },
         get clockStarted() { return phase.clockStarted; },
+        get elapsed() { return phase.elapsed; },
       } as unknown as GameSimulation;
     },
     measure(category: string, what: string, action: ProgressAction) {
@@ -46,48 +47,99 @@ describe("Poki 进度节点上报", () => {
   beforeEach(() => {
     calls = [];
     bag = {};
-    phase = { day: 1, phase: "day", clockStarted: false };
+    phase = { day: 1, phase: "day", clockStarted: false, elapsed: 0 };
     progress = new RunProgress(world);
-    progress.beginRun();
+    progress.beginRun(0);   // 0 = 本次会话的第一局 → r1 前缀
     calls = [];   // 开局那一批 start 各用例自己按需检查，别污染后面的断言
   });
 
   it("开局把整套节点挂上 —— 没做到才叫漏在这一级", () => {
     calls = [];
-    progress.beginRun();
+    progress.beginRun(0);
     expect(calls).toEqual([
+      // 不分局次的：装车漏斗与装备门槛
       "fuel/1 start", "equip/first start",
       "mat/hide start", "mat/wood2 start", "equip/ready start",
-      "camp/fire start", "ui/pack start",
-      "day1/move start", "day1/attack start", "day1/kill start", "day1/wood start",
+      // 分局次的。r1 挂全套
+      "r1/t15 start", "r1/pack start", "r1/fuel1 start", "r1/night1 start",
+      "r1/fire start", "r1/attack start", "r1/kill start", "r1/wood start",
     ]);
   });
 
-  it("第一个白天的四拍：迈步、攻击、击杀、捡柴", () => {
+  it("第一个白天的三拍：攻击、击杀、捡柴", () => {
     phase.clockStarted = true;
     feed({ type: "attack" });
-    expect(calls).toContain("day1/move complete");
-    expect(calls).toContain("day1/attack complete");
+    expect(calls).toContain("r1/attack complete");
     feed({ type: "critter-killed", critterId: 1, kind: "beetle" });
-    expect(calls).toContain("day1/kill complete");
+    expect(calls).toContain("r1/kill complete");
     feed({ type: "pickup", kind: "wood" });
-    expect(calls).toContain("day1/wood complete");
+    expect(calls).toContain("r1/wood complete");
   });
 
   it("入夜之后再做到就不算 —— 那 40 秒没做到就是没做到", () => {
     // 天黑：还开着的白天节点全部收成 fail
     feed({ type: "phase", phase: "night", day: 1 });
-    expect(calls).toContain("day1/attack fail");
-    expect(calls).toContain("day1/kill fail");
+    expect(calls).toContain("r1/attack fail");
+    expect(calls).toContain("r1/kill fail");
     calls = [];
     phase.phase = "night";
     feed({ type: "attack" }, { type: "pickup", kind: "wood" });
-    expect(calls.some((c) => c.startsWith("day1/"))).toBe(false);
+    expect(calls.some((c) => c.startsWith("r1/attack") || c.startsWith("r1/wood"))).toBe(false);
   });
 
-  it("没迈过第一步就天黑（挂着没动的人），day1/move 收 fail", () => {
-    feed({ type: "phase", phase: "night", day: 1 });
-    expect(calls).toContain("day1/move fail");
+  /**
+   * 「加载完看了一眼就走」是这次改造要捞的那批人。
+   *
+   * 这个节点跟别的都不一样：start 在 gameInteractive（还没迈第一步），
+   * complete 在 beginRun（他动了）。没动就关页面 → 永远不收口 → 落进 Left。
+   * 它也不跟着 beginRun 清空，因为它是**整个页面**只有一次的事。
+   */
+  it("r1/enter：可玩了就 start，迈第一步才 complete", () => {
+    const fresh = new RunProgress(world);
+    calls = [];
+    fresh.noteInteractive();
+    expect(calls).toEqual(["r1/enter start"]);
+    calls = [];
+    fresh.beginRun(0);
+    expect(calls[0]).toBe("r1/enter complete");
+  });
+
+  it("r1/enter：没迈第一步就关页面 —— 不报 complete，让它落进 Left", () => {
+    const fresh = new RunProgress(world);
+    calls = [];
+    fresh.noteInteractive();
+    calls = [];
+    // 他就是没动。什么都不该再发出去。
+    expect(calls).toEqual([]);
+  });
+
+  it("r1/enter 幂等，而且重开不会再报一次 —— 一个页面只有一次", () => {
+    const fresh = new RunProgress(world);
+    fresh.noteInteractive();
+    fresh.noteInteractive();
+    fresh.beginRun(0);
+    calls = [];
+    fresh.beginRun(1);
+    expect(calls.some((c) => c.startsWith("r1/enter"))).toBe(false);
+  });
+
+  /**
+   * 时间阶梯：Progress Events 不记时间，所以"多久离开"只能问成
+   * "第 15 秒还活着的人有多少"。见 RunProgress 里 ALIVE_SECONDS 那段。
+   */
+  it("活过 15 秒收 r1/t15；没到就死了收 fail", () => {
+    phase.elapsed = 14.9;
+    feed({ type: "attack" });
+    expect(calls.some((c) => c.startsWith("r1/t15"))).toBe(false);
+    phase.elapsed = 15;
+    feed({ type: "attack" });
+    expect(calls).toContain("r1/t15 complete");
+  });
+
+  it("15 秒之前就死了，r1/t15 收 fail 而不是挂着", () => {
+    phase.elapsed = 6;
+    feed(died);
+    expect(calls).toContain("r1/t15 fail");
   });
 
   it("拿到兽皮就收口 mat/hide；但只有皮没柴，equip/ready 不收", () => {
@@ -109,28 +161,26 @@ describe("Poki 进度节点上报", () => {
 
   it("点着火收 camp/fire（添柴和点火是同一个事件，都算）", () => {
     feed({ type: "feed-fire", campId: 0 });
-    expect(calls).toContain("camp/fire complete");
+    expect(calls).toContain("r1/fire complete");
   });
 
   it("打开背包收 ui/pack，而且幂等 —— 开着的每一帧调都不会重复报", () => {
     progress.notePackOpened();
     progress.notePackOpened();
     progress.notePackOpened();
-    expect(calls.filter((c) => c === "ui/pack complete")).toHaveLength(1);
+    expect(calls.filter((c) => c === "r1/pack complete")).toHaveLength(1);
   });
 
-  it("活过第一夜：start 之后收 complete", () => {
+  it("活过第一夜收 complete", () => {
     feed(night1, dawn2);
-    expect(calls).toContain("night/1 start");
-    expect(calls).toContain("night/1 complete");
-    expect(calls).not.toContain("night/1 fail");
+    expect(calls).toContain("r1/night1 complete");
+    expect(calls).not.toContain("r1/night1 fail");
   });
 
   it("死在第一夜：收的是 fail，不是 complete", () => {
     feed(night1, died);
-    expect(calls).toContain("night/1 start");
-    expect(calls).toContain("night/1 fail");
-    expect(calls).not.toContain("night/1 complete");
+    expect(calls).toContain("r1/night1 fail");
+    expect(calls).not.toContain("r1/night1 complete");
   });
 
   it("死亡把所有还开着的节点一起收成 fail —— 死在半路和关页面走人要分开", () => {
@@ -166,8 +216,8 @@ describe("Poki 进度节点上报", () => {
 
   it("同一个节点只收口一次 —— complete 之后再死也不补 fail", () => {
     feed(night1, dawn2, died);
-    expect(calls.filter((c) => c.startsWith("night/1 ")).filter((c) => !c.endsWith("start")))
-      .toEqual(["night/1 complete"]);
+    expect(calls.filter((c) => c.startsWith("r1/night1 ")).filter((c) => !c.endsWith("start")))
+      .toEqual(["r1/night1 complete"]);
   });
 
   it("造出第一件装备就收口，之后再升级也不重复报", () => {
@@ -186,7 +236,7 @@ describe("Poki 进度节点上报", () => {
   it("死了不按重开、直接关页面 —— 不报 complete，让它落进 Left", () => {
     feed(died);
     calls = [];
-    progress.beginRun();   // 假设他没点重开（真机上这一步根本不会发生）
+    progress.beginRun(0);   // 假设他没点重开（真机上这一步根本不会发生）
     expect(calls.some((c) => c.startsWith("run/restart"))).toBe(false);
   });
 
@@ -194,7 +244,7 @@ describe("Poki 进度节点上报", () => {
     feed(died);
     calls = [];
     progress.noteRestart();
-    progress.beginRun();
+    progress.beginRun(0);
     // 锁的是**次序**不是节点清单：上一局的收口必须排在新一局的任何 start 之前。
     // 加新节点不该让这条红。
     expect(calls[0]).toBe("run/restart complete");
@@ -241,6 +291,49 @@ describe("Poki 进度节点上报", () => {
   it("没死过就收到 revive（不该发生）不发任何东西 —— 幂等，不凭空造一次 complete", () => {
     feed({ type: "revive" });
     expect(calls.some((c) => c.startsWith("run/restart"))).toBe(false);
+  });
+
+  /**
+   * 重开局只报四个。这是整套改造的目的：**别把重开的人算进第一局**。
+   *
+   * 混着看的话，"第一次玩的人"和"已经死过三次、知道该干嘛的人"落在同一行里，
+   * 而重开的人越多，第一局的数字看起来越好 —— 首次印象永远读不到。
+   */
+  it("重开局只挂四个对照节点，前缀是 rr", () => {
+    calls = [];
+    progress.beginRun(1);
+    expect(calls).toEqual([
+      "fuel/1 start", "equip/first start",
+      "mat/hide start", "mat/wood2 start", "equip/ready start",
+      "rr/t15 start", "rr/pack start", "rr/fuel1 start", "rr/night1 start",
+    ]);
+  });
+
+  it("重开局里按攻击键不会凭空造出一个 rr/attack", () => {
+    progress.beginRun(1);
+    phase.clockStarted = true;
+    calls = [];
+    feed({ type: "attack" }, { type: "critter-killed", critterId: 1, kind: "beetle" });
+    // close() 有一条"没 start 过就补一个"的兜底，那是给 fuel 链用的。
+    // 局次节点必须走 closeRun 的守卫，否则这里会无中生有两个节点。
+    expect(calls.some((c) => c.startsWith("rr/attack") || c.startsWith("rr/kill"))).toBe(false);
+  });
+
+  it("前缀整局固定：beginRun 定完之后，同一节点的 start 和 complete 落在同一行", () => {
+    progress.beginRun(1);
+    calls = [];
+    feed({ type: "fuel-loaded", loaded: 1, required: 6 });
+    expect(calls).toContain("rr/fuel1 complete");
+    expect(calls.some((c) => c.startsWith("r1/"))).toBe(false);
+  });
+
+  it("首局装上第一桶：聚合的 fuel/1 和局次的 r1/fuel1 各收各的", () => {
+    feed({ type: "fuel-loaded", loaded: 1, required: 6 });
+    expect(calls).toContain("fuel/1 complete");
+    expect(calls).toContain("r1/fuel1 complete");
+    // 聚合漏斗继续往下开一级；局次口径只问"有没有摸到"，不往下开。
+    expect(calls).toContain("fuel/2 start");
+    expect(calls.some((c) => c.startsWith("r1/fuel2"))).toBe(false);
   });
 
   it("通关之后不给「要不要再来」收口 —— 那一局他是赢了走的，不是死了走的", () => {

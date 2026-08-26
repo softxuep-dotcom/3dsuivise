@@ -39,9 +39,25 @@ import type { ProgressAction } from "./GamePlatform";
 /** 一个节点的名字。`/` 和 `^` 会被适配层换掉，所以这里不要用。 */
 type Node = string;
 
-const NIGHT_ONE: Node = "night|1";
 const EQUIP_FIRST: Node = "equip|first";
 const RESTART: Node = "run|restart";
+
+/**
+ * 加载完、可以玩了，但还没迈第一步。
+ *
+ * 这是全仓**唯一**一个在"迈第一步"之前就报的节点，故意的。别的节点一律等
+ * enterGame()，因为加载完就报会把"打开页面看一眼就走"的人算进玩法漏斗里
+ * （见 beginRun 的注释）。而这一个存在的理由**正是**要把那批人捞出来：
+ *
+ *   Completed  他动了，进游戏了
+ *   Left       加载完、看了一眼、没动就走
+ *
+ * 现在这批人除了 SDK 自己报的 game/loading，一行记录都没有。
+ *
+ * 它也不走 open/done 那套记账 —— 那套按局清空，而这个节点是**整个页面**
+ * 只有一次（软重启不刷页，enterInteractive 不会再来）。enterPending 就是它的开关。
+ */
+const ENTER: Node = "r1|enter";
 
 /*
  * 材料侧的四个节点。
@@ -53,41 +69,86 @@ const RESTART: Node = "run|restart";
  *   mat|hide     拿到第一张兽皮   —— 兽皮只有两个来源（长角羚 4 只、狼），都要打
  *   mat|wood2    攒到 2 根柴      —— 开局给 0 根，而柴同时是唯一的燃料
  *   equip|ready  皮≥1 且 柴≥2     —— sword-1 的料**同时**齐了
- *   ui|pack      打开过背包       —— 吃、烤、合成、建造的唯一入口
  *
  * equip|ready 和 equip|first 是**成对读**的：
  *   ready 低              → 材料就没凑齐，该降造价或改掉落
  *   ready 高而 first 低   → 凑齐了却没造，那是认知问题
  * 这两种要用完全不同的办法修，混在一起就什么都读不出来。
+ *
+ * 这三个**不分局次**：它们问的是"这个游戏的装备门槛合不合理"，
+ * 那本来就该把所有局次加起来看。
  */
 const MAT_HIDE: Node = "mat|hide";
 const MAT_WOOD2: Node = "mat|wood2";
 const EQUIP_READY: Node = "equip|ready";
-const CAMP_FIRE: Node = "camp|fire";
-const UI_PACK: Node = "ui|pack";
 
 /*
- * 第一个白天的四拍。
+ * ## 局次节点：第一局和重开局分开算
  *
- * 731 局实测：645 局开跑，只有 412 局撑到入夜 —— **36% 在第一个白天就结束了**。
- * 而第一个白天只有 **40 秒**（FIRST_DAY_DURATION），我们对这 40 秒内部零分辨率：
- * 漏斗里最靠前的节点是 fuel|1，它整局挂着，说不出人卡在哪一拍。
+ * 下面这些**不是完整的节点名，只是 what**。真正的名字在运行时拼上局次前缀：
  *
- * 这四个把那 40 秒拆开，都是现成事件，纯观测不改行为：
+ *     r1|pack   本次会话的第一局
+ *     rr|pack   重开局（第二局及以后）
  *
- *   day1|move    迈第一步     —— 分开"根本没进游戏"和"进了但走了"
- *   day1|attack  按过攻击键   —— 知不知道有攻击这回事
- *   day1|kill    打死过东西   —— 按了，但打得中吗
- *   day1|wood    捡到第一根柴 —— 唯一的燃料，也是 sword-1 缺的那两根
+ * 为什么要分：这张表原先把所有局次混在一起，于是"第一次玩的人"和"已经死过
+ * 三次、知道该干嘛的人"落在同一行里。而我们最想知道的恰恰是**首次印象** ——
+ * 混着看等于永远读不到它，而且重开的人越多，第一局的数字看起来越好。
  *
- * 全部在**第一个白天之内**收口：入夜之后再做到就不算了（见 handle 里的相位判断），
- * 否则它们会退化成"整局有没有做过"，失去"这 40 秒够不够用"的意义。
+ * 为什么只分两档而不是 r1/r2/rN：真正的断点在"他死过一次没有"，
+ * 第二局和第三局的差别远小于此；三档要等样本量够才读得出，两档立刻可用。
+ *
+ * 第一局报**全套**（首次印象是要问的东西），重开局只报 {@link RESTART_NODES}
+ * 那四个当对照 —— 够回答"重开之后是在学习，还是在重复撞同一堵墙"。
  */
-const DAY1_MOVE: Node = "day1|move";
-const DAY1_ATTACK: Node = "day1|attack";
-const DAY1_KILL: Node = "day1|kill";
-const DAY1_WOOD: Node = "day1|wood";
-const DAY1_NODES = [DAY1_MOVE, DAY1_ATTACK, DAY1_KILL, DAY1_WOOD] as const;
+const PACK = "pack";
+const FIRE = "fire";
+const FUEL_ONE = "fuel1";
+const NIGHT_ONE = "night1";
+const ATTACK = "attack";
+const KILL = "kill";
+const WOOD = "wood";
+
+/**
+ * 时间阶梯：第 15 秒还活着的人有多少。
+ *
+ * Progress Events **不记时间**，只会数 Started / Completed / Failed / Left。
+ * 所以"多久离开"必须换个问法：在第 N 秒还活着的人有多少。开局 start，
+ * elapsed 越过就 complete。于是三种结局天然分开 ——
+ * Completed 活过了、Failed 之前死了、**Left 之前关页面走了**。
+ *
+ * 为什么是 15 秒，而且只有这一个刻度：
+ *
+ * 15 秒是一遍教学循环的长度（脚边就有桶、有猎物、有柴，够走完"看见 → 拿起 → 用掉"）。
+ * 而 0 到 40 秒这一段原本是全黑的，那正是最大的一次流失：731 局里 645 局开跑、
+ * 只有 412 局撑到入夜，**36% 死在这 40 秒内**。行为节点只能说"他什么都没做就走了"，
+ * 分不出第 8 秒走的和第 38 秒走的 —— 而这两种要用完全不同的办法修：
+ * 8 秒是游戏还没来得及开口，38 秒是他听懂了然后放弃了。
+ *
+ * 夜里不再加刻度：night1 已经把 40→190 兜住，而"他为什么没撑住"这个问题
+ * fire（点没点着火，夜里唯一的回温手段）答得比时间戳好得多。
+ */
+const ALIVE_SECONDS = 15;
+
+/** 重开局只报这四个。加一个都要想清楚它换来什么。 */
+const RESTART_NODES = [PACK, FUEL_ONE, NIGHT_ONE] as const;
+
+/**
+ * 只在第一个白天之内算数的三拍。
+ *
+ * 第一个白天只有 40 秒（FIRST_DAY_DURATION），我们对这 40 秒内部零分辨率。
+ * 这三个把它拆开，都是现成事件，纯观测不改行为：
+ *
+ *   attack  按过攻击键   —— 知不知道有攻击这回事
+ *   kill    打死过东西   —— 按了，但打得中吗
+ *   wood    捡到第一根柴 —— 唯一的燃料，也是 sword-1 缺的那两根
+ *
+ * 入夜之后再做到就不算（见 closeDay1），否则它们会退化成"整局有没有做过"，
+ * 失去"这 40 秒够不够用"的意义。
+ *
+ * 原先还有一拍 day1|move（迈第一步）。它被 {@link ENTER} 取代了 ——
+ * 收口条件是同一件事，而 ENTER 的 start 更早，信息严格更多。
+ */
+const DAY1_NODES = [ATTACK, KILL, WOOD] as const;
 
 /** sword-1 = 兽皮×1 + 枯木×2，是全部一阶里最便宜、且不要火的一件。 */
 const READY_HIDE = 1;
@@ -118,8 +179,36 @@ export class RunProgress {
    * 那里解释了为什么它不能走 open/done 那套记账。
    */
   private restartPending = false;
+  /** {@link ENTER} 的"开着没有"。同 restartPending，不走 open/done。 */
+  private enterPending = false;
+  /**
+   * 这一局的局次前缀，`r1` 或 `rr`。**由 beginRun 定一次，整局不再变。**
+   *
+   * 不要在 send() 里现算：万一中途变了，同一个节点的 start 和 complete 会落到
+   * 两行上，两行都变成永远收不了口 —— 而这种错在后台表上看不出来，
+   * 只会让 Left 两边一起变胖。
+   */
+  private prefix: "r1" | "rr" = "r1";
 
   constructor(private readonly ctx: RunProgressWorld) {}
+
+  /** 局次节点的完整名字。前缀整局固定，所以这里现拼是安全的。 */
+  private runNode(what: string): Node {
+    return `${this.prefix}|${what}`;
+  }
+
+  /**
+   * 收口一个局次节点。**这一局没挂这个节点就直接跳过。**
+   *
+   * 重开局只报四个（见 RESTART_NODES），所以重开局里按攻击键时，
+   * 不能让 close() 那条"没 start 过就补一个"的兜底凭空造出一个 rr|attack ——
+   * 那条兜底是给 fuel 链用的，在这里会无中生有。
+   */
+  private closeRun(what: string, action: "complete" | "fail"): void {
+    const node = this.runNode(what);
+    if (!this.open.has(node) && !this.done.has(node)) return;
+    this.close(node, action);
+  }
 
   private send(node: Node, action: ProgressAction): void {
     const [category, what] = split(node);
@@ -160,19 +249,49 @@ export class RunProgress {
    * 那里只留 {@link noteRestart}（收口的是上一局结算页开出来的那个节点，
    * 必须赶在新一局 beginRun() 之前）。
    */
-  beginRun(): void {
+  beginRun(restartsThisSession: number): void {
+    // 上一局的"看了一眼就走"节点在这里收口：他动了，所以他没走。
+    // 必须排在 open/done 清空之前 —— 不过 ENTER 本来就不走那套，这里只是次序上顺手。
+    this.closeEnter();
     this.open.clear();
     this.done.clear();
+    this.prefix = restartsThisSession === 0 ? "r1" : "rr";
+
+    // 不分局次的：装车漏斗与装备门槛，问的都是整个游戏的事。
     // 第一桶从开局就算在跑：他一进场就有机会去装，没装成就是漏在这一级。
     this.start("fuel|1");
     this.start(EQUIP_FIRST);
     this.start(MAT_HIDE);
     this.start(MAT_WOOD2);
     this.start(EQUIP_READY);
-    this.start(CAMP_FIRE);
-    this.start(UI_PACK);
-    for (const node of DAY1_NODES) this.start(node);
+
+    // 分局次的。重开局只挂四个当对照，第一局挂全套。
+    this.start(this.runNode(`t${ALIVE_SECONDS}`));
+    for (const what of RESTART_NODES) this.start(this.runNode(what));
+    if (this.prefix === "r1") {
+      this.start(this.runNode(FIRE));
+      for (const what of DAY1_NODES) this.start(this.runNode(what));
+    }
   }
+
+  /**
+   * 页面加载完、可以玩了。**调用点是 main.ts 的 gameInteractive()**，
+   * 比别的节点都早 —— 理由见 {@link ENTER}。
+   *
+   * 幂等：一次页面生命周期只报一次，软重启不会再来。
+   */
+  noteInteractive(): void {
+    if (this.enterPending) return;
+    this.enterPending = true;
+    this.send(ENTER, "start");
+  }
+
+  private closeEnter(): void {
+    if (!this.enterPending) return;
+    this.enterPending = false;
+    this.send(ENTER, "complete");
+  }
+
 
   /**
    * 打开过背包。
@@ -182,7 +301,7 @@ export class RunProgress {
    * 挂在其中一个上会漏掉另一个。调用方改成看状态翻转，覆盖才是全的。
    */
   notePackOpened(): void {
-    this.close(UI_PACK, "complete");
+    this.closeRun(PACK, "complete");
   }
 
   /**
@@ -196,21 +315,22 @@ export class RunProgress {
    * 收口一个白天节点。只在**第一个白天之内**算数 —— 入夜之后再做到就不收，
    * 让它落进 fail（那正是"这 40 秒没做到"）。
    */
-  private closeDay1(node: Node): void {
+  private closeDay1(what: string): void {
     const sim = this.ctx.simulation;
     if (sim.day !== 1 || sim.phase !== "day") return;
-    this.close(node, "complete");
+    this.closeRun(what, "complete");
   }
 
   /**
-   * 玩家迈出了第一步。
+   * 活到第 15 秒了没有。
    *
-   * 用 clockStarted 而不是"有没有位移"：世界时钟就是被第一次真实移动打开的
-   * （见 GameSimulation.noteActivity），语义正好是"他真的开始玩了"。
-   * 每个事件查一次，幂等。
+   * 挂在每个事件之后统一查，**不要挂在某个特定事件上**：elapsed 是连续量，
+   * 而事件是稀疏的，挂错地方会让刻度晚收口好几秒 —— 而这个节点量的就是秒。
    */
-  private checkStarted(): void {
-    if (this.ctx.simulation.clockStarted) this.closeDay1(DAY1_MOVE);
+  private checkAlive(): void {
+    if (this.ctx.simulation.elapsed >= ALIVE_SECONDS) {
+      this.closeRun(`t${ALIVE_SECONDS}`, "complete");
+    }
   }
 
   private checkMaterials(): void {
@@ -254,19 +374,21 @@ export class RunProgress {
       case "phase":
         // 第一夜是这个游戏的闸门，单独立一个节点。
         if (event.phase === "night" && event.day === 1) {
-          this.start(NIGHT_ONE);
-          // 白天那四拍到此为止：还开着的就是"这 40 秒没做到"，收成 fail。
-          for (const node of DAY1_NODES) this.close(node, "fail");
+          // night1 在 beginRun 就挂上了（重开局也有），这里不再 start。
+          // 白天那三拍到此为止：还开着的就是"这 40 秒没做到"，收成 fail。
+          for (const what of DAY1_NODES) this.closeRun(what, "fail");
         }
-        else if (event.phase === "day" && event.day === 2) this.close(NIGHT_ONE, "complete");
+        else if (event.phase === "day" && event.day === 2) this.closeRun(NIGHT_ONE, "complete");
         break;
 
       case "pickup":
-        if (event.kind === "wood") this.closeDay1(DAY1_WOOD);
+        if (event.kind === "wood") this.closeDay1(WOOD);
         break;
 
       case "fuel-loaded": {
         this.close(`fuel|${event.loaded}`, "complete");
+        // 局次口径的"首局有没有摸到通关循环"，和上面那条聚合漏斗各问各的。
+        if (event.loaded === 1) this.closeRun(FUEL_ONE, "complete");
         // 装完这一桶，下一桶立刻开始计。装满了就不再往下开。
         if (event.loaded < event.required) this.start(`fuel|${event.loaded + 1}`);
         break;
@@ -278,18 +400,18 @@ export class RunProgress {
         break;
 
       case "attack":
-        this.closeDay1(DAY1_ATTACK);
+        this.closeDay1(ATTACK);
         break;
 
       case "critter-killed":
       case "wolf-killed":
-        this.closeDay1(DAY1_KILL);
+        this.closeDay1(KILL);
         break;
 
       case "feed-fire":
         // 添柴和点火发的是同一个事件（GameSimulation 只有那一处 emit），
         // 而我们要问的是"这一局有没有烧起来过火"，两者都算。
-        this.close(CAMP_FIRE, "complete");
+        this.closeRun(FIRE, "complete");
         break;
 
       case "game-over":
@@ -338,7 +460,7 @@ export class RunProgress {
       default:
         break;
     }
-    this.checkStarted();
+    this.checkAlive();
     this.checkMaterials();
   }
 }
