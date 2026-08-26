@@ -127,7 +127,6 @@ async function bootstrap(): Promise<void> {
    * 关键节点上报（Poki 后台的 Progress Events）。见 platform/RunProgress.ts ——
    * 那张表原先只有 SDK 自己报的 game/loading 一行，我们一个节点都没报过。
    */
-  let runProgress: RunProgress;
   const platform = await createPlatform({
     onAdStart: () => {
       audio.setAdMuted(true);
@@ -138,6 +137,24 @@ async function bootstrap(): Promise<void> {
       hud.setAdPlaying(false);
     },
   });
+
+  /*
+   * 关键节点上报（Poki 后台的 Progress Events）。见 platform/RunProgress.ts ——
+   * 那张表原先只有 SDK 自己报的 game/loading 一行，我们一个节点都没报过。
+   *
+   * **构造放在这里，但一个字节都不往外发。**
+   *
+   * 构造要早：帧循环里每个事件都要过一次 runProgress.handle()，而帧循环的
+   * requestAnimationFrame 排在 loadingFinished 之前。放到后面去赋值的话，
+   * 只要有人往中间插一个 await，第一帧就会撞上 undefined，而且是每帧抛一次。
+   *
+   * 上报要晚：第一次 measure 挂在 enterGame()（玩家迈第一步）里，
+   * **加载期我们一行都不跑** —— 那一段的去留 SDK 自己已经在计
+   * （后台 game/loading 那一行的 Left 列）。理由见 enterGame 里那段。
+   *
+   * 所以这里剩下的只有一次对象分配：两个空 Set，没有 IO、没有 postMessage。
+   */
+  const runProgress = new RunProgress(platform);
   if (import.meta.env.DEV) console.info(`[platform] ${platform.name}`);
 
   setProgress(0.58, t("boot.terrain"));
@@ -187,6 +204,23 @@ async function bootstrap(): Promise<void> {
     started = true;
     simulation.start();
     platform.gameplayStart();
+    /*
+     * 进度节点从**玩家真的开始玩**才计，不在加载完那一刻计。
+     *
+     * 两个理由，第二个才是主要的：
+     *
+     * 1. 加载期不该跑我们的任何东西 —— 那一段的去留 SDK 自己已经在计
+     *    （后台 game/loading 那一行的 Left 列），我们再插一脚只有坏处。
+     *
+     * 2. **口径**：加载完就报 fuel/1 start，等于把"打开页面看了一眼就走"的人
+     *    算成"开始装第一桶然后放弃了"。那批人已经被 game/loading 记过一次，
+     *    在这里再记一次就是双重计数，而且会让装车漏斗凭空显得更差。
+     *    fuel/1 start 的语义应该是"这一局开始了"，而这一局从他迈第一步才开始。
+     *
+     * enterGame 有 started 闸，一局只会进来一次；软重启把 started 退回 false，
+     * 所以新的一局自动再报一次 —— softRestart 里不用也不该再调 beginRun()。
+     */
+    runProgress.beginRun();
   };
 
   const input = new InputController({
@@ -334,7 +368,6 @@ async function bootstrap(): Promise<void> {
     hud.resetRun(simulation);
     nightIntro.reset();
     firstBarrelHint.reset();
-    runProgress.beginRun();
     input.cancelMoveTarget();
     started = false;
     previousTime = performance.now();
@@ -409,8 +442,6 @@ async function bootstrap(): Promise<void> {
    * 前者说"玩家现在能动了"。我们中间还隔着 showGame()，所以分开报。
    */
   platform.gameInteractive();
-  runProgress = new RunProgress(platform);
-  runProgress.beginRun();
   // 场景可以先展示，但 gameplayStart 与模拟层都必须等玩家第一次实际游戏输入。
   // HUD 已经提示“移动或拿起枯木，开始第一天”，无需重新加一层开始按钮。
   hud.showGame();

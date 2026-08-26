@@ -88,8 +88,17 @@ export class RunProgress {
   }
 
   /**
-   * 新的一局。软重启也要调，而且必须排在 {@link noteRestart} **之后** ——
-   * 那一条要在被清空之前把上一局的「重开」收口。
+   * 新的一局开始。
+   *
+   * 调用点是 main.ts 的 `enterGame()` —— 玩家**迈第一步**那一刻，不是加载完那一刻。
+   * 加载完就报等于把"打开页面看一眼就走"的人算成"开始装第一桶然后放弃了"，
+   * 而那批人 SDK 已经在 game/loading 那一行记过一次，重复计数还会让装车漏斗
+   * 凭空显得更差。
+   *
+   * `enterGame` 自带 started 闸，一局只进来一次；软重启把 started 退回 false，
+   * 新的一局自动再报一次。所以 softRestart 里**不需要也不应该**再调它，
+   * 那里只留 {@link noteRestart}（收口的是上一局结算页开出来的那个节点，
+   * 必须赶在新一局 beginRun() 之前）。
    */
   beginRun(): void {
     this.open.clear();
