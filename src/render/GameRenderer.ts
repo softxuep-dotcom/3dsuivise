@@ -8,6 +8,7 @@ import { BARRIER_STATS, FUEL_REQUIRED } from "../game/simulation/types";
 import { distanceToCampApproach, terrainHeightAt, terrainMoistureAt, terrainSaltAt, terrainSlopeAt } from "../game/terrain/TerrainModel";
 import { loadAnimal, type AnimalAsset } from "./AnimalModels";
 import { CreatureViews } from "./entities/CreatureViews";
+import { mergeStaticMeshes } from "./visuals/mergeStatic";
 import {
   BARRIER_DAMAGE_TINT, CACTUS_ELBOW_GEOMETRY, CACTUS_FLOWER_GEOMETRY, CACTUS_SPINE_GEOMETRY, IRON_ORE_GEOMETRY, IRON_SHARDS, IRON_SHARD_GEOMETRIES, STONE_COLOR, WEAPON_VISUALS, WOOD_COLOR, createBarrelView, createFuelPipTexture, createGuideArrowView, makeMaterial,
 } from "./visuals/models";
@@ -900,6 +901,8 @@ export class GameRenderer {
       }
 
       group.position.y += 0.02;
+      // 狗巢全静态，没有任何 sync 碰它的子网格。
+      mergeStaticMeshes(group);
       this.scene.add(group);
     }
   }
@@ -960,6 +963,8 @@ export class GameRenderer {
           group.add(rune);
         }
       }
+      // 枯木 / 残骸 / 石碑全静态，同狗巢。
+      mergeStaticMeshes(group);
       this.scene.add(group);
     }
   }
@@ -1079,6 +1084,8 @@ export class GameRenderer {
       const view = createBarrelView();
       view.rotation.y = barrel.rotation;
       this.scene.add(view);
+      // 桶身投影、两道箍与盖子不投影，合并后剩两个网格。
+      mergeStaticMeshes(view);
       this.barrelViews.set(barrel.id, view);
     }
   }
@@ -1246,6 +1253,8 @@ export class GameRenderer {
       }
 
       this.scene.add(group);
+      // 每个矿点 8 个网格：石基与七块碎石同材质同投影，矿脉另一份材质。
+      mergeStaticMeshes(group);
       this.ironViews.set(node.id, group);
     }
   }
@@ -1300,6 +1309,11 @@ export class GameRenderer {
       this.wellPips.set(well.id, pips);
 
       this.scene.add(group);
+      /*
+       * 井口那三个水位点必须留在外面：syncWells 按存量逐个显隐、逐个上下浮动。
+       * 合并掉它们的话，井水多少就再也看不出来了。
+       */
+      mergeStaticMeshes(group, new Set(pips));
       this.wellViews.set(well.id, group);
     }
   }
@@ -1423,6 +1437,11 @@ export class GameRenderer {
         brokenFence.castShadow = true;
         group.add(brokenFence);
       }
+      /*
+       * 火焰和地光必须留在外面：syncFires 按燃料逐帧改它们的缩放与透明度。
+       * flame 是个组，它的两个子网格会被 keep 的祖先判定一并保住。
+       */
+      mergeStaticMeshes(group, new Set<THREE.Object3D>([flame, glow]));
       this.scene.add(group);
       this.campViews.set(camp.id, { flame, glow });
     }
@@ -1467,6 +1486,8 @@ export class GameRenderer {
       }
       group.rotation.y = random() * Math.PI * 2;
       group.position.set(patch.x, this.worldHeight(patch.x, patch.z), patch.z);
+      // 每株 9 个网格 → 按材质与阴影分桶合并。syncCacti 只切 group.visible，不碰子网格。
+      mergeStaticMeshes(group);
       this.scene.add(group);
       this.cactusViews.set(patch.id, group);
     }

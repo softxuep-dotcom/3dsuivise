@@ -160,7 +160,9 @@ describe("模块图", () => {
       // 2274 → 2298：screenToWorld 拆成 screenToGround，多交出一个"射线在地面上
       // 朝哪走"。这个方向不是可有可无的：玩家点的是物体画出来的像素（离地一两米），
       // 射线打在物体身后 0.8~13.4 米，判定必须沿视线分解才不会落空。
-      "src/render/GameRenderer.ts": 2298,
+      // 2298 → 2319：六个 builder 各加一句 mergeStaticMeshes（含解释为什么安全的注释）。
+      // 换来的是绘制调用 299 → 143，见 visuals/mergeStatic.ts。
+      "src/render/GameRenderer.ts": 2319,
       // 1171 → 1172：EquipTier 跟着数值搬去了 balance/equipment，
       // 于是这里从两行 import 变成三行。这是全程唯一一处上调，且只此一行。
       "src/ui/HudController.ts": 1172,
