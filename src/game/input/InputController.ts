@@ -1,5 +1,6 @@
 import { distance, normalize } from "../simulation/geometry";
 import type { PlayerState, Vec2 } from "../simulation/types";
+import type { ClickPick } from "../simulation/query/pickAt";
 
 interface InputCallbacks {
   /** Poki 要求 gameplayStart 必须发生在真正开始游玩的首次输入里。 */
@@ -18,6 +19,14 @@ export class InputController {
   private moveTarget: Vec2 | null = null;
   /** 由 main.ts 注入的寻路：从当前位置朝点击目标该走哪。返回 null 表示已到达。 */
   private routeTo: ((target: Vec2) => Vec2 | null) | null = null;
+  /**
+   * 这一次点击点中的东西，以及到位之后要做什么。null = 点的是空地，纯走过去。
+   *
+   * 只有键鼠会有值：触屏的 pointerdown 在更早的地方就 return 进摇杆了。
+   */
+  private pendingPick: ClickPick | null = null;
+  /** 由 main.ts 注入：这条射线点中了什么。见 simulation/query/pickAt。 */
+  private pickAt: ((point: Vec2, forward: Vec2) => ClickPick | null) | null = null;
   /** 连续多久没有实质推进；超过阈值就放弃这次点击，免得人一直顶着崖壁。 */
   private stalledFor = 0;
   private lastPosition: Vec2 | null = null;
@@ -36,7 +45,10 @@ export class InputController {
     this.bindButton("thermal-button", callbacks.onThermal);
   }
 
-  bindCanvas(canvas: HTMLCanvasElement, screenToWorld: (x: number, y: number) => Vec2 | null): void {
+  bindCanvas(
+    canvas: HTMLCanvasElement,
+    screenToGround: (x: number, y: number) => { point: Vec2; forward: Vec2 } | null,
+  ): void {
     canvas.addEventListener("pointerdown", (event) => {
       /*
        * **画布上的第一次按下就是开局**，不管这一下有没有真的让人动起来。
@@ -55,8 +67,17 @@ export class InputController {
         this.startJoystick(canvas, event);
         return;
       }
-      const target = screenToWorld(event.clientX, event.clientY);
-      if (target) this.moveTarget = target;
+      const ground = screenToGround(event.clientX, event.clientY);
+      if (!ground) return;
+      /*
+       * 点在东西上 → 记住它，走到够得着再自动做一次；点在空地上 → 和以前一样纯走。
+       *
+       * 走的目标换成**实体本身**而不是脚下那块地：玩家点的是那棵树。
+       * 跟着实体走还顺带让"追一只正在逃的猎物"成立。
+       */
+      const pick = this.pickAt?.(ground.point, ground.forward) ?? null;
+      this.pendingPick = pick;
+      this.moveTarget = pick ? pick.target : ground.point;
     });
     canvas.addEventListener("pointermove", (event) => {
       if (event.pointerId === this.joystickPointer) this.trackJoystick(event);
@@ -80,7 +101,14 @@ export class InputController {
     } else if (horizontal !== 0 || vertical !== 0) {
       this.moveTarget = null;
     } else if (this.moveTarget) {
-      if (distance(player, this.moveTarget) < 0.65) {
+      /*
+       * 点空地时仍然是原来的 0.65 米"到了"；点中东西时改用那件东西自己的射程 ——
+       * 树 3.2、井 3.2、铁矿 2.8、装车 5.5、挥刀 3.1~3.8，各不相同，
+       * 所以射程由模拟层随选中结果一起给出，输入层不猜。
+       */
+      const arriveWithin = this.pendingPick ? this.pendingPick.reach : 0.65;
+      if (distance(player, this.moveTarget) <= arriveWithin) {
+        this.firePendingPick();
         this.moveTarget = null;
       } else {
         /*
@@ -104,7 +132,12 @@ export class InputController {
         }
       }
     }
-    if (!this.moveTarget) { this.stalledFor = 0; this.lastPosition = null; }
+    /*
+     * moveTarget 一旦清空，这次点击的意图就跟着作废 —— 推摇杆、按 WASD、顶着崖壁
+     * 超时放弃，都走这一条。漏掉任何一条都会让动作在玩家早就改主意之后突然发出来。
+     * 到位那一支例外：它在上面已经先发过动作、并把 pendingPick 置空了。
+     */
+    if (!this.moveTarget) { this.stalledFor = 0; this.lastPosition = null; this.pendingPick = null; }
 
     // Fixed isometric camera: convert screen axes to world axes.
     const factor = Math.SQRT1_2;
@@ -119,6 +152,26 @@ export class InputController {
     this.routeTo = route;
   }
 
+  /** 接上模拟层的选中判定。没接的话左击退回纯移动，行为和以前一致。 */
+  setPicker(pick: (point: Vec2, forward: Vec2) => ClickPick | null): void {
+    this.pickAt = pick;
+  }
+
+  /**
+   * 走到了 —— 把这次点击攒下的那一个动作发出去。
+   *
+   * **只发一次**。要继续砍这棵树、继续打这只狗，再点一下。
+   * 连续动作会让劳力在玩家没察觉的情况下被抽干（每一刀 4~7 点，
+   * 而劳力见底会让伤害掉到 ×0.6），那是一种看不见原因的变弱。
+   */
+  private firePendingPick(): void {
+    const pick = this.pendingPick;
+    this.pendingPick = null;
+    if (!pick) return;
+    if (pick.intent === "attack") this.callbacks.onAttack();
+    else this.callbacks.onAction();
+  }
+
   /** getMovement 每帧调一次；这里只看"两帧之间到底挪了多少"。 */
   private trackStall(player: PlayerState): void {
     if (this.lastPosition) {
@@ -131,6 +184,7 @@ export class InputController {
 
   cancelMoveTarget(): void {
     this.moveTarget = null;
+    this.pendingPick = null;
     this.stalledFor = 0;
     this.lastPosition = null;
   }

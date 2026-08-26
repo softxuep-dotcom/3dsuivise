@@ -9,6 +9,8 @@ import {
 } from "./geometry";
 import { campGatePosition, campLocalToWorld, isTerrainWalkable } from "../terrain/TerrainModel";
 import { nearest } from "./query/nearest";
+import { pickAt } from "./query/pickAt";
+import type { ClickPick } from "./query/pickAt";
 import { describeCost, loc } from "./text";
 import { NavigationGrid } from "./NavigationGrid";
 import { CollisionKernel } from "./movement/CollisionKernel";
@@ -1318,6 +1320,42 @@ export class GameSimulation {
    * 判据用**距离**不用扇形：扇形要求玩家已经对准，而这条提示的意义正是
    * 告诉还没上手的人"现在按这颗有用"。扛着桶时打不了架，那时不提示。
    */
+  /**
+   * 键鼠玩家点了一下世界上的某个点，那一下点中了什么。
+   *
+   * `point` 是射线打到地面的点，`forward` 是这条射线在地面上的前进方向 ——
+   * 两个都由 GameRenderer.screenToGround 一次给出。**方向不能省**：
+   * 玩家点的是物体画出来的像素（离地一两米），命中点落在物体身后 0.8~13.4 米，
+   * 判定必须沿视线分解才不会落空。详见 query/pickAt.ts 顶上那段实测。
+   *
+   * 返回 null 表示点的是空地 —— 调用方退回原来的纯移动。
+   */
+  pickAt(point: Vec2, forward: Vec2): ClickPick | null {
+    if (this.truckSystem.departing) return null;
+    /*
+     * 显式构造，**不要写 `{ ...this }`**。
+     *
+     * 对象展开只复制自有可枚举属性，而 `wolves`（以及别的几个）是原型上的 getter ——
+     * 展开出来是 undefined，于是点狼永远选不中，而且不报错，只是"点了没反应"。
+     * 顺带也省掉每次点击复制九十多个字段。
+     */
+    return pickAt({
+      world: this.world,
+      wells: this.wells,
+      trees: this.trees,
+      cacti: this.cacti,
+      ironNodes: this.ironNodes,
+      items: this.items,
+      structures: this.structures,
+      barrels: this.barrels,
+      critters: this.critters,
+      wolves: this.wolves,
+      truck: this.truck,
+      attackRange: this.equipment.weaponStats().range,
+      carrying: this.player.carrying,
+    }, point, forward);
+  }
+
   hasAttackTargetInRange(): boolean {
     if (this.player.carrying) return false;
     const range = this.equipment.weaponStats().range;

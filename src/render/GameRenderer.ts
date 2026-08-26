@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import type { GameSimulation } from "../game/simulation/GameSimulation";
-import { clamp, lerp, mulberry32 } from "../game/simulation/geometry";
+import { clamp, lerp, mulberry32, normalize } from "../game/simulation/geometry";
 import type { CampDefinition, GroundItem, Vec2, WeaponKind, WorldDefinition } from "../game/simulation/types";
 import { BARRIER_STATS, FUEL_REQUIRED } from "../game/simulation/types";
 import { distanceToCampApproach, terrainHeightAt, terrainMoistureAt, terrainSaltAt, terrainSlopeAt } from "../game/terrain/TerrainModel";
@@ -378,6 +378,23 @@ export class GameRenderer {
   }
 
   screenToWorld(clientX: number, clientY: number): Vec2 | null {
+    return this.screenToGround(clientX, clientY)?.point ?? null;
+  }
+
+  /**
+   * 屏幕上这一点打到地面是哪里，以及**这条射线在地面上朝哪个方向走**。
+   *
+   * 方向那一半是给左击选中用的，而且是必需的 —— 玩家点的是一棵树**画出来的那几个
+   * 像素**（离地一两米），射线穿过去打在树**后面**的地上。实测这个偏移是
+   * 0.8~13.4 米，而且**垂直于视线的分量恰好是 0**：偏移百分之百沿着视线方向。
+   *
+   * 所以"点没点中"不能用"离命中点多远"来量（那会让点树经常无声地落空），
+   * 要量的是**离这条射线的地面直线有多远**。把 forward 一并交出去，
+   * 选中判定就能做这件事，而且完全不需要知道相机在哪。
+   *
+   * 命中点仍然照旧返回：点空地时走过去的目标就是它。
+   */
+  screenToGround(clientX: number, clientY: number): { point: Vec2; forward: Vec2 } | null {
     const rect = this.canvas.getBoundingClientRect();
     this.pointer.set(
       ((clientX - rect.left) / rect.width) * 2 - 1,
@@ -387,7 +404,14 @@ export class GameRenderer {
     const hit = this.raycaster.intersectObject(this.terrainMesh, false)[0];
     if (!hit) return null;
     this.worldPoint.copy(hit.point);
-    return { x: this.worldPoint.x, z: this.worldPoint.z };
+    const point = { x: this.worldPoint.x, z: this.worldPoint.z };
+    // 射线的地面方向：相机 → 命中点，投到 xz 平面。透视相机每个像素方向不同，
+    // 所以逐次现算，不用一个全屏共用的常量。
+    const forward = normalize({
+      x: point.x - this.camera.position.x,
+      z: point.z - this.camera.position.z,
+    });
+    return { point, forward };
   }
 
   /**

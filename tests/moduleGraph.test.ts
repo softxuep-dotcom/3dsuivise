@@ -151,10 +151,16 @@ describe("模块图", () => {
       // 阶段 1 把 646 行平衡常量搬去 balance/：3518 → 3052。
       // 阶段 2 抽走八个子系统：3052 → 1853。下一个目标是 update() 编排 + 状态容器，
       // 也就是 600 行以内 —— 到那时这一行就该从表里删掉。
-      "src/game/simulation/GameSimulation.ts": 1901,
+      // 1901 → 1935：接入左击选中（pickAt）。判定本体在 query/pickAt.ts，
+      // 这里只有一个显式构造上下文再转发的方法 —— 之所以不能写 `{ ...this }`，
+      // 那 34 行的注释里说了：wolves 和 critters 是原型上的 getter，展开不会带上。
+      "src/game/simulation/GameSimulation.ts": 1939,
       // 阶段 3 抽走视觉常量与三个动态实体池：2938 → 2274。
       // 剩下的 build*（开局建一次）和 sync*（每帧）还混在一起，是下一刀。
-      "src/render/GameRenderer.ts": 2274,
+      // 2274 → 2298：screenToWorld 拆成 screenToGround，多交出一个"射线在地面上
+      // 朝哪走"。这个方向不是可有可无的：玩家点的是物体画出来的像素（离地一两米），
+      // 射线打在物体身后 0.8~13.4 米，判定必须沿视线分解才不会落空。
+      "src/render/GameRenderer.ts": 2298,
       // 1171 → 1172：EquipTier 跟着数值搬去了 balance/equipment，
       // 于是这里从两行 import 变成三行。这是全程唯一一处上调，且只此一行。
       "src/ui/HudController.ts": 1172,

@@ -236,7 +236,7 @@ async function bootstrap(): Promise<void> {
     onInventory: () => hud.toggleInventory(),
     onPause: () => hud.togglePause(),
   });
-  input.bindCanvas(renderer.canvas, (x, y) => renderer.screenToWorld(x, y));
+  input.bindCanvas(renderer.canvas, (x, y) => renderer.screenToGround(x, y));
   // 卡车的屏幕边缘指示器要把世界坐标投到画布上，投影只有渲染层知道怎么做。
   hud.setProjector((x, z) => renderer.worldToScreen(x, z));
 
@@ -298,15 +298,19 @@ async function bootstrap(): Promise<void> {
      * 把教学和渲染层也挂上调试句柄。
      *
      * 有它才能在控制台里手动步进整条链（update → drainEvents → 各 handle → 各 update），
+     * 也才能验左击那条链：派一个 pointerdown，然后自己喂 input.getMovement 推帧，
+     * 看人有没有走过去、到位有没有自动做那一次动作。
      * 而这正是验证第一夜教学的唯一办法：那段教学要等第一个白天走完才触发，
      * 而 rAF 在页面不可见时**一帧都不跑**，光靠改 phaseTime 是推不动的。
      */
     Object.assign((window as unknown as { game: Record<string, unknown> }).game, {
-      renderer, nightIntro,
+      renderer, nightIntro, input,
     });
   }
   // 点击移动走模拟层的流场，不走直线 —— 直线在这张有山脊的图上只有四成能走到。
   input.setRouter((target) => simulation.directionToClickTarget(target));
+  // 左击点中东西时走到够得着再自动做一次；点空地仍然是纯移动。见 simulation/query/pickAt。
+  input.setPicker((point, forward) => simulation.pickAt(point, forward));
 
   /*
    * 给平台报"在玩 / 没在玩"的唯一报点。
