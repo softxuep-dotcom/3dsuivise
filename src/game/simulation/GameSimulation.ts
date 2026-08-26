@@ -16,6 +16,8 @@ import { InventorySystem } from "./InventorySystem";
 import { EquipmentSystem } from "./EquipmentSystem";
 import { SurvivalSystem } from "./SurvivalSystem";
 import { CritterDirector } from "./CritterDirector";
+import { FuelPerkSystem } from "./FuelPerkSystem";
+import type { FuelPerkId } from "../balance/fuelPerks";
 import { TruckSystem } from "./TruckSystem";
 import type { FuelProgress } from "./TruckSystem";
 import { ObjectiveNarrator } from "./ObjectiveNarrator";
@@ -205,6 +207,11 @@ export class GameSimulation {
   /** 猎物：肉、皮和开局那三只教学猎物。 */
   private readonly critterDirector = new CritterDirector(this, this.collision);
   /** 卡车与油桶：这个游戏唯一的通关条件。 */
+  /**
+   * 搬油三选一。见 FuelPerkSystem —— 它是奖励状态的唯一真相来源，
+   * HUD 只读 getFuelPerkOffer() / 回 chooseFuelPerk()。
+   */
+  readonly fuelPerks = new FuelPerkSystem(this);
   private readonly truckSystem = new TruckSystem(this, this.collision);
   /** 目标行与方位提示：模拟层唯一产出玩家能读到的话的地方。 */
   private readonly objectives = new ObjectiveNarrator(this, this.truckSystem, this.equipment);
@@ -433,7 +440,11 @@ export class GameSimulation {
       emit: (event) => { sim.events.push(event); },
       damagePlayer: (amount, attacker) => {
         if (amount <= 0) return;
-        sim.player.health -= amount;
+        // 护桶姿势只在**扛着油**的时候减伤 —— 它买的是危险运输路线的容错。
+        const scaled = sim.player.carrying === "fuel"
+          ? amount * sim.fuelPerks.carriedDamageScale()
+          : amount;
+        sim.player.health -= scaled;
         sim.healthDamageCause = "killed";
         sim.healthDamageAttacker = attacker.kind;
       },
@@ -456,6 +467,7 @@ export class GameSimulation {
       getSteeredDirection: (entity, desired) => sim.collision.getSteeredDirection(entity, desired),
       getBarrierDamage: (wolf, armor) => sim.getBarrierDamage(wolf, armor),
       isBlockingGroundItem: (item) => sim.collision.isBlockingGroundItem(item),
+      notePerkWolfKilled: () => sim.fuelPerks.noteWolfKilled(),
     };
   }
 
@@ -525,6 +537,7 @@ export class GameSimulation {
     this.combatTimer = Math.max(0, this.combatTimer - delta);
     this.reviveGrace = Math.max(0, this.reviveGrace - delta);
     this.survival.tickCooldowns(delta);
+    this.fuelPerks.tick(delta);
     if (!isMoving) this.player.idleTime += delta;
     this.navigationCountdown -= delta;
     if (this.navigationCountdown <= 0) {
@@ -957,7 +970,9 @@ export class GameSimulation {
     for (const wolf of this.wolves) {
       if (wolf.mode === "dead" || !inArc(wolf)) continue;
       const wasRetreating = wolf.mode === "retreating";
-      const { damage } = this.rollDamage(stats, comboMultiplier, exhausted, wolf.defense);
+      const rolled = this.rollDamage(stats, comboMultiplier, exhausted, wolf.defense);
+      // 清巢老手只对**还守着**的巢犬加伤：五只全死之后这张卡也退出候选池。
+      const damage = rolled.damage * this.fuelPerks.denDamageScale(wolf.role === "guard");
       wolf.health -= damage;
       wolf.hurtFlash = 0.18;
       wolf.provoked = true;
@@ -1488,7 +1503,13 @@ export class GameSimulation {
     this.noteActivity();
     const movement = normalize(rawMovement);
     this.player.facing = movement;
-    const carryingPenalty = this.player.carrying ? 0.54 : 1;
+    /*
+     * 搬运惩罚和空手加速，两者互斥 —— 军用肩带管返程（扛着的时候），
+     * 熟门熟路管去程（空手跑去找下一桶）。见 balance/fuelPerks.ts。
+     */
+    const carryingPenalty = this.player.carrying
+      ? this.fuelPerks.carryScale()
+      : this.fuelPerks.emptyRunScale();
     const needsPenalty = this.player.hunger < 12 || this.player.water < 12 ? 0.84 : 1;
     // 武器与护甲的移速系数相乘。全重装（砍刀Ⅲ + 铁甲Ⅲ）是 0.92 × 0.88 = 0.810
     // → 6.64，全轻装是 1.06 × 1.09 = 1.155 → 9.47，差 43%。
@@ -1501,6 +1522,39 @@ export class GameSimulation {
 
   requestThermalAction(): void {
     this.survival.requestThermalAction();
+  }
+
+  /**
+   * 给奖励系统用的三轴回复口（后座补给、见血回神）。
+   *
+   * 走这里而不是让子系统直接碰 player，是为了把封顶这件事收在一处 ——
+   * 五项最大值都是 100，而"回复能把人从死亡线上拽回来"是错的顺序，
+   * 所以这里也不复活：health <= 0 的那一帧交给 update 末尾的死亡判定。
+   */
+  restoreNeeds(health: number, water: number, hunger: number): void {
+    const player = this.player;
+    if (health > 0) player.health = Math.min(player.health + health, player.maxHealth);
+    if (water > 0) player.water = Math.min(player.water + water, 100);
+    if (hunger > 0) player.hunger = Math.min(player.hunger + hunger, 100);
+  }
+
+  // ── 搬油三选一的取值口。真相全在 fuelPerks，这里只做转发。 ──
+  perkBonusDefense(): number { return this.fuelPerks.bonusDefense(); }
+  perkDecayScale(): number { return this.fuelPerks.decayScale(); }
+  perkBonusStaminaRegen(): number { return this.fuelPerks.bonusStaminaRegen(); }
+  notePerkFuelLoaded(loaded: number, required: number): void {
+    this.fuelPerks.noteFuelLoaded(loaded, required);
+  }
+
+  /** HUD 读这次给哪三张；没有待选时返回 null。 */
+  getFuelPerkOffer(): readonly FuelPerkId[] | null { return this.fuelPerks.pendingOffer(); }
+  /** HUD 把选择送回来校验。不在本次 offer 里会被拒绝。 */
+  chooseFuelPerk(id: FuelPerkId): boolean { return this.fuelPerks.choose(id); }
+  fuelPerkStacks(id: FuelPerkId): number { return this.fuelPerks.stacksOf(id); }
+
+  /** 场上还有没有活着的守巢狼。清巢老手（den-breaker）靠它决定要不要发。 */
+  hasLivingGuards(): boolean {
+    return this.wolves.some((wolf) => wolf.role === "guard" && wolf.mode !== "dead");
   }
 
   getAttackPower(): number {

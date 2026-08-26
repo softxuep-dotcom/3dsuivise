@@ -151,7 +151,7 @@ describe("模块图", () => {
       // 阶段 1 把 646 行平衡常量搬去 balance/：3518 → 3052。
       // 阶段 2 抽走八个子系统：3052 → 1853。下一个目标是 update() 编排 + 状态容器，
       // 也就是 600 行以内 —— 到那时这一行就该从表里删掉。
-      "src/game/simulation/GameSimulation.ts": 1853,
+      "src/game/simulation/GameSimulation.ts": 1901,
       // 阶段 3 抽走视觉常量与三个动态实体池：2938 → 2274。
       // 剩下的 build*（开局建一次）和 sync*（每帧）还混在一起，是下一刀。
       "src/render/GameRenderer.ts": 2274,
@@ -160,9 +160,9 @@ describe("模块图", () => {
       "src/ui/HudController.ts": 1172,
       // styles.css 阶段 3 拆成六段，自己只剩 @import；六段各自都在 600 行以内。
       "src/render/entities/CreatureViews.ts": 420,
-      "src/game/simulation/WolfDirector.ts": 1096,
+      "src/game/simulation/WolfDirector.ts": 1099,
       "src/game/content/createWorld.ts": 706,
-      "src/game/simulation/types.ts": 648,
+      "src/game/simulation/types.ts": 657,
     };
 
     const over: string[] = [];

@@ -22,6 +22,8 @@ import type { ArmorKind, EquipLine, GameEvent, InventoryItemKind, LocalizedText,
  * 攻击力只增不减。派生之后换线、降级、读档都不会算错。
  */
 export interface EquipmentOwner {
+  /** 搬油三选一的运行时效果。真相在 FuelPerkSystem，这里只是取值口。 */
+  perkBonusDefense(): number;
   readonly player: PlayerState;
   readonly running: boolean;
   emit(event: GameEvent): void;
@@ -229,7 +231,13 @@ export class EquipmentSystem {
   }
 
   /** 护甲防御力。 */
+  /**
+   * 最终防御 = 装备防御 + 加固内衬的平坦加值。
+   *
+   * 加在这里而不是改 player.armor —— 后者会让换装、降级、切线各自重复累计，
+   * 而那种错只在玩家换了三次装备之后才显形，查起来极费劲。
+   */
   defense(): number {
-    return this.equipped("armor").defense ?? 0;
+    return (this.equipped("armor").defense ?? 0) + this.owner.perkBonusDefense();
   }
 }

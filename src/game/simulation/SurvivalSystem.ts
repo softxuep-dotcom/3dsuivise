@@ -51,6 +51,9 @@ import type { LocalizedText, SurvivalCondition } from "./types";
  * 连击窗口夹在中间看着突兀，但它原本就在这个位置（见 {@link SurvivalOwner.tickCombo}）。
  */
 export interface SurvivalOwner extends SimContext {
+  /** 搬油三选一的运行时效果。真相在 FuelPerkSystem，这里只是取值口。 */
+  perkDecayScale(): number;
+  perkBonusStaminaRegen(): number;
   /**
    * 本次交互开始前的静止时长。
    *
@@ -96,8 +99,10 @@ export class SurvivalSystem {
     const player = this.owner.player;
 
     // --- 代谢：水分与饥饿独立衰减，任一归零立即死亡 ---
-    player.water = clamp(player.water - delta * WATER_DECAY, 0, 100);
-    player.hunger = clamp(player.hunger - delta * HUNGER_DECAY, 0, 100);
+    // 省着点吃（rationing）乘在这里：两条轴同一个倍率，别只减一条。
+    const decay = this.owner.perkDecayScale();
+    player.water = clamp(player.water - delta * WATER_DECAY * decay, 0, 100);
+    player.hunger = clamp(player.hunger - delta * HUNGER_DECAY * decay, 0, 100);
 
     // --- 体力恒定流失：把"吃饭"从可拖延的提示变成硬心跳（基准 -0.7/600HP）---
     player.health -= delta * HEALTH_DECAY;
@@ -126,7 +131,10 @@ export class SurvivalSystem {
       ? STAMINA_REST_REGEN
       : player.idleTime > 0.4
         ? STAMINA_IDLE_REGEN
-        : STAMINA_ACTIVE_REGEN) * this.equipment.armorStats().staminaScale;
+        : STAMINA_ACTIVE_REGEN) * this.equipment.armorStats().staminaScale
+      // 调匀呼吸是**平坦加值**，加在护甲倍率之后 —— 卡面写着 +2/秒，
+      // 就必须对皮甲和铁甲玩家都正好是 +2/秒。
+      + this.owner.perkBonusStaminaRegen();
     player.stamina = clamp(player.stamina + delta * staminaRegen, 0, player.maxStamina);
 
     // --- 连击窗口：手停下来层数就掉 ---

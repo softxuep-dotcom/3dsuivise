@@ -174,13 +174,15 @@
 
 @media (orientation: landscape) and (max-height: 400px) {
   .quick-craft-tray {
-    top: 45%;
+    top: max(72px, calc(env(safe-area-inset-top) + 72px));
     right: max(8px, env(safe-area-inset-right));
-    grid-template-rows: repeat(2, 48px);
+    display: flex;
+    align-items: flex-start;
     gap: 6px;
+    transform: none;
   }
 
-  .quick-craft-row { min-height: 48px; gap: 6px; }
+  .quick-craft-row { min-width: 48px; min-height: 48px; gap: 6px; }
   .quick-craft-button { grid-template-rows: 27px minmax(0, 1fr); width: 48px; height: 48px; border-radius: 13px 5px 13px 13px; }
   .quick-craft-button .quick-craft-icon { width: 27px; height: 27px; }
   .quick-craft-button span { max-width: 42px; font-size: 7px; }

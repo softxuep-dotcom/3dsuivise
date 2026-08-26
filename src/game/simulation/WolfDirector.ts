@@ -144,6 +144,8 @@ export interface WolfWorld {
    */
   getPlayerArmor(): { dodge: number; thorns: number };
   isBlockingGroundItem(item: GroundItem): boolean;
+  /** 杀掉一只狼 → 见血回神。冷却在 FuelPerkSystem 里判。 */
+  notePerkWolfKilled(): void;
 }
 
 /**
@@ -735,6 +737,7 @@ export class WolfDirector {
         this.ctx.createDrop(wolf, "wolf-fang", 0, wolf.kind === "elite" ? 2 : 1);
       }
     }
+    this.ctx.notePerkWolfKilled();
     this.ctx.emit({ type: "wolf-killed", wolfId: wolf.id });
   }
 

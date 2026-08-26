@@ -1,3 +1,5 @@
+import type { FuelPerkId } from "../balance/fuelPerks";
+
 export interface Vec2 {
   x: number;
   z: number;
@@ -557,6 +559,13 @@ export type GameEvent =
   | { type: "structure-destroyed"; kind: StructureKind }
   | { type: "phase"; phase: Phase; day: number }
   | { type: "message"; key: string; params?: LocalizedText["params"] }
+  /**
+   * 装车后弹三选一。具体给哪三张由 HUD 调 simulation.getFuelPerkOffer() 读，
+   * 事件只负责通知"该开弹层了" —— 卡面内容不进事件，免得表现层拿到一份
+   * 可能已经过期的快照。
+   */
+  | { type: "fuel-perk-offer"; loaded: number }
+  | { type: "fuel-perk-chosen"; id: FuelPerkId; stacks: number }
   | { type: "victory" }
   /** 看完激励视频后原地复活。 */
   | { type: "revive" }

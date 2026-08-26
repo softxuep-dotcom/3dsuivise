@@ -35,6 +35,8 @@ export interface FuelProgress {
  * 最后这十秒会出现"通关动画里渴死"这种荒唐结局。
  */
 export interface TruckOwner {
+  /** 装车完成 → 通知三选一。第 6 桶不弹的判断在 FuelPerkSystem 里。 */
+  notePerkFuelLoaded(loaded: number, required: number): void;
   readonly player: PlayerState;
   readonly world: WorldDefinition;
   readonly barrels: FuelBarrelState[];
@@ -88,6 +90,12 @@ export class TruckSystem {
     this.owner.player.carrying = null;
     this.owner.truck.loaded += 1;
     this.owner.emit({ type: "fuel-loaded", loaded: this.owner.truck.loaded, required: FUEL_REQUIRED });
+    /*
+     * 三选一接在**装车完成**这一刻，不是拾取那一侧 —— 拿起和放下同一桶可以
+     * 反复做，装车不行。奖励是完成一次危险运输之后的结算。
+     * 第 6 桶不弹（判断在 FuelPerkSystem 里），那时该直接进上车发车。
+     */
+    this.owner.notePerkFuelLoaded(this.owner.truck.loaded, FUEL_REQUIRED);
     this.owner.emit({
       type: "message",
       key: this.owner.truck.loaded >= FUEL_REQUIRED ? "msg.fuelFull" : "msg.fuelLoaded",

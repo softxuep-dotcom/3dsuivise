@@ -15,4 +15,5 @@
   t=0.1 message key=msg.1
   t=3.0 pickup kind=fuel
   t=8.6 fuel-loaded loaded=1.00 required=6.00
+  t=8.6 fuel-perk-offer loaded=1.00
   t=8.6 message key=msg.fuelLoaded params={"loaded":1,"required":6}

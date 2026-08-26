@@ -544,6 +544,32 @@
   }
 }
 
+/*
+ * 580×288 一类嵌入式超窄横屏：左目标 + 中时钟 + 右五状态已经没有横向呼吸。
+ * 时钟退到目标下方；toast 仍独立居中，不能跟着时钟一起占掉左侧操作通道。
+ */
+@media (orientation: landscape) and (max-width: 680px) and (max-height: 400px) {
+  .top-stack {
+    top: max(72px, calc(env(safe-area-inset-top) + 72px));
+    left: max(8px, env(safe-area-inset-left));
+    align-items: flex-start;
+    max-width: min(230px, 38vw);
+    transform: none;
+  }
+
+  #toast {
+    position: fixed;
+    top: 38%;
+    right: auto;
+    bottom: auto;
+    left: 50%;
+    width: max-content;
+    max-width: min(76vw, 320px);
+    transform: translateX(-50%);
+    text-align: center;
+  }
+}
+
 @media (orientation: portrait) and (max-width: 340px),
        (orientation: portrait) and (max-height: 660px) {
   .status-strip {
