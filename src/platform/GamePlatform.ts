@@ -61,7 +61,28 @@ export interface GamePlatform {
    * 调用前必须让玩家**知道自己要看广告**（按钮上写清楚），这也是审核必查项。
    */
   rewardedBreak(): Promise<boolean>;
+
+  /**
+   * 游戏**真正可玩**了。和 loadingFinished 不是一回事：
+   * 我们加载完还要等玩家第一次输入才 start()，这中间他已经能动了。
+   */
+  gameInteractive(): void;
+
+  /**
+   * 进度节点上报。喂的是 Poki 后台的 **Progress Events** 那张表
+   * （列：Started / Completed / Failed / Left）。
+   *
+   * 表里显示成 `category / what`，`action` 只能是 start / complete / fail，
+   * 而且**一次尝试只能收口一次** —— complete 和 fail 不能都报。没收口的那些
+   * 就落进 Left 列，语义正好是"他走了"。
+   *
+   * 报什么、什么时候报，全部写在 platform/RunProgress.ts。
+   */
+  measure(category: string, what: string, action: ProgressAction): void;
 }
+
+/** 见 {@link GamePlatform.measure}。Poki 只认这三个。 */
+export type ProgressAction = "start" | "complete" | "fail";
 
 /**
  * 没有平台时用的空实现：本地开发、GitHub Pages、itch.io 都走这个。
@@ -79,6 +100,8 @@ export class NullPlatform implements GamePlatform {
   gameplayStop(): void { /* 无事可做 */ }
   async commercialBreak(): Promise<void> { /* 直接放行 */ }
   async rewardedBreak(): Promise<boolean> { return false; }
+  gameInteractive(): void { /* 无事可做 */ }
+  measure(): void { /* 无事可做 */ }
 }
 
 /**

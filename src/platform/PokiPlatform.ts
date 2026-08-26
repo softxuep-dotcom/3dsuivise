@@ -1,4 +1,4 @@
-import { loadScript, withAdGuard, type GamePlatform, type PlatformHooks } from "./GamePlatform";
+import { loadScript, withAdGuard, type GamePlatform, type PlatformHooks, type ProgressAction } from "./GamePlatform";
 
 /**
  * Poki 适配器。文档：https://sdk.poki.com/html5
@@ -15,6 +15,8 @@ interface PokiSDK {
   gameplayStop?: () => void;
   commercialBreak?: (beforeAd?: () => void) => Promise<unknown>;
   rewardedBreak?: (beforeAd?: () => void) => Promise<boolean>;
+  gameInteractive?: () => void;
+  measure?: (category: string, what: string, action: string) => void;
   setDebug?: (value: boolean) => void;
 }
 
@@ -56,6 +58,22 @@ export class PokiPlatform implements GamePlatform {
 
   loadingFinished(): void {
     this.sdk?.gameLoadingFinished?.();
+  }
+
+  gameInteractive(): void {
+    this.sdk?.gameInteractive?.();
+  }
+
+  /**
+   * 进度节点。
+   *
+   * **参数里不能有 `/` 和 `^`** —— 这是 SDK 自己的限制，它撞上时只在控制台
+   * 打一行红字然后把整次上报丢掉，不抛异常。所以这里先换成 `-`，
+   * 宁可让后台看见一个改过名的节点，也别让它无声消失。
+   */
+  measure(category: string, what: string, action: ProgressAction): void {
+    const safe = (value: string): string => value.replace(/[/^]/g, "-");
+    this.sdk?.measure?.(safe(category), safe(what), action);
   }
 
   gameplayStart(): void {

@@ -13,6 +13,7 @@ import { bindShell } from "./ui/shell";
 import { TutorialStage } from "./ui/TutorialStage";
 import { bumpRunIndex, loadDifficulty, loadRunIndex } from "./ui/Settings";
 import { createPlatform } from "./platform";
+import { RunProgress } from "./platform/RunProgress";
 
 /**
  * index.html 内联脚本留下的引导桥，见那段注释。
@@ -122,6 +123,11 @@ async function bootstrap(): Promise<void> {
    * 广告钩子把静音和输入冻结绑在一起：广告一开始，声音压掉、模拟层停住，
    * 玩家不会在看广告的时候被狗咬死。
    */
+  /*
+   * 关键节点上报（Poki 后台的 Progress Events）。见 platform/RunProgress.ts ——
+   * 那张表原先只有 SDK 自己报的 game/loading 一行，我们一个节点都没报过。
+   */
+  let runProgress: RunProgress;
   const platform = await createPlatform({
     onAdStart: () => {
       audio.setAdMuted(true);
@@ -313,6 +319,8 @@ async function bootstrap(): Promise<void> {
     if (button instanceof HTMLButtonElement) button.disabled = true;
     const run = bumpRunIndex();
     restartsThisSession += 1;
+    // 必须排在 beginRun() 之前：它收口的是**上一局**结算页开出来的那个节点。
+    runProgress.noteRestart();
     if (shouldBreakBeforeRestart(restartsThisSession)) await platform.commercialBreak();
 
     world = createWorld(undefined, pickStartCamp(run));
@@ -326,6 +334,7 @@ async function bootstrap(): Promise<void> {
     hud.resetRun(simulation);
     nightIntro.reset();
     firstBarrelHint.reset();
+    runProgress.beginRun();
     input.cancelMoveTarget();
     started = false;
     previousTime = performance.now();
@@ -362,6 +371,7 @@ async function bootstrap(): Promise<void> {
         audio.handle(event);
         hud.handle(event);
         nightIntro.handle(event);
+        runProgress.handle(event);
         if (event.type === "player-hit") renderer.impact(0.22);
         if (event.type === "wolf-hit") renderer.impact(0.09);
         if (event.type === "fuel-loaded") renderer.fuelLoaded(event.loaded);
@@ -394,6 +404,13 @@ async function bootstrap(): Promise<void> {
 
   setProgress(1, t("boot.ready"));
   platform.loadingFinished();
+  /*
+   * gameInteractive 和 loadingFinished 不是一回事：后者说"资源到齐了"，
+   * 前者说"玩家现在能动了"。我们中间还隔着 showGame()，所以分开报。
+   */
+  platform.gameInteractive();
+  runProgress = new RunProgress(platform);
+  runProgress.beginRun();
   // 场景可以先展示，但 gameplayStart 与模拟层都必须等玩家第一次实际游戏输入。
   // HUD 已经提示“移动或拿起枯木，开始第一天”，无需重新加一层开始按钮。
   hud.showGame();
