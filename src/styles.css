@@ -15,4 +15,6 @@
 @import "./styles/overlays.css";
 @import "./styles/panels.css";
 @import "./styles/responsive.css";
+@import "./styles/hud-redesign.css";
+@import "./styles/quick-craft.css";
 @import "./styles/tutorial.css";

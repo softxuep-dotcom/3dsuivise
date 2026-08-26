@@ -1,0 +1,208 @@
+/*
+ * 条件式装备制作：固定在右侧操作半屏，武器一行、护甲一行。
+ * 左半屏留给浮动摇杆；制作图标向右下背包飞行，全程不横穿角色与战场中心。
+ */
+.quick-craft-tray {
+  position: fixed;
+  z-index: 7;
+  top: 45%;
+  right: max(14px, env(safe-area-inset-right));
+  display: grid;
+  grid-template-rows: repeat(2, 56px);
+  gap: 8px;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.quick-craft-row {
+  display: flex;
+  flex-direction: row-reverse;
+  gap: 7px;
+  min-height: 56px;
+  pointer-events: none;
+}
+
+.quick-craft-row.empty { visibility: hidden; }
+
+.quick-craft-button {
+  --craft-line: #dfad5f;
+  position: relative;
+  display: grid;
+  grid-template-rows: 32px minmax(0, 1fr);
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  overflow: hidden;
+  padding: 3px 4px 5px;
+  border: 1px solid color-mix(in srgb, var(--craft-line) 68%, transparent);
+  border-radius: 15px 6px 15px 15px;
+  background:
+    radial-gradient(circle at 38% 24%, color-mix(in srgb, var(--craft-line) 18%, transparent), transparent 48%),
+    linear-gradient(145deg, rgba(24, 40, 42, .96), rgba(7, 15, 18, .92));
+  color: #f6eee0;
+  box-shadow:
+    0 9px 22px rgba(3, 8, 9, .28),
+    inset 0 1px rgba(255, 255, 255, .08),
+    0 0 0 2px color-mix(in srgb, var(--craft-line) 9%, transparent);
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
+  animation: quick-craft-ready 180ms cubic-bezier(.2, .75, .3, 1) both;
+  backdrop-filter: blur(10px) saturate(1.05);
+}
+
+.quick-craft-button::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 7px;
+  left: 7px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--craft-line), transparent);
+  opacity: .9;
+}
+
+.quick-craft-button .quick-craft-icon {
+  display: block;
+  width: 31px;
+  height: 31px;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .5));
+  pointer-events: none;
+}
+
+.quick-craft-button .hud-sprite.quick-craft-icon {
+  background-size: 400% 400%;
+}
+
+.quick-craft-button span {
+  align-self: center;
+  display: -webkit-box;
+  overflow: hidden;
+  max-width: 48px;
+  color: #f5eee2;
+  font-size: 8px;
+  font-weight: 850;
+  line-height: 1.05;
+  text-align: center;
+  text-shadow: 0 1px 2px #000;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.quick-craft-button b {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: grid;
+  width: 14px;
+  height: 14px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--craft-line) 72%, white 28%);
+  border-radius: 50%;
+  background: rgba(7, 15, 18, .92);
+  color: var(--craft-line);
+  font-size: 11px;
+  line-height: 1;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, .4);
+}
+
+.quick-craft-button:active {
+  filter: brightness(1.18);
+  transform: scale(.94);
+}
+
+.quick-craft-button:disabled { pointer-events: none; }
+
+.quick-craft-button.failed { animation: quick-craft-failed 240ms ease both; }
+
+.quick-craft-flight {
+  --craft-line: #dfad5f;
+  position: fixed;
+  z-index: 30;
+  display: grid;
+  width: 52px;
+  height: 52px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--craft-line) 72%, transparent);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(25, 43, 44, .96), rgba(8, 16, 18, .74) 68%, transparent 70%);
+  color: var(--craft-line);
+  pointer-events: none;
+  filter: drop-shadow(0 5px 9px rgba(0, 0, 0, .42));
+  will-change: transform, opacity;
+}
+
+.quick-craft-flight .quick-craft-icon {
+  display: block;
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .48));
+}
+
+.quick-craft-flight .hud-sprite.quick-craft-icon { background-size: 400% 400%; }
+
+#backpack-button.craft-received {
+  border-color: rgba(244, 196, 99, .9);
+  animation: quick-craft-received 410ms cubic-bezier(.2, .8, .3, 1) both;
+}
+
+@keyframes quick-craft-ready {
+  from { opacity: 0; transform: translateX(8px) scale(.82); }
+  to { opacity: 1; transform: translateX(0) scale(1); }
+}
+
+@keyframes quick-craft-failed {
+  0%, 100% { transform: translateX(0); }
+  30% { transform: translateX(-4px); }
+  65% { transform: translateX(4px); }
+}
+
+@keyframes quick-craft-received {
+  0%, 100% { transform: translate(50%, 50%) scale(1); }
+  45% { transform: translate(50%, 50%) scale(1.12); box-shadow: 0 0 0 8px rgba(238, 182, 82, 0); }
+  62% { box-shadow: 0 0 0 3px rgba(238, 182, 82, .36); }
+}
+
+@media (orientation: portrait) {
+  .quick-craft-tray {
+    top: 45%;
+    right: max(10px, env(safe-area-inset-right));
+  }
+}
+
+@media (orientation: landscape) and (max-height: 400px) {
+  .quick-craft-tray {
+    top: 45%;
+    right: max(8px, env(safe-area-inset-right));
+    grid-template-rows: repeat(2, 48px);
+    gap: 6px;
+  }
+
+  .quick-craft-row { min-height: 48px; gap: 6px; }
+  .quick-craft-button { grid-template-rows: 27px minmax(0, 1fr); width: 48px; height: 48px; border-radius: 13px 5px 13px 13px; }
+  .quick-craft-button .quick-craft-icon { width: 27px; height: 27px; }
+  .quick-craft-button span { max-width: 42px; font-size: 7px; }
+  .quick-craft-button b { top: 3px; right: 3px; width: 12px; height: 12px; font-size: 9px; }
+}
+
+@media (orientation: portrait) and (max-width: 340px),
+       (orientation: portrait) and (max-height: 660px) {
+  .quick-craft-tray {
+    top: 43%;
+    grid-template-rows: repeat(2, 50px);
+    gap: 6px;
+  }
+
+  .quick-craft-row { min-height: 50px; gap: 6px; }
+  .quick-craft-button { grid-template-rows: 28px minmax(0, 1fr); width: 50px; height: 50px; }
+  .quick-craft-button .quick-craft-icon { width: 28px; height: 28px; }
+  .quick-craft-button span { max-width: 44px; font-size: 7px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quick-craft-button,
+  .quick-craft-button.failed,
+  #backpack-button.craft-received { animation: none; }
+}

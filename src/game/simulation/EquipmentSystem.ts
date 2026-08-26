@@ -108,6 +108,20 @@ export class EquipmentSystem {
     return tiers.filter((tier) => tier.line === current.line && tier.tier === current.tier + 1);
   }
 
+  /**
+   * 当前可以安全地放进 HUD 一键制作区的正常升级。
+   *
+   * 这里只看 upgradeOptions，不把换线混进来：换线可能退款、也可能改变整条成长路线，
+   * 仍应留在会暂停游戏的背包里确认。初始双分支若都满足条件则两件都返回，UI 必须让
+   * 玩家自己点具体装备，不能暗中替他选线。
+   */
+  craftableUpgrades(slot: "weapon" | "armor"): EquipTier[] {
+    if (!this.owner.running || !this.unlockedFlag) return [];
+    return this.upgradeOptions(slot).filter((tier) =>
+      (!tier.needsFire || this.owner.hasLitFireNearby())
+      && tier.cost.every(([kind, count]) => this.inventory.count(kind) >= count));
+  }
+
   /** 某条线的三阶终点。分叉卡用它告诉玩家"这条路通向哪"。 */
   lineFinale(slot: "weapon" | "armor", line: EquipLine): EquipTier | null {
     return this.tiersFor(slot).find((tier) => tier.line === line && tier.tier === 3) ?? null;
@@ -119,13 +133,6 @@ export class EquipmentSystem {
     const current = this.equipped(slot);
     if (current.line === "none") return [];
     return tiers.filter((tier) => tier.tier === 1 && tier.line !== current.line);
-  }
-
-  /** 这个槽位只剩一个可造项时直接造它。两个（阶 0 的分叉）或零个都不做事。 */
-  craftOnly(slot: "weapon" | "armor"): boolean {
-    const options = this.upgradeOptions(slot);
-    if (options.length !== 1) return false;
-    return this.craft(slot, options[0].id);
   }
 
   /** 按 id 制作某件装备。UI 从 {@link upgradeOptions} / {@link switchOptions} 里取 id。 */

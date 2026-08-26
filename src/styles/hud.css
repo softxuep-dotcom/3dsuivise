@@ -209,7 +209,7 @@
   width: 34px;
   height: 34px;
   flex: 0 0 auto;
-  background-image: url("./assets/action-icon-atlas.webp");
+  background-image: url("../assets/action-icon-atlas.webp");
   background-repeat: no-repeat;
   background-size: 400% 400%;
   filter: drop-shadow(0 2px 2px rgba(0,0,0,.38));

@@ -34,6 +34,26 @@ const sources = new Map<string, string>(
   Object.entries(rawSources).map(([key, value]) => [key.replace(/^\.\.\//, ""), value]),
 );
 
+/*
+ * 只用 glob 的键建立资源清单，不加载二进制内容。CSS 拆目录时 `url(./...)`
+ * 最容易悄悄指向旧位置；开发服缓存可能掩盖问题，生产包才会变成空图标。
+ */
+const assetModules = import.meta.glob("../src/**/*.{png,jpg,jpeg,webp,svg}", {
+  query: "?url",
+  import: "default",
+});
+const assets = new Set(Object.keys(assetModules).map((key) => key.replace(/^\.\.\//, "")));
+
+function resolveRelativePath(importer: string, specifier: string): string {
+  const parts = importer.split("/").slice(0, -1);
+  for (const segment of specifier.split("/")) {
+    if (segment === "." || segment === "") continue;
+    if (segment === "..") parts.pop();
+    else parts.push(segment);
+  }
+  return parts.join("/");
+}
+
 /**
  * 把一条 import 说明符解析成仓库里的文件路径；不是本地相对导入就返回 null。
  *
@@ -100,6 +120,20 @@ describe("模块图", () => {
     for (const node of graph.keys()) walk(node);
 
     expect(cycles.sort()).toEqual([]);
+  });
+
+  it("CSS 的本地图片路径都指向现存资源", () => {
+    const missing: string[] = [];
+    for (const [path, source] of sources) {
+      if (!path.endsWith(".css")) continue;
+      for (const match of source.matchAll(/url\(\s*["']?([^"')]+)["']?\s*\)/g)) {
+        const specifier = match[1];
+        if (/^(?:data:|https?:|\/)/.test(specifier)) continue;
+        const resolved = resolveRelativePath(path, specifier);
+        if (!assets.has(resolved)) missing.push(`${path}: ${specifier} → ${resolved}`);
+      }
+    }
+    expect(missing.sort()).toEqual([]);
   });
 
   /**

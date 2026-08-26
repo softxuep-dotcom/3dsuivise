@@ -8,6 +8,7 @@ import type { Difficulty } from "../game/simulation/difficulty";
 import { DEFAULT_DIFFICULTY, DIFFICULTIES } from "../game/simulation/difficulty";
 import { FUEL_REQUIRED, STRUCTURE_SPECS } from "../game/simulation/types";
 import { itemIcon } from "./ItemIcons";
+import { QuickCraftController } from "./QuickCraftController";
 import { toastSeconds } from "./ToastDuration";
 import type {
   DeathCause,
@@ -146,15 +147,11 @@ export class HudController {
   private actionHintUsed = false;
   private armedGrace = 0;
   private readonly conditionBadge = required<HTMLElement>("condition-badge");
-  private readonly drainNote = required<HTMLElement>("drain-note");
   private readonly huntProgress = required<HTMLElement>("hunt-progress");
-  /** 随身补给的只读计数；消耗一律回背包里点物品格。 */
-  private readonly supplies: Array<[HTMLElement, InventoryItemKind]> = [
-    [required<HTMLElement>("supply-water"), "water"],
-    [required<HTMLElement>("supply-juice"), "cactus-juice"],
-    [required<HTMLElement>("supply-meat"), "cooked-meat"],
-  ];
   private readonly bagUsage = required<HTMLElement>("bag-usage");
+  private readonly backpackButton = required<HTMLButtonElement>("backpack-button");
+  private readonly quickCraftTray = required<HTMLElement>("quick-craft-tray");
+  private readonly quickCraft: QuickCraftController;
   private readonly thermalButton = required<HTMLButtonElement>("thermal-button");
   private readonly thermalIcon = required<HTMLElement>("thermal-icon");
   private readonly thermalState = required<HTMLElement>("thermal-state");
@@ -252,6 +249,12 @@ export class HudController {
     this.difficulty = difficulty;
     this.difficultySelection = difficulty;
     this.setDifficultySelection(difficulty);
+    this.quickCraft = new QuickCraftController({
+      host: this.quickCraftTray,
+      backpackButton: this.backpackButton,
+      getSimulation: () => this.simulation,
+      isBlocked: () => this.isGameplayBlocked(),
+    });
     this.slots = [...document.querySelectorAll<HTMLButtonElement>(".inventory-slot")];
     this.slots.forEach((slot) => {
       slot.addEventListener("click", () => {
@@ -260,7 +263,7 @@ export class HudController {
         this.updateInventory();
       });
     });
-    required<HTMLButtonElement>("backpack-button").addEventListener("click", () => this.toggleInventory());
+    this.backpackButton.addEventListener("click", () => this.toggleInventory());
     required<HTMLButtonElement>("inventory-close").addEventListener("click", () => this.closeInventory());
     // 升级区的按钮是每次 renderUpgradeSlot() 重新生成的，事件在那里现绑，
     // 这里不再有固定的升级按钮。
@@ -435,7 +438,7 @@ export class HudController {
     const minY = margin;
     const maxY = window.innerHeight - margin;
     const blockers: DOMRect[] = [];
-    for (const selector of [".bottom-right", ".status-strip", ".left-stack", "#joystick"]) {
+    for (const selector of [".bottom-right", ".status-strip", ".left-stack", ".quick-craft-tray", "#joystick"]) {
       const element = document.querySelector(selector);
       if (!element) continue;
       const rect = element.getBoundingClientRect();
@@ -596,17 +599,10 @@ export class HudController {
     if (combo.max > 0) this.comboArc.style.setProperty("--combo", String(combo.stacks / combo.max));
 
     this.updateConditionBadge();
-    this.updateDrainNote();
     this.updateHuntProgress();
-
-    for (const [element, kind] of this.supplies) {
-      const count = this.simulation.getInventoryCount(kind);
-      const value = element.querySelector("b");
-      if (value) value.textContent = String(count);
-      element.classList.toggle("empty", count === 0);
-    }
     this.syncThermalButton(player.warmth);
     this.bagUsage.textContent = `${player.inventory.filter(Boolean).length}/8`;
+    this.quickCraft.update();
     this.objective.textContent = tx(this.simulation.getObjective());
     this.phaseLabel.textContent = t(this.simulation.phase === "day" ? "phase.day" : "phase.night");
     this.clock.classList.toggle("night", this.simulation.phase === "night");
@@ -658,26 +654,6 @@ export class HudController {
       return;
     }
     this.conditionBadge.className = "condition-badge hidden";
-  }
-
-  /**
-   * 体力恒定流失最容易被误读成"被看不见的东西攻击"，所以要有一行说明 ——
-   * 但**不必常驻**。满血时它只是噪音，而右上角本来就挤。
-   * 只在两种时候出现：站定却回不了血（必须说清是哪条挡住了，否则像 bug），
-   * 或者体力已经掉到值得管的程度。
-   *
-   * "休息中"交给顶部的状态胶囊，这里不再重复；"正在被攻击"也去掉了 ——
-   * 受击有屏幕震动和红闪，而那句话还在指一个矮屏上根本不显示的小地图。
-   */
-  private updateDrainNote(): void {
-    const player = this.simulation.player;
-    const blocker = player.resting ? null : this.simulation.getRestBlocker();
-    const worthSaying = blocker !== null || player.health < 70;
-    this.drainNote.classList.toggle("hidden", !worthSaying);
-    if (!worthSaying) return;
-    this.drainNote.textContent = blocker
-      ? t("hud.drain.blocked", { reason: tx(blocker) })
-      : t("hud.drain.hint");
   }
 
   /**

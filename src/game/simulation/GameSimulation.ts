@@ -1065,8 +1065,7 @@ export class GameSimulation {
   }
 
 
-  // 旧的饮食快捷方法已经删除：它们只服务于 HUD 快捷键和 R/F/C 热键。
-  // 消耗现在一律走背包的物品格（开背包会暂停游戏）。
+  /** 背包物品格统一走这个索引入口。 */
   useInventorySlot(index: number): void {
     if (!this.running) return;
     const stack = this.player.inventory[index];
@@ -1179,22 +1178,17 @@ export class GameSimulation {
     return true;
   }
 
-  /** @deprecated 无调用点 —— UI 一律走 craftEquip(slot, id)。待 API 收窄时删。 */
-  craftWeapon(): boolean {
-    return this.equipment.craftOnly("weapon");
-  }
-
-  /** @deprecated 无调用点 —— UI 一律走 craftEquip(slot, id)。待 API 收窄时删。 */
-  craftArmor(): boolean {
-    return this.equipment.craftOnly("armor");
-  }
-
   getEquipped(slot: "weapon" | "armor"): EquipTier {
     return this.equipment.equipped(slot);
   }
 
   getUpgradeOptions(slot: "weapon" | "armor"): EquipTier[] {
     return this.equipment.upgradeOptions(slot);
+  }
+
+  /** 满足材料与火源条件、可以从 HUD 直接制作的正常升级；换线不在这里。 */
+  getCraftableUpgrades(slot: "weapon" | "armor"): EquipTier[] {
+    return this.equipment.craftableUpgrades(slot);
   }
 
   isEquipmentUnlocked(): boolean {

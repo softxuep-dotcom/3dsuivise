@@ -1,11 +1,6 @@
 import { distance, normalize } from "../simulation/geometry";
 import type { PlayerState, Vec2 } from "../simulation/types";
 
-/**
- * 吃喝没有热键，也没有 HUD 快捷键 —— 一律回背包里点物品格。
- * 开背包会暂停游戏，所以不存在"打斗中来不及"；而三颗常驻的快捷键既和背包重复，
- * 又把最不该占地方的右上角占满了。
- */
 interface InputCallbacks {
   /** Poki 要求 gameplayStart 必须发生在真正开始游玩的首次输入里。 */
   onGameplayIntent: () => void;

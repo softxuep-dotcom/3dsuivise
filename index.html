@@ -44,17 +44,14 @@
           <div class="meter hunger" id="meter-hunger"><span data-i18n="meter.food">Food</span><i><b id="hunger-bar"></b></i><em id="hunger-value">82</em></div>
           <div class="meter warmth" id="warmth-meter"><span data-i18n="meter.warmth">Warmth</span><i><b id="warmth-bar"></b></i><em id="warmth-value">22</em></div>
           <div class="meter stamina"><span data-i18n="meter.stamina">Stamina</span><i><b id="stamina-bar"></b></i><em id="stamina-value">100</em></div>
-          <div class="drain-note hidden" id="drain-note"></div>
-          <!--
-            补给计数是**只读**的：消耗一律回背包操作，但"我还有没有水"是随时要瞄一眼的决策信息，
-            不能只藏在背包里。位置固定不随有无变动，扫一眼就知道。
-          -->
-          <div class="supply-line" data-i18n-attr="aria-label:hud.supply.aria">
-            <span id="supply-water"><i data-i18n="supply.water">Wtr</i> <b>0</b></span>
-            <span id="supply-juice"><i data-i18n="supply.juice">Sap</i> <b>0</b></span>
-            <span id="supply-meat"><i data-i18n="supply.meat">Meat</i> <b>0</b></span>
-          </div>
         </section>
+
+        <!--
+          条件式装备制作入口。右侧中部属于操作半屏，左侧则是浮动摇杆的触发区；
+          放在这里不会吃掉移动手势，制作后的图标也能沿屏幕边缘飞进右下背包。
+          两行位置固定（武器在上、防具在下），只有材料和火源都满足时才出现具体装备。
+        -->
+        <div id="quick-craft-tray" class="quick-craft-tray hidden"></div>
 
         <!--
           顶部中央栏。时钟与提示排在同一个纵向流里，靠 flex 自己让位 ——
