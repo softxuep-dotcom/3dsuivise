@@ -50,15 +50,6 @@ interface WolfView {
  * 两份动物模型资源、三种掉落物材质、画质档、以及全局时间。
  * 但它们**全是只读的共享资源** —— 这个类只往 scene 里加减自己那三类对象。
  */
-/*
- * 低功耗档下，超过这个距离的狗和猎物直接不画。
- *
- * 45 米的依据：相机看得到的范围本来就有限，而雾（FogExp2 密度 0.0075）
- * 在 45 米外已经把东西糊成背景色 —— 剔掉它们肉眼看不出来。
- * 夜里一口气 30 只狗、白天 52 只猎物，绝大多数时刻都在这个半径之外。
- * 注意只关**渲染**，模拟层照跑：狗该来还是会来，只是走到近处才画出来。
- */
-const LOW_POWER_DRAW_DISTANCE = 45;
 
 export interface CreatureViewsOwner {
   readonly scene: THREE.Scene;
@@ -67,6 +58,13 @@ export interface CreatureViewsOwner {
   readonly time: number;
   /** 低画质档：手机上关掉一部分细节，见 CreatureViews 的构造函数。 */
   readonly lowPower: boolean;
+  /**
+   * 狼和猎物在多远之外停止绘制。**null = 不剔除。**
+   *
+   * 由渲染层按当前画质档算好递进来（见 GameRenderer.cullDistance）——
+   * 这里不该知道有几档、哪档配哪个数。
+   */
+  readonly cullDistance: number | null;
   readonly wolfAsset: AnimalAsset | null;
   readonly deerAsset: AnimalAsset | null;
   readonly dropHideMaterial: THREE.MeshStandardMaterial;
@@ -105,9 +103,9 @@ export class CreatureViews {
         this.critterViews.set(critter.id, view);
         this.owner.scene.add(view.group);
       }
-      if (this.owner.lowPower) {
-        const far = Math.hypot(critter.x - this.owner.simulation.player.x, critter.z - this.owner.simulation.player.z)
-          > LOW_POWER_DRAW_DISTANCE;
+      const cull = this.owner.cullDistance;
+      if (cull !== null) {
+        const far = Math.hypot(critter.x - this.owner.simulation.player.x, critter.z - this.owner.simulation.player.z) > cull;
         view.group.visible = !far;
         if (far) continue;
       }
@@ -192,9 +190,9 @@ export class CreatureViews {
         this.owner.scene.add(view.group);
         this.owner.scene.add(view.bar);
       }
-      if (this.owner.lowPower) {
-        const far = Math.hypot(wolf.x - this.owner.simulation.player.x, wolf.z - this.owner.simulation.player.z)
-          > LOW_POWER_DRAW_DISTANCE;
+      const cull = this.owner.cullDistance;
+      if (cull !== null) {
+        const far = Math.hypot(wolf.x - this.owner.simulation.player.x, wolf.z - this.owner.simulation.player.z) > cull;
         // 远处的狗跳过全部同步：动画混合器、朝向插值、血条、材质染色都不用算。
         // 近处的血条交回 syncWolfBar 决定（它只在受伤后亮 2.6 秒）。
         view.group.visible = !far;

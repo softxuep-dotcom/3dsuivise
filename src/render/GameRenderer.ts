@@ -9,6 +9,8 @@ import { distanceToCampApproach, terrainHeightAt, terrainMoistureAt, terrainSalt
 import { loadAnimal, type AnimalAsset } from "./AnimalModels";
 import { CreatureViews } from "./entities/CreatureViews";
 import { mergeStaticMeshes } from "./visuals/mergeStatic";
+import { QualityGuard } from "./QualityGuard";
+import type { QualityTier } from "./QualityGuard";
 import {
   BARRIER_DAMAGE_TINT, CACTUS_ELBOW_GEOMETRY, CACTUS_FLOWER_GEOMETRY, CACTUS_SPINE_GEOMETRY, IRON_ORE_GEOMETRY, IRON_SHARDS, IRON_SHARD_GEOMETRIES, STONE_COLOR, WEAPON_VISUALS, WOOD_COLOR, createBarrelView, createFuelPipTexture, createGuideArrowView, makeMaterial,
 } from "./visuals/models";
@@ -31,6 +33,42 @@ interface CampView {
  * 这里保留接近原来的那组倍率，只留下"越大的狗血条越宽"这一点。
  */
 /** 相机距离系数。竖屏拉远补视野，横屏拉近补可读性 —— 见 updateCamera。 */
+/**
+ * 三档画质。档位怎么定、什么时候降，见 render/QualityGuard.ts。
+ *
+ *              pixelRatio          雾    扬沙   剔除半径
+ *   一档默认   移动 1.3 / 桌面 1.6  有    有     45 米
+ *   二档       1.0                 无    无     45 米
+ *   三档       0.8                 无    无     35 米
+ *
+ * ## 一档为什么分设备，二三档为什么不分
+ *
+ * 一档是**起点**，得贴着设备本来的能力：桌面一直是 1.6，没有理由因为加了梯子
+ * 就白掉一截（视网膜屏那批机器根本不是跟不上的那批）。移动端从 1.0 抬到 1.3 ——
+ * main 那套「一次性上调」实测好手机在 1.0 上被压得太狠（旗舰的 dpr 是 2.5~3.5，
+ * 1.0 等于按原生 1/9 的像素数渲染再拉满屏），1.3 是把那份富余还回去。
+ *
+ * 二三档是**终点**，问的是"这台机器还剩多少"，那跟它是手机还是电脑没关系了。
+ * 一台跟不上的弱笔记本和一台跟不上的手机，需要的是同一个数。
+ *
+ * 全部还要过 min(devicePixelRatio, …)：dpr 1.0 的普通显示器本来就到不了 1.3。
+ */
+const TIER_PIXEL_RATIO: Record<QualityTier, number> = { 1: 1.6, 2: 1.0, 3: 0.8 };
+/** 移动档的一档单独一个数，理由见上。 */
+const TIER1_MOBILE_PIXEL_RATIO = 1.3;
+
+/*
+ * 狼和猎物在多远之外停止绘制。
+ *
+ * 45 米是改造前就有的移动档数字，依据是雾：FogExp2 密度 0.0075 在这个距离已经
+ * 把东西压得接近背景色，剔掉肉眼看不出来 —— 那是一次纯赚的省。
+ *
+ * 35 米是三档的数字，而三档的雾已经关了，所以这一刀是**看得出来的**：
+ * 远处的狗会真的消失。它只在机器已经跟不上时才生效，那时候这个交换划算。
+ */
+const DEFAULT_CULL_DISTANCE = 45;
+const TIER3_CULL_DISTANCE = 35;
+
 const PORTRAIT_CAMERA_SCALE = 1.08;
 const LANDSCAPE_CAMERA_SCALE = 0.64;
 
@@ -47,6 +85,18 @@ export class GameRenderer {
 
   /** 触屏 / 窄屏走低功耗档：无 AA、pixelRatio 1、无实时阴影、远处实体剔除。 */
   private readonly lowPower: boolean;
+  /**
+   * 当前画质档。**单向**，只会从 1 往 3 走。
+   *
+   * 渲染循环读它跳过扬沙，CreatureViews 通过 cullDistance 读它。
+   * 什么时候降、降几档全在 QualityGuard 里，这里只落地。
+   */
+  private tier: QualityTier = 1;
+  private readonly quality = new QualityGuard({
+    // 暂停、开场页、结算页都不算在玩：那时候场上没有狼没有猎物，量出来是假数。
+    isPlaying: () => this.simulation.running,
+    onTier: (tier) => this.applyTier(tier),
+  });
   private readonly renderer: THREE.WebGLRenderer;
   /** 上下文丢失期间跳过绘制，否则每帧都会刷一串 GL 错误。 */
   private contextLost = false;
@@ -117,6 +167,7 @@ export class GameRenderer {
       get simulation() { return renderer.simulation; },
       get time() { return renderer.time; },
       get lowPower() { return renderer.lowPower; },
+      get cullDistance() { return renderer.cullDistance(); },
       get wolfAsset() { return renderer.wolfAsset; },
       get deerAsset() { return renderer.deerAsset; },
       get dropHideMaterial() { return renderer.dropHideMaterial; },
@@ -215,7 +266,7 @@ export class GameRenderer {
       antialias: true,
       powerPreference: "high-performance",
     });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.lowPower ? 1 : 1.6));
+    this.renderer.setPixelRatio(this.pixelRatioFor(1));
     this.renderer.shadowMap.enabled = true;
     /*
      * 低功耗档也保留 PCF，不降级成 BasicShadowMap。
@@ -305,6 +356,20 @@ export class GameRenderer {
 
     this.cameraFocus.set(simulation.player.x, this.worldHeight(simulation.player.x, simulation.player.z), simulation.player.z);
     this.resize();
+    /*
+     * `?quality=2` / `?quality=3` 直接跳到那一档，不等判定。
+     *
+     * 这一档的判据只能在**真机**上验证，而手上没有弱机 —— 这也正是 main 那套
+     * 「一次性上调」当初拒绝做降级梯子的理由。开关补上了另一半：
+     * 判据仍然验不了，但**每一档长什么样**在任何机器上都看得见，
+     * 而"降完之后画面还能不能看"恰恰是唯一需要人眼判断的部分。
+     *
+     * 只在 DEV 下认，生产包里这段会被摇掉。
+     */
+    if (import.meta.env.DEV) {
+      const forced = Number(new URLSearchParams(window.location.search).get("quality"));
+      if (forced === 2 || forced === 3) this.quality.jumpTo(forced);
+    }
     window.addEventListener("resize", this.resize);
     this.canvas.addEventListener("webglcontextlost", (event) => {
       event.preventDefault();
@@ -318,6 +383,7 @@ export class GameRenderer {
   render(deltaSeconds: number): void {
     // 上下文丢失期间任何 GL 调用都会报错刷屏，直接跳过这一帧。
     if (this.contextLost) return;
+    const frameStart = performance.now();
     const delta = Math.min(deltaSeconds, 0.05);
     this.time += delta;
     this.syncPlayer(delta);
@@ -337,10 +403,54 @@ export class GameRenderer {
     this.updateTutorialLight(delta);
     this.syncDayNight();
     this.updateCamera(delta);
-    this.updateSand(delta);
+    // 二档起扬沙整个停掉：既不画也不再每帧改 240 个顶点。
+    if (this.tier < 2) this.updateSand(delta);
     this.updateWarmthAura(delta);
     this.renderer.render(this.scene, this.camera);
+    // 排在最后：要量的是这一帧渲染的全部耗时。降过档之后这一句直接 return。
+    this.quality.sample(frameStart);
   }
+
+  /** 这一档该用多大的 pixelRatio。一档分设备，二三档不分，见 TIER_PIXEL_RATIO。 */
+  private pixelRatioFor(tier: QualityTier): number {
+    const wanted = tier === 1 && this.lowPower ? TIER1_MOBILE_PIXEL_RATIO : TIER_PIXEL_RATIO[tier];
+    return Math.min(window.devicePixelRatio, wanted);
+  }
+
+  /**
+   * 狼和猎物在多远之外停止绘制。null = 不剔除。
+   *
+   * **两个条件各自都能触发剔除**：移动档一直剔（45 米，改造前就有），
+   * 而三档不管什么设备都剔（35 米）。早先这一块只挂在 lowPower 上，
+   * 于是降档在桌面端是空转的 —— 而一台弱笔记本走到三档时 lowPower 正好是 false，
+   * 四项里最省的那一项直接不生效。浏览器实测撞到过。
+   */
+  cullDistance(): number | null {
+    if (this.tier >= 3) return TIER3_CULL_DISTANCE;
+    return this.lowPower ? DEFAULT_CULL_DISTANCE : null;
+  }
+
+  /**
+   * 落地某一档。QualityGuard 只在**真的换档**时调，所以这里不必判重。
+   *
+   * 一档是构造时的起点，不会被调到；二三档各自加一样东西：
+   *
+   *   二档  关雾、停扬沙、pixelRatio 1.0
+   *   三档  再把剔除半径从 45 收到 35、pixelRatio 0.8
+   *
+   * 雾和扬沙**不恢复** —— 档位是单向的，关了就一直关着，省掉一整套还原逻辑。
+   */
+  private applyTier(tier: QualityTier): void {
+    this.tier = tier;
+    if (tier >= 2) {
+      this.scene.fog = null;
+      this.sand.visible = false;
+    }
+    this.renderer.setPixelRatio(this.pixelRatioFor(tier));
+    // setPixelRatio 之后要按新比例重新分配绘制缓冲，否则画布还是旧尺寸。
+    this.resize();
+  }
+
 
   /**
    * 把镜头推到某个世界坐标上，传 null 收回到玩家身上。
