@@ -298,7 +298,7 @@ export const en: Record<string, string> = {
   "perk.line.survival": "Endure",
   "perk.rationing.desc": "Water and food drain 12% slower",
   "perk.rationing.name": "Rationing",
-  "perk.steady-breath.desc": "Stamina regen +2/s",
+  "perk.steady-breath.desc": "Stamina regen +1/s",
   "perk.steady-breath.name": "Steady Breath",
   "perk.title": "Pick one for the next run",
   "perk.truck-supplies.desc": "Each load: +15 health, +12 water, +12 food",

@@ -294,7 +294,7 @@ export const vi: Record<string, string> = {
   "perk.line.survival": "Sinh tồn",
   "perk.rationing.desc": "Nước và đói giảm chậm hơn 12%",
   "perk.rationing.name": "Ăn dè",
-  "perk.steady-breath.desc": "Hồi thể lực +2/giây",
+  "perk.steady-breath.desc": "Hồi thể lực +1/giây",
   "perk.steady-breath.name": "Điều hòa hơi thở",
   "perk.title": "Chọn một cho chuyến sau",
   "perk.truck-supplies.desc": "Mỗi lần chất: +15 máu, +12 nước, +12 thức ăn",

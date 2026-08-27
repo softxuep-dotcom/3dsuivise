@@ -303,7 +303,7 @@ export const es: Record<string, string> = {
   "perk.line.survival": "Aguante",
   "perk.rationing.desc": "Agua y comida bajan 12% más lento",
   "perk.rationing.name": "Racionar",
-  "perk.steady-breath.desc": "Aguante +2/s",
+  "perk.steady-breath.desc": "Aguante +1/s",
   "perk.steady-breath.name": "Respiración firme",
   "perk.title": "Elige uno para la próxima vuelta",
   "perk.truck-supplies.desc": "Por carga: +15 salud, +12 agua, +12 comida",

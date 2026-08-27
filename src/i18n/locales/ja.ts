@@ -309,7 +309,7 @@ export const ja: Record<string, string> = {
   "perk.line.survival": "生存",
   "perk.rationing.desc": "水と空腹の減りが 12% 遅く",
   "perk.rationing.name": "節約",
-  "perk.steady-breath.desc": "スタミナ回復 +2/秒",
+  "perk.steady-breath.desc": "スタミナ回復 +1/秒",
   "perk.steady-breath.name": "呼吸を整える",
   "perk.title": "次の一往復に備えて一つ選ぶ",
   "perk.truck-supplies.desc": "積込ごとに 体力 +15・水 +12・食料 +12",

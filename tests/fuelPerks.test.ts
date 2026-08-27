@@ -114,11 +114,11 @@ describe("搬油三选一", () => {
     expect(sim.player.armor).toBe(armorBefore);
   });
 
-  it("调匀呼吸：+2/s/层是平坦加值，不吃护甲倍率", () => {
+  it("调匀呼吸：+1/s/层是平坦加值，不吃护甲倍率", () => {
     const sim = fresh();
     for (let stacks = 0; stacks <= 3; stacks += 1) {
       sim.fuelPerks["stacks"].set("steady-breath", stacks);
-      expect(sim.perkBonusStaminaRegen()).toBe(stacks * 2);
+      expect(sim.perkBonusStaminaRegen()).toBe(stacks);
     }
   });
 

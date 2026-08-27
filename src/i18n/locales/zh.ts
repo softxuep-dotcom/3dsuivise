@@ -297,7 +297,7 @@ export const zh: Record<string, string> = {
   "perk.line.survival": "生存",
   "perk.rationing.desc": "水分与饥饿慢 12%",
   "perk.rationing.name": "省着点吃",
-  "perk.steady-breath.desc": "劳力回复 +2/秒",
+  "perk.steady-breath.desc": "劳力回复 +1/秒",
   "perk.steady-breath.name": "调匀呼吸",
   "perk.title": "选一项，为下一趟做准备",
   "perk.truck-supplies.desc": "每次装车回体力 15、水 12、食物 12",

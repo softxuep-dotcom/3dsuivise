@@ -292,7 +292,7 @@ export const ko: Record<string, string> = {
   "perk.line.survival": "생존",
   "perk.rationing.desc": "수분과 허기 12% 느리게",
   "perk.rationing.name": "아껴 먹기",
-  "perk.steady-breath.desc": "스태미나 +2/초",
+  "perk.steady-breath.desc": "스태미나 +1/초",
   "perk.steady-breath.name": "호흡 고르기",
   "perk.title": "다음 왕복을 위해 하나 고르기",
   "perk.truck-supplies.desc": "적재마다 체력 +15, 물 +12, 음식 +12",

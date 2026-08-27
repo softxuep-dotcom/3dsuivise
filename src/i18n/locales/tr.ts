@@ -313,7 +313,7 @@ export const tr: Record<string, string> = {
   "perk.line.survival": "Dayanıklılık",
   "perk.rationing.desc": "Su ve açlık %12 daha yavaş",
   "perk.rationing.name": "İdareli ye",
-  "perk.steady-breath.desc": "Dayanıklılık +2/sn",
+  "perk.steady-breath.desc": "Dayanıklılık +1/sn",
   "perk.steady-breath.name": "Düzenli nefes",
   "perk.title": "Sonraki tur için birini seç",
   "perk.truck-supplies.desc": "Her yükte: +15 can, +12 su, +12 yiyecek",

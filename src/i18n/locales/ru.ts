@@ -314,7 +314,7 @@ export const ru: Record<string, string> = {
   "perk.line.survival": "Выживание",
   "perk.rationing.desc": "Вода и голод падают на 12% медленнее",
   "perk.rationing.name": "Экономия",
-  "perk.steady-breath.desc": "Выносливость +2/с",
+  "perk.steady-breath.desc": "Выносливость +1/с",
   "perk.steady-breath.name": "Ровное дыхание",
   "perk.title": "Выберите одно для следующей ходки",
   "perk.truck-supplies.desc": "За загрузку: +15 здоровья, +12 воды, +12 еды",

@@ -297,7 +297,7 @@ export const id: Record<string, string> = {
   "perk.line.survival": "Bertahan",
   "perk.rationing.desc": "Air dan lapar turun 12% lebih lambat",
   "perk.rationing.name": "Hemat makan",
-  "perk.steady-breath.desc": "Stamina +2/d",
+  "perk.steady-breath.desc": "Stamina +1/d",
   "perk.steady-breath.name": "Napas teratur",
   "perk.title": "Pilih satu untuk perjalanan berikutnya",
   "perk.truck-supplies.desc": "Tiap muatan: +15 nyawa, +12 air, +12 makanan",

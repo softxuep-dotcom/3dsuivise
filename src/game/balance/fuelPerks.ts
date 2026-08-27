@@ -116,12 +116,12 @@ export const BLOOD_RUSH_HEALTH: readonly number[] = [8, 13];
 export const BLOOD_RUSH_COOLDOWN = 4;
 
 /**
- * 调匀呼吸：劳力恢复 +2/s/层，**平坦加值**。
+ * 调匀呼吸：劳力恢复 +1/s/层，**平坦加值**。
  *
- * 要加在护甲的 staminaScale **之后**，否则皮甲玩家的一层会变成 +2.7、
- * 铁甲玩家的一层还是 +2 —— 卡面写着"+2/秒"就必须永远正好是 +2/秒。
+ * 要加在护甲的 staminaScale **之后**，否则皮甲玩家的一层会被额外放大、
+ * 铁甲玩家的一层还是 +1 —— 卡面写着"+1/秒"就必须永远正好是 +1/秒。
  */
-export const STEADY_BREATH_REGEN = 2;
+export const STEADY_BREATH_REGEN = 1;
 
 /** 省着点吃：水分与饥饿消耗各乘 0.88^层数（三层 = 0.681）。 */
 export const RATIONING_DECAY_MULT = 0.88;

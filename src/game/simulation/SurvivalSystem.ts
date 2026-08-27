@@ -132,8 +132,8 @@ export class SurvivalSystem {
       : player.idleTime > 0.4
         ? STAMINA_IDLE_REGEN
         : STAMINA_ACTIVE_REGEN) * this.equipment.armorStats().staminaScale
-      // 调匀呼吸是**平坦加值**，加在护甲倍率之后 —— 卡面写着 +2/秒，
-      // 就必须对皮甲和铁甲玩家都正好是 +2/秒。
+      // 调匀呼吸是**平坦加值**，加在护甲倍率之后 —— 卡面写着 +1/秒，
+      // 就必须对皮甲和铁甲玩家都正好是 +1/秒。
       + this.owner.perkBonusStaminaRegen();
     player.stamina = clamp(player.stamina + delta * staminaRegen, 0, player.maxStamina);
 

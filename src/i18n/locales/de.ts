@@ -299,7 +299,7 @@ export const de: Record<string, string> = {
   "perk.line.survival": "Ausdauer",
   "perk.rationing.desc": "Wasser und Essen 12% langsamer",
   "perk.rationing.name": "Rationieren",
-  "perk.steady-breath.desc": "Ausdauer +2/s",
+  "perk.steady-breath.desc": "Ausdauer +1/s",
   "perk.steady-breath.name": "Ruhiger Atem",
   "perk.title": "Wähle eins für die nächste Runde",
   "perk.truck-supplies.desc": "Pro Ladung: +15 Leben, +12 Wasser, +12 Essen",

@@ -265,7 +265,7 @@ export class FuelPerkSystem {
     return 1 + DEN_BREAKER_DAMAGE_BONUS * this.stacksOf("den-breaker");
   }
 
-  /** 平坦劳力回复加值。**加在护甲倍率之后**，一层永远正好 +2/s。 */
+  /** 平坦劳力回复加值。**加在护甲倍率之后**，一层永远正好 +1/s。 */
   bonusStaminaRegen(): number {
     return this.stacksOf("steady-breath") * STEADY_BREATH_REGEN;
   }
