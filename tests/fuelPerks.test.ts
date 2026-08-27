@@ -28,10 +28,18 @@ describe("搬油三选一", () => {
     sim.start();
     return sim;
   };
-  /** 走完一整局五次选择，每次都选第一张。 */
-  const playFive = (sim: GameSimulation): FuelPerkId[] => {
+  /**
+   * 走完一整局的全部选择，每次都选第一张。
+   *
+   * 次数是 **FUEL_REQUIRED − 1**，不是写死的 5：最后一桶装完直接发车，
+   * 那一次不弹（见 FuelPerkSystem.noteFuelLoaded 的 `loaded >= required`）。
+   * 6 → 4 之后这里从 5 次变成 3 次 —— 一整局能叠的层数少了两层，
+   * 那是缩短通关路径**顺带**付出的代价，不是 bug。
+   */
+  const PICKS = FUEL_REQUIRED - 1;
+  const playAllPicks = (sim: GameSimulation): FuelPerkId[] => {
     const chosen: FuelPerkId[] = [];
-    for (let n = 0; n < 5; n += 1) {
+    for (let n = 0; n < PICKS; n += 1) {
       const offer = loadBarrel(sim);
       expect(offer, `第 ${n + 1} 桶应该弹卡`).not.toBeNull();
       expect(sim.chooseFuelPerk(offer![0])).toBe(true);
@@ -40,11 +48,11 @@ describe("搬油三选一", () => {
     return chosen;
   };
 
-  it("装第 1~5 桶各弹一次，第 6 桶不弹", () => {
+  it("装到倒数第二桶各弹一次，最后一桶不弹", () => {
     const sim = fresh();
-    playFive(sim);
-    expect(sim.truck.loaded).toBe(5);
-    // 第六桶：装完直接进上车发车，不能再弹 —— 那时给了也来不及用。
+    playAllPicks(sim);
+    expect(sim.truck.loaded).toBe(PICKS);
+    // 最后一桶：装完直接进上车发车，不能再弹 —— 那时给了也来不及用。
     expect(loadBarrel(sim)).toBeNull();
     expect(sim.truck.loaded).toBe(FUEL_REQUIRED);
   });
@@ -60,14 +68,14 @@ describe("搬油三选一", () => {
   });
 
   it("同一个 seed 逐字复现 —— 抽卡走模拟层的随机源，不碰 Math.random", () => {
-    const a = playFive(fresh());
-    const b = playFive(fresh());
+    const a = playAllPicks(fresh());
+    const b = playAllPicks(fresh());
     expect(a).toEqual(b);
   });
 
   it("每组三张：不重名、不发满层卡、至少覆盖两条路线", () => {
     const sim = fresh();
-    for (let n = 0; n < 5; n += 1) {
+    for (let n = 0; n < PICKS; n += 1) {
       const offer = loadBarrel(sim)!;
       expect(offer).toHaveLength(3);
       expect(new Set(offer).size, `第 ${n + 1} 组重名了：${offer}`).toBe(3);
@@ -147,18 +155,18 @@ describe("搬油三选一", () => {
     expect(sim.perkDecayScale()).toBeCloseTo(0.88 ** 3, 6);
   });
 
-  it("五次选完仍能正常装第 6 桶", () => {
+  it("选完仍能正常装最后一桶", () => {
     const sim = fresh();
-    playFive(sim);
+    playAllPicks(sim);
     expect(loadBarrel(sim)).toBeNull();
     expect(sim.truck.loaded).toBe(FUEL_REQUIRED);
   });
 
   it("软重开：新的一局层数归零（GameSimulation 是重建的）", () => {
     const sim = fresh();
-    playFive(sim);
+    playAllPicks(sim);
     const total = FUEL_PERKS.reduce((n, p) => n + sim.fuelPerkStacks(p.id), 0);
-    expect(total).toBe(5);
+    expect(total).toBe(PICKS);
     const next = fresh();
     expect(FUEL_PERKS.reduce((n, p) => n + next.fuelPerkStacks(p.id), 0)).toBe(0);
     expect(next.getFuelPerkOffer()).toBeNull();

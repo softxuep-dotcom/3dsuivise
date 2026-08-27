@@ -154,7 +154,10 @@ describe("模块图", () => {
       // 1901 → 1935：接入左击选中（pickAt）。判定本体在 query/pickAt.ts，
       // 这里只有一个显式构造上下文再转发的方法 —— 之所以不能写 `{ ...this }`，
       // 那 34 行的注释里说了：wolves 和 critters 是原型上的 getter，展开不会带上。
-      "src/game/simulation/GameSimulation.ts": 1939,
+      // 1939 → 1954：noteWoodIntake（柴进包的唯一汇合点）。它挂在 addInventory 上
+      // 而不是那两处 pickup 事件旁边，注释解释了为什么 —— 调用点会长第三处，
+      // 漏挂不报错，只会让目标行悄悄停在上一阶。
+      "src/game/simulation/GameSimulation.ts": 1954,
       // 阶段 3 抽走视觉常量与三个动态实体池：2938 → 2274。
       // 剩下的 build*（开局建一次）和 sync*（每帧）还混在一起，是下一刀。
       // 2274 → 2298：screenToWorld 拆成 screenToGround，多交出一个"射线在地面上
@@ -162,15 +165,23 @@ describe("模块图", () => {
       // 射线打在物体身后 0.8~13.4 米，判定必须沿视线分解才不会落空。
       // 2298 → 2319：六个 builder 各加一句 mergeStaticMeshes（含解释为什么安全的注释）。
       // 换来的是绘制调用 299 → 143，见 visuals/mergeStatic.ts。
-      "src/render/GameRenderer.ts": 2319,
+      // 2319 → 2363：地面枯木从"横躺"改成"立起来"，以及那段解释 —— 可捡的柴和
+      // 装饰用的 deadwood 地标原本是同一个剪影（都是 rotation.z = π/2 的褐色圆柱），
+      // 实测第一个白天只有 9.6% 的人捡到过柴。为什么必须写下来：三个月后看见
+      // 两套几何只差一个 placed 分支，最省事的"化简"就是把它合回去。
+      "src/render/GameRenderer.ts": 2363,
       // 1171 → 1172：EquipTier 跟着数值搬去了 balance/equipment，
       // 于是这里从两行 import 变成三行。这是全程唯一一处上调，且只此一行。
       "src/ui/HudController.ts": 1172,
       // styles.css 阶段 3 拆成六段，自己只剩 @import；六段各自都在 600 行以内。
-      "src/render/entities/CreatureViews.ts": 420,
-      "src/game/simulation/WolfDirector.ts": 1099,
+      // 下面三处 +438/+1124/+670 是同一次改动（修"狗朝另一个方向咬"）的三半：
+      // 咬击分支 return 收尾，够不到函数末尾那句 wolf.facing = steered，于是朝向
+      // 冻在冲进射程那一帧。三个文件各加一段注释解释这个非局部的因果 ——
+      // 三处代码分开看每一处都"没写错"，不写下来下一个人一定会再踩一次。
+      "src/render/entities/CreatureViews.ts": 438,
+      "src/game/simulation/WolfDirector.ts": 1124,
       "src/game/content/createWorld.ts": 706,
-      "src/game/simulation/types.ts": 657,
+      "src/game/simulation/types.ts": 670,
     };
 
     const over: string[] = [];

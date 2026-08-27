@@ -1938,7 +1938,7 @@ export class GameRenderer {
     }
     for (const item of this.simulation.items) {
       let view = this.itemViews.get(item.id);
-      if (view && view.userData.kind !== item.kind) {
+      if (view && (view.userData.kind !== item.kind || view.userData.placed !== item.placed)) {
         this.scene.remove(view);
         this.itemViews.delete(item.id);
         view = undefined;
@@ -1950,7 +1950,10 @@ export class GameRenderer {
       }
       view.visible = item.active;
       if (!item.active) continue;
-      view.position.set(item.x, this.worldHeight(item.x, item.z) + (item.kind === "wood" ? 0.35 : 0.48), item.z);
+      // 立柴的几何自带落地基准（底端在 y=0），横躺的那两种要抬到半径高度。
+      const looseWood = item.kind === "wood" && !item.placed;
+      const lift = looseWood ? 0 : item.kind === "wood" ? 0.35 : 0.48;
+      view.position.set(item.x, this.worldHeight(item.x, item.z) + lift, item.z);
       view.rotation.y = item.rotation;
       // 除数取真实上限：石头 1500、枯木 70。原先石头写死 220，
       // 于是它掉到最后 15% 血才开始变色，前面 85% 挨打毫无反馈。
@@ -1980,17 +1983,56 @@ export class GameRenderer {
     }
   }
 
+  /**
+   * 地面枯木：**能捡的立起来，玩家垒的横着躺。**
+   *
+   * 1.1.31 实测第一个白天里捡到柴的只有 9.6% —— 而柴是唯一的燃料，也是最便宜
+   * 那件武器的造价。原因不是玩家"没有捡柴的意识"，是屏幕上那两样东西**真的一样**：
+   *
+   *   装饰用的 deadwood 地标   横躺的圆柱  rotation.z = π/2  色 0x7a6446
+   *   能捡的地面枯木           横躺的圆柱  rotation.z = π/2  色 WOOD_COLOR
+   *
+   * 两者只差大小，而相机拉近之后角色才占屏高 13%，大小根本读不出来。玩家把可捡物
+   * 当成布景是**正确的视觉推理**，错的是我们给了两个一样的剪影。
+   *
+   * 所以把差别做在剪影上，不做在颜色上 —— 和铁矿脉那次同一个办法（见 syncIronNodes
+   * 上面那段）：能捡的柴改成两根互相支着的**立柴**（Λ 形，高约 1.3 米），
+   * 和满地横躺的枯枝在一眼之内就分得开。
+   *
+   * 两根不是三根：地面散物有 97 件，刚做过一次绘制调用合并（299 → 143），
+   * 这里保持**网格数一个不变**，纯换姿态，零额外开销。
+   *
+   * 玩家自己垒的路障（placed）仍然横躺 —— 那是掩体，本来就该趴着，而且它要靠
+   * scale/染色表达耐久（见 syncItems）。两种形态共用一个 kind，所以 userData 里
+   * 记下 placed：放置会**复用失活的 item 槽位**（见 GameSimulation 的 dropCarried），
+   * 只比对 kind 的话，回收来的槽位会顶着立柴的模样当路障用。
+   */
   private createItemView(item: GroundItem): THREE.Object3D {
     let view: THREE.Object3D;
     if (item.kind === "wood") {
       const group = new THREE.Group();
       const material = makeMaterial(WOOD_COLOR, 1);
-      for (let index = 0; index < 2; index += 1) {
-        const log = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 1.65, 7), material);
-        log.rotation.z = Math.PI / 2;
-        log.position.z = (index - 0.5) * 0.38;
-        log.castShadow = !this.lowPower;
-        group.add(log);
+      if (item.placed) {
+        for (let index = 0; index < 2; index += 1) {
+          const log = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 1.65, 7), material);
+          log.rotation.z = Math.PI / 2;
+          log.position.z = (index - 0.5) * 0.38;
+          log.castShadow = !this.lowPower;
+          group.add(log);
+        }
+      } else {
+        // Λ 形：两根等长的柴底端分开、顶端相抵。lean 是与竖直方向的夹角，
+        // 圆柱沿局部 Y，所以底端落地时中心落在 (±L/2·sin, L/2·cos)。
+        const LENGTH = 1.35;
+        const LEAN = 0.3;
+        for (const side of [-1, 1]) {
+          const log = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.2, LENGTH, 6), material);
+          log.position.set(side * (LENGTH / 2) * Math.sin(LEAN), (LENGTH / 2) * Math.cos(LEAN), 0);
+          // rotation.z 为正时顶端倒向 -X，所以要把顶端收回中心，符号跟 side 反。
+          log.rotation.z = side * LEAN;
+          log.castShadow = !this.lowPower;
+          group.add(log);
+        }
       }
       view = group;
     } else {
@@ -2005,6 +2047,8 @@ export class GameRenderer {
       view = group;
     }
     view.userData.kind = item.kind;
+    // 立柴和横躺路障是两套几何，而放置会复用失活槽位，所以 placed 也要参与重建判定。
+    view.userData.placed = item.placed;
     // 记下本色，破损染色要从它出发插值（见 syncItems）。
     view.userData.baseColor = item.kind === "wood" ? WOOD_COLOR : STONE_COLOR;
     return view;

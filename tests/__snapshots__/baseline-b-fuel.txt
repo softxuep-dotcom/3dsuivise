@@ -8,12 +8,12 @@
 
 扛回卡车       到达=true  用时=2.7s 剩余距离=4.11m
 
-装车后  已装 1/6  扛桶=false  离车 4.1 米
-总用时 8.6s  目标行=sim.27
+装车后  已装 1/4  扛桶=false  离车 4.1 米
+总用时 8.6s  目标行=sim.26
 
 事件流
   t=0.1 message key=msg.1
   t=3.0 pickup kind=fuel
-  t=8.6 fuel-loaded loaded=1.00 required=6.00
+  t=8.6 fuel-loaded loaded=1.00 required=4.00
   t=8.6 fuel-perk-offer loaded=1.00
-  t=8.6 message key=msg.fuelLoaded params={"loaded":1,"required":6}
+  t=8.6 message key=msg.fuelLoaded params={"loaded":1,"required":4}
