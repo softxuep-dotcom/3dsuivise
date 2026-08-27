@@ -165,11 +165,9 @@ describe("模块图", () => {
       // 射线打在物体身后 0.8~13.4 米，判定必须沿视线分解才不会落空。
       // 2298 → 2319：六个 builder 各加一句 mergeStaticMeshes（含解释为什么安全的注释）。
       // 换来的是绘制调用 299 → 143，见 visuals/mergeStatic.ts。
-      // 2319 → 2363：地面枯木从"横躺"改成"立起来"，以及那段解释 —— 可捡的柴和
-      // 装饰用的 deadwood 地标原本是同一个剪影（都是 rotation.z = π/2 的褐色圆柱），
-      // 实测第一个白天只有 9.6% 的人捡到过柴。为什么必须写下来：三个月后看见
-      // 两套几何只差一个 placed 分支，最省事的"化简"就是把它合回去。
-      "src/render/GameRenderer.ts": 2363,
+      // 2363 → 2345：立柴那套几何撤了（难看），换成地面降饱和 + 交互物推色，
+      // 净收益 18 行。区分"能捡的"和"布景"这件事现在由颜色承担，不由剪影承担。
+      "src/render/GameRenderer.ts": 2345,
       // 1171 → 1172：EquipTier 跟着数值搬去了 balance/equipment，
       // 于是这里从两行 import 变成三行。这是全程唯一一处上调，且只此一行。
       "src/ui/HudController.ts": 1172,
@@ -180,7 +178,8 @@ describe("模块图", () => {
       // 三处代码分开看每一处都"没写错"，不写下来下一个人一定会再踩一次。
       "src/render/entities/CreatureViews.ts": 438,
       "src/game/simulation/WolfDirector.ts": 1124,
-      "src/game/content/createWorld.ts": 706,
+      // 706 → 709：装饰枯木从 2/5 降到 1/5（7 → 4）+ 三行解释为什么是它被砍。
+      "src/game/content/createWorld.ts": 709,
       "src/game/simulation/types.ts": 670,
     };
 

@@ -516,12 +516,27 @@ export class GameRenderer {
     const geometry = new THREE.PlaneGeometry(size, size, segments, segments);
     const positions = geometry.getAttribute("position") as THREE.BufferAttribute;
     const colors = new Float32Array(positions.count * 3);
-    // 荒漠调色：明亮的沙丘 → 湿润洼地的暗砾石 → 踩实的土路 → 裸岩 → 盐碱壳
-    const sand = new THREE.Color(0xc9a86a);
-    const gravel = new THREE.Color(0x9c7f52);
-    const packedEarth = new THREE.Color(0x8a6435);
-    const rock = new THREE.Color(0x8d7355);
-    const salt = new THREE.Color(0xe2ddc9);
+    /*
+     * 荒漠调色：明亮的沙丘 → 湿润洼地的暗砾石 → 踩实的土路 → 裸岩 → 盐碱壳
+     *
+     * 五个色**整体降饱和到原来的 58%**（色相和明度都不动）。
+     *
+     * 为什么动地面而不是去挨个提亮那 184 件可交互物：这张图上能交互的东西是
+     * 不能交互的 11 倍（散物 97 + 树 26 + 仙人掌 32 + 铁矿 14 + 桶 10 + 井 5，
+     * 对面只有 16 个地标）。真正的问题从来不是"装饰物太多"，是**所有东西都是
+     * 同一族沙漠褐** —— 枯木的色相离沙地只有 16°，玩家没有任何规则可以用来
+     * 分辨"这一类是给我的"。改一个地面材质，等于同时给全部交互物让路。
+     *
+     * 注意降饱和**不会**提高亮度对比（沙地反而变亮了一点，枯木对沙地是
+     * 3.88:1 → 3.52:1）。它买到的是**饱和度通道**：地面压到 27%，
+     * 可交互物推到 60% 以上，于是"鲜艳 = 能捡"成为一条一眼可学的规则。
+     * 所以这一条必须和 WOOD_COLOR / STONE_COLOR 那两个一起改，单独上没有意义。
+     */
+    const sand = new THREE.Color(0xb5a27e);
+    const gravel = new THREE.Color(0x8c7c62);
+    const packedEarth = new THREE.Color(0x786247);
+    const rock = new THREE.Color(0x817261);
+    const salt = new THREE.Color(0xdddace);
     const color = new THREE.Color();
     for (let index = 0; index < positions.count; index += 1) {
       const x = positions.getX(index);
@@ -1938,7 +1953,7 @@ export class GameRenderer {
     }
     for (const item of this.simulation.items) {
       let view = this.itemViews.get(item.id);
-      if (view && (view.userData.kind !== item.kind || view.userData.placed !== item.placed)) {
+      if (view && view.userData.kind !== item.kind) {
         this.scene.remove(view);
         this.itemViews.delete(item.id);
         view = undefined;
@@ -1950,10 +1965,7 @@ export class GameRenderer {
       }
       view.visible = item.active;
       if (!item.active) continue;
-      // 立柴的几何自带落地基准（底端在 y=0），横躺的那两种要抬到半径高度。
-      const looseWood = item.kind === "wood" && !item.placed;
-      const lift = looseWood ? 0 : item.kind === "wood" ? 0.35 : 0.48;
-      view.position.set(item.x, this.worldHeight(item.x, item.z) + lift, item.z);
+      view.position.set(item.x, this.worldHeight(item.x, item.z) + (item.kind === "wood" ? 0.35 : 0.48), item.z);
       view.rotation.y = item.rotation;
       // 除数取真实上限：石头 1500、枯木 70。原先石头写死 220，
       // 于是它掉到最后 15% 血才开始变色，前面 85% 挨打毫无反馈。
@@ -1984,55 +1996,27 @@ export class GameRenderer {
   }
 
   /**
-   * 地面枯木：**能捡的立起来，玩家垒的横着躺。**
+   * 地面枯木：两根横躺的圆木。
    *
-   * 1.1.31 实测第一个白天里捡到柴的只有 9.6% —— 而柴是唯一的燃料，也是最便宜
-   * 那件武器的造价。原因不是玩家"没有捡柴的意识"，是屏幕上那两样东西**真的一样**：
+   * 1.1.32 试过把能捡的那种改成 Λ 形立柴，想用剪影和装饰用的 deadwood 地标区分开
+   * （实测第一个白天捡到柴的只有 9.6%）。**回退了，理由是难看** —— 立着的柴在
+   * 沙地上像插进去的路标，不像躺在那儿等人捡的柴火。
    *
-   *   装饰用的 deadwood 地标   横躺的圆柱  rotation.z = π/2  色 0x7a6446
-   *   能捡的地面枯木           横躺的圆柱  rotation.z = π/2  色 WOOD_COLOR
-   *
-   * 两者只差大小，而相机拉近之后角色才占屏高 13%，大小根本读不出来。玩家把可捡物
-   * 当成布景是**正确的视觉推理**，错的是我们给了两个一样的剪影。
-   *
-   * 所以把差别做在剪影上，不做在颜色上 —— 和铁矿脉那次同一个办法（见 syncIronNodes
-   * 上面那段）：能捡的柴改成两根互相支着的**立柴**（Λ 形，高约 1.3 米），
-   * 和满地横躺的枯枝在一眼之内就分得开。
-   *
-   * 两根不是三根：地面散物有 97 件，刚做过一次绘制调用合并（299 → 143），
-   * 这里保持**网格数一个不变**，纯换姿态，零额外开销。
-   *
-   * 玩家自己垒的路障（placed）仍然横躺 —— 那是掩体，本来就该趴着，而且它要靠
-   * scale/染色表达耐久（见 syncItems）。两种形态共用一个 kind，所以 userData 里
-   * 记下 placed：放置会**复用失活的 item 槽位**（见 GameSimulation 的 dropCarried），
-   * 只比对 kind 的话，回收来的槽位会顶着立柴的模样当路障用。
+   * 区分这件事改由**颜色**承担（见 makeMaterial 那一族的色相分配）：可交互物统一
+   * 推离沙漠褐，地形反过来降饱和。剪影这条路留在这里当记录 —— 它能解决问题，
+   * 只是代价是美术观感，而这个游戏的沙漠质感本身也是留人的一部分。
    */
   private createItemView(item: GroundItem): THREE.Object3D {
     let view: THREE.Object3D;
     if (item.kind === "wood") {
       const group = new THREE.Group();
       const material = makeMaterial(WOOD_COLOR, 1);
-      if (item.placed) {
-        for (let index = 0; index < 2; index += 1) {
-          const log = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 1.65, 7), material);
-          log.rotation.z = Math.PI / 2;
-          log.position.z = (index - 0.5) * 0.38;
-          log.castShadow = !this.lowPower;
-          group.add(log);
-        }
-      } else {
-        // Λ 形：两根等长的柴底端分开、顶端相抵。lean 是与竖直方向的夹角，
-        // 圆柱沿局部 Y，所以底端落地时中心落在 (±L/2·sin, L/2·cos)。
-        const LENGTH = 1.35;
-        const LEAN = 0.3;
-        for (const side of [-1, 1]) {
-          const log = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.2, LENGTH, 6), material);
-          log.position.set(side * (LENGTH / 2) * Math.sin(LEAN), (LENGTH / 2) * Math.cos(LEAN), 0);
-          // rotation.z 为正时顶端倒向 -X，所以要把顶端收回中心，符号跟 side 反。
-          log.rotation.z = side * LEAN;
-          log.castShadow = !this.lowPower;
-          group.add(log);
-        }
+      for (let index = 0; index < 2; index += 1) {
+        const log = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 1.65, 7), material);
+        log.rotation.z = Math.PI / 2;
+        log.position.z = (index - 0.5) * 0.38;
+        log.castShadow = !this.lowPower;
+        group.add(log);
       }
       view = group;
     } else {
@@ -2047,8 +2031,6 @@ export class GameRenderer {
       view = group;
     }
     view.userData.kind = item.kind;
-    // 立柴和横躺路障是两套几何，而放置会复用失活槽位，所以 placed 也要参与重建判定。
-    view.userData.placed = item.placed;
     // 记下本色，破损染色要从它出发插值（见 syncItems）。
     view.userData.baseColor = item.kind === "wood" ? WOOD_COLOR : STONE_COLOR;
     return view;

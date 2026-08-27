@@ -672,7 +672,10 @@ export function createWorld(seed = 71291, startCampId = BLUEPRINT.startCampId): 
     if (!isTerrainWalkable(terrainWorld, point) || terrainSlopeAt(terrainWorld, point) > 0.48) continue;
     if (landmarks.some((landmark) => distance(point, landmark) < 12)) continue;
     const index = landmarks.length;
-    const kind = index % 5 < 2 ? "deadwood" : index % 5 < 4 ? "monolith" : "wreck";
+    // 装饰枯木从 2/5 降到 1/5（全图 7 → 4）：它和可捡的枯木是同一个剪影，
+    // 而它是三种地标里唯一不带碰撞体的，纯视觉噪音，删起来没有副作用。
+    // 让出来的名额给石柱 —— 石柱不会被误认成柴火。
+    const kind = index % 5 === 0 ? "deadwood" : index % 5 < 4 ? "monolith" : "wreck";
     const landmark: LandmarkDefinition = {
       id: index,
       kind,
