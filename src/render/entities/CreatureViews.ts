@@ -216,6 +216,24 @@ export class CreatureViews {
         const travelHeading = -Math.atan2(view.travelDirection.y, view.travelDirection.x);
         const turnSpeed = wolf.mode === "chase" || wolf.mode === "retreating" ? 11 : 7;
         view.visualHeading = dampAngle(view.visualHeading, travelHeading, turnSpeed, delta);
+      } else if (wolf.biting) {
+        /*
+         * 上面那条"只让真正的位移改变显示朝向"的唯一豁免。
+         *
+         * 狗一进咬击射程就**停下**，movingNow 从此恒假 —— 朝向于是冻在冲刺进来
+         * 那一刻，玩家绕到侧面之后它照咬不误、模型却朝着别处。光在 WolfDirector
+         * 里每帧写 facing 是不够的：不开这个口子，表现层根本不看那个值。
+         *
+         * 只信 wolf.biting 这一个状态，不用"离玩家多近"去反推 —— biting 为真时
+         * facing 是 WolfDirector 对着玩家写死的，不是寻路的试探值，没有甩身风险。
+         * 也不再要求 hurtFlash <= 0：挨打硬直里更要盯着人，否则一边挨砍一边转开。
+         *
+         * travelDirection 一起写，是为了它重新跑起来时那几帧不会从一个过时的
+         * 方向插值回来（那会表现成起步先甩一下头）。
+         */
+        view.travelDirection.set(wolf.facing.x, wolf.facing.z);
+        const biteHeading = -Math.atan2(wolf.facing.z, wolf.facing.x);
+        view.visualHeading = dampAngle(view.visualHeading, biteHeading, 11, delta);
       }
       const actualSpeed = delta > 0 ? movedDistance / delta : 0;
       const targetMoveAmount = movingNow ? clamp(actualSpeed / Math.max(wolf.speed, 0.1), 0, 1) : 0;

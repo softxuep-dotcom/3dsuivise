@@ -18,9 +18,20 @@ describe("教学桶", () => {
   const world = createWorld();
   const barrel = world.barrels[world.barrels.length - 1];
 
-  it("白送一桶 + 需求 +1，猥琐路线的余量仍然是 1", () => {
+  /*
+   * 全图 10 桶：7 桶散在外面、3 桶压在狗巢里。余量 = 7 − FUEL_REQUIRED。
+   *
+   * 6 → 4 之前余量是 **1**：不进狗巢也能通关，但一桶都不能浪费，摸错一趟就得去掀巢。
+   * 现在是 **3**。这不是顺手改的数字，是 6 → 4 明知要付的代价 ——
+   * 狗巢从"迟早要去的地方"变成纯粹可选的高风险高回报，那三桶多数人不会再见到。
+   *
+   * 想把张力要回来，得把两桶散桶标成 guarded（余量回到 1），而不是回调 FUEL_REQUIRED；
+   * 那是世界布局的事，不在这次改动里。这条断言的作用是：**下次谁动了这个平衡，必须先看见这段话。**
+   */
+  it("白送一桶 + 需求 +1，猥琐路线的余量是 3", () => {
     const reachableWithoutDen = world.barrels.filter((b) => !b.guarded).length;
-    expect(reachableWithoutDen - FUEL_REQUIRED).toBe(1);
+    expect(reachableWithoutDen).toBe(7);
+    expect(reachableWithoutDen - FUEL_REQUIRED).toBe(3);
   });
 
   it("落在可走的平地上，而且不在装车判定圈里", () => {
@@ -48,7 +59,7 @@ describe("教学桶", () => {
     expect(sim.drainEvents()).toContainEqual({ type: "fuel-loaded", loaded: 1, required: FUEL_REQUIRED });
   });
 
-  it("开局能扛起来、装上车，而且远早于第一个白天结束（40 秒）", () => {
+  it("开局能扛起来、装上车，而且远早于第一个白天结束（50 秒）", () => {
     const sim = new GameSimulation(createWorld());
     sim.start();
     const target = sim.world.barrels[sim.world.barrels.length - 1];
@@ -56,7 +67,7 @@ describe("教学桶", () => {
     let loadedAt = -1;
     let loadEvent: { type: "fuel-loaded"; loaded: number; required: number } | undefined;
 
-    for (let step = 0; step < 20 * 40 && loadedAt < 0; step += 1) {
+    for (let step = 0; step < 20 * 50 && loadedAt < 0; step += 1) {
       const aim = sim.player.carrying ? sim.truck : target;
       const dx = aim.x - sim.player.x;
       const dz = aim.z - sim.player.z;

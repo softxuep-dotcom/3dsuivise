@@ -1715,6 +1715,18 @@ export class GameSimulation {
    * 未放置的枯木不参与碰撞（isBlockingGroundItem 只认石头和 placed），所以它
    * 不会在出生点旁边立起一堵墙。
    */
+  /**
+   * 柴进包的**唯一**汇合点，用来喂 ObjectiveNarrator 的第 0 阶。
+   *
+   * 挂在 addInventory 上而不是挂在那两处 pickup 事件旁边：调用点会长出第三处
+   * （现在是地面拾取和砍树两条），漏挂一处不会报错，只会让目标行悄悄停在上一阶。
+   * `running` 这道闸是关键 —— 开局口粮在构造函数里就发了，那时 running 还是 false，
+   * 而"口粮里的柴不算他捡的"正是这一整条修复的全部内容。
+   */
+  private noteWoodIntake(kind: InventoryItemKind): void {
+    if (kind === "wood" && this.running) this.objectives.noteWoodGathered();
+  }
+
   private addTutorialWood(): void {
     const angle = this.spawnFacing + TUTORIAL_WOOD_SPREAD;
     const spot = this.collision.findNearestWalkablePoint({
@@ -1807,7 +1819,10 @@ export class GameSimulation {
   }
 
   private addInventory(kind: InventoryItemKind, count: number): boolean {
-    return this.inventory.add(kind, count);
+    // 背包满时 add 返回 false，什么也没进包 —— 那一下不算"他捡到了柴"。
+    if (!this.inventory.add(kind, count)) return false;
+    this.noteWoodIntake(kind);
+    return true;
   }
 
   /** InventorySystem 的入包钩子。装备解锁的判定挂在这一处，理由见那边的端口注释。 */

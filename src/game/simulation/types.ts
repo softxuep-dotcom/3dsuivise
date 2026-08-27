@@ -464,6 +464,15 @@ export interface WolfState extends Vec2 {
   patrolAngle: number;
   speed: number;
   attackCooldown: number;
+  /**
+   * 这一帧正贴在玩家脸上咬。**表现层专用**，逻辑不读它。
+   *
+   * 咬击是唯一一个"站定不动、但必须朝着目标"的状态，而渲染那边的规矩是
+   * 「只让真正的位移改变显示朝向」（寻路会在障碍前左右试探 facing，跟着转会
+   * 表现成原地甩身）。这个标志是那条规矩的**唯一豁免**：为真时 facing 由
+   * WolfDirector 每帧对着玩家写，不是试探值，表现层可以直接信。
+   */
+  biting: boolean;
   lostTimer: number;
   /**
    * 远处降频更新时攒下的时间，见 WolfDirector.LOD_*。
@@ -505,11 +514,15 @@ export interface WorldDefinition {
 /**
  * 通关要往卡车里装几桶油。
  *
- * 5 → 6，和"出生点白送一桶"是同一笔账的两半，必须一起改（见
- * {@link FuelBarrelDefinition} 那段）。送的那桶抵掉多出来的那桶，
- * **实际要跑的趟数一趟没变**；变的只是玩家在第 10 秒就见过一次计数器跳格。
+ * 6 → 4。1.1.31 的 703 局装车漏斗每一级只留下约 1/3（38% / 33% / 29% /
+ * 39% / 29% / 40%），**平得看不出难度尖峰** —— 卡的不是某一桶，是趟数本身。
+ * 于是通关率 = 0.34^6 ≈ 0.3%（703 局里赢了 2 局），少到不足以支撑"我能赢"。
+ * 砍两趟把它抬到 0.34^4 ≈ 3%，量级上仍然是硬仗，但不再是统计意义上的不可能。
+ *
+ * "出生点白送一桶"那笔账照旧（见 {@link FuelBarrelDefinition} 那段）：
+ * 送的那桶仍然抵掉一趟，实际要跑的是 3 趟。
  */
-export const FUEL_REQUIRED = 6;
+export const FUEL_REQUIRED = 4;
 
 export type GameEvent =
   | { type: "pickup"; kind: CarryKind | InventoryItemKind }

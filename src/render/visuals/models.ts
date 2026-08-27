@@ -17,9 +17,27 @@ import { WOLF_BAR_HEIGHT, WOLF_BAR_WIDTH, wolfBarScale } from "./palette";
  * 而且 dispose 漏一个就是一处慢性泄漏。
  */
 /** 可搬运物的本色，以及被啃到快碎时染向的暗红。 */
-export const STONE_COLOR = 0x748084;
+/*
+ * 可搬石头。**冷色是它唯一的身份标识。**
+ *
+ * 原色 0x748084 的色相已经离沙地 156°，但饱和度只有 6% —— 地面降饱和之后
+ * 它跟着一起沉进背景（对新沙地只有 1.63:1）。推深、推冷到板岩蓝：
+ * 色相差 170°（几乎是色轮对面）、对比度 2.64:1。
+ */
+export const STONE_COLOR = 0x44607a;
 
-export const WOOD_COLOR = 0x65432d;
+/*
+ * 地面枯木。三个通道同时推开，因为剪影那条路回退了（太难看，见 createItemView）。
+ *
+ *              色相差沙地   饱和度   对新沙地对比度
+ *   0x65432d      16°       38%        3.52:1     ← 旧色，和沙地同族
+ *   0x6b2f14      21°       69%        4.13:1     ← 现在
+ *
+ * 色相只挪了 5°，真正的功在**饱和度 +31 点**和**对比度回到 4.13**：
+ * 它现在是"被人处理过的木料"，不是"地上一根晒白的枯枝"。
+ * 而装饰用的 deadwood 地标留在 0x7a6446（27% 饱和），两者拉开 42 点。
+ */
+export const WOOD_COLOR = 0x6b2f14;
 
 export const BARRIER_DAMAGE_TINT = new THREE.Color(0x47231c);
 

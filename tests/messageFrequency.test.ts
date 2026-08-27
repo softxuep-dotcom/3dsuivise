@@ -20,6 +20,11 @@ describe("消息频率", () => {
 
   it("黄昏会把背包里的柴从缺口中扣除", () => {
     const simulation = new GameSimulation(createWorld());
+    // 开局口粮的柴是 2（够烧满第一夜），那会走到下一条测试的 duskCarryEnough 分支。
+    // 这条要验的是**缺口**分支，所以先压回 1 —— 门槛写在数值里，测试自己造够不着的状态。
+    const wood = simulation.player.inventory.find((stack) => stack?.kind === "wood");
+    if (!wood) throw new Error("开局口粮缺少教学用枯木");
+    wood.count = 1;
     simulation.start();
     messages(simulation);
     const state = simulation as unknown as { clockStarted: boolean; phaseTime: number };

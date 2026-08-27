@@ -431,7 +431,27 @@ export class WolfDirector {
     }
 
     const playerDistance = distance(wolf, this.ctx.player);
-    if (wolf.mode === "chase" && playerDistance < 1.75 && this.ctx.hasMeleeLine(wolf, this.ctx.player)) {
+    const biting = wolf.mode === "chase"
+      && playerDistance < 1.75
+      && this.ctx.hasMeleeLine(wolf, this.ctx.player);
+    wolf.biting = biting;
+    if (biting) {
+      /*
+       * 先把脸转过来，再谈咬不咬得动。
+       *
+       * 这一整段是 return 收尾的 —— 它**够不到**函数末尾那句 `wolf.facing = steered`。
+       * 而狗进了 1.75 米就不再移动，于是朝向冻在"冲进射程那一帧"的方向上：
+       * 玩家绕到侧面或背后，它照咬不误，模型却还朝着原来那条冲刺线。
+       * 这就是实机上看到的"狗朝另一个方向咬"。
+       *
+       * 转向**不看 attackCooldown**：抬头盯着人和张嘴咬是两件事，冷却里那 1.15 秒
+       * 恰恰是玩家绕背的窗口，只在开咬那一帧转会让侧面挨咬变成常态。
+       *
+       * 贴脸重合时 direction() 返回 {0,0}（见 geometry.normalize），
+       * 那时不写 —— 保留上一帧的朝向，比甩回 +X 轴好看。
+       */
+      const facing = direction(wolf, this.ctx.player);
+      if (facing.x !== 0 || facing.z !== 0) wolf.facing = facing;
       if (wolf.attackCooldown <= 0) {
         wolf.attackCooldown = 1.15;
         const armor = this.ctx.getPlayerArmor();
@@ -489,6 +509,10 @@ export class WolfDirector {
     // 树桩挡在前面时先拆桩 —— 这正是它存在的意义：把狼的时间从"咬你"换成"咬木头"。
     const blockingStructure = wolf.mode === "retreating" ? null : this.findBlockingStructure(wolf, desired);
     if (blockingStructure) {
+      // 拆桩同样是"站定不动"，也同样 return 收尾，所以朝向也要在这里自己写 ——
+      // 否则狗会侧着身子啃木桩。下面那个 blockingItem 分支早就这么做了（见 approach）。
+      const facing = direction(wolf, blockingStructure);
+      if (facing.x !== 0 || facing.z !== 0) wolf.facing = facing;
       if (wolf.attackCooldown <= 0) {
         wolf.attackCooldown = 0.95;
         blockingStructure.hp -= this.ctx.getBarrierDamage(wolf, STRUCTURE_SPECS[blockingStructure.kind].armor);
@@ -936,6 +960,7 @@ export class WolfDirector {
       patrolAngle: this.ctx.random() * TAU,
       speed,
       attackCooldown: this.ctx.random(),
+      biting: false,
       lostTimer: 0,
       lodAccum: 0,
       raidAt,

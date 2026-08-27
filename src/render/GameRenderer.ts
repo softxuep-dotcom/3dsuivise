@@ -516,12 +516,27 @@ export class GameRenderer {
     const geometry = new THREE.PlaneGeometry(size, size, segments, segments);
     const positions = geometry.getAttribute("position") as THREE.BufferAttribute;
     const colors = new Float32Array(positions.count * 3);
-    // 荒漠调色：明亮的沙丘 → 湿润洼地的暗砾石 → 踩实的土路 → 裸岩 → 盐碱壳
-    const sand = new THREE.Color(0xc9a86a);
-    const gravel = new THREE.Color(0x9c7f52);
-    const packedEarth = new THREE.Color(0x8a6435);
-    const rock = new THREE.Color(0x8d7355);
-    const salt = new THREE.Color(0xe2ddc9);
+    /*
+     * 荒漠调色：明亮的沙丘 → 湿润洼地的暗砾石 → 踩实的土路 → 裸岩 → 盐碱壳
+     *
+     * 五个色**整体降饱和到原来的 58%**（色相和明度都不动）。
+     *
+     * 为什么动地面而不是去挨个提亮那 184 件可交互物：这张图上能交互的东西是
+     * 不能交互的 11 倍（散物 97 + 树 26 + 仙人掌 32 + 铁矿 14 + 桶 10 + 井 5，
+     * 对面只有 16 个地标）。真正的问题从来不是"装饰物太多"，是**所有东西都是
+     * 同一族沙漠褐** —— 枯木的色相离沙地只有 16°，玩家没有任何规则可以用来
+     * 分辨"这一类是给我的"。改一个地面材质，等于同时给全部交互物让路。
+     *
+     * 注意降饱和**不会**提高亮度对比（沙地反而变亮了一点，枯木对沙地是
+     * 3.88:1 → 3.52:1）。它买到的是**饱和度通道**：地面压到 27%，
+     * 可交互物推到 60% 以上，于是"鲜艳 = 能捡"成为一条一眼可学的规则。
+     * 所以这一条必须和 WOOD_COLOR / STONE_COLOR 那两个一起改，单独上没有意义。
+     */
+    const sand = new THREE.Color(0xb5a27e);
+    const gravel = new THREE.Color(0x8c7c62);
+    const packedEarth = new THREE.Color(0x786247);
+    const rock = new THREE.Color(0x817261);
+    const salt = new THREE.Color(0xdddace);
     const color = new THREE.Color();
     for (let index = 0; index < positions.count; index += 1) {
       const x = positions.getX(index);
@@ -1980,6 +1995,17 @@ export class GameRenderer {
     }
   }
 
+  /**
+   * 地面枯木：两根横躺的圆木。
+   *
+   * 1.1.32 试过把能捡的那种改成 Λ 形立柴，想用剪影和装饰用的 deadwood 地标区分开
+   * （实测第一个白天捡到柴的只有 9.6%）。**回退了，理由是难看** —— 立着的柴在
+   * 沙地上像插进去的路标，不像躺在那儿等人捡的柴火。
+   *
+   * 区分这件事改由**颜色**承担（见 makeMaterial 那一族的色相分配）：可交互物统一
+   * 推离沙漠褐，地形反过来降饱和。剪影这条路留在这里当记录 —— 它能解决问题，
+   * 只是代价是美术观感，而这个游戏的沙漠质感本身也是留人的一部分。
+   */
   private createItemView(item: GroundItem): THREE.Object3D {
     let view: THREE.Object3D;
     if (item.kind === "wood") {

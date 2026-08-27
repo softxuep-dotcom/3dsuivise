@@ -8,55 +8,55 @@
   15.0   1 day     100.0   78.7   83.7   32.4  100.0 normal       sim.fuelFirst
   20.0   1 day     100.0   76.6   81.6   35.8  100.0 normal       sim.fuelFirst
   25.0   1 day     100.0   74.5   79.5   39.3  100.0 normal       sim.fuelFirst
-  30.0   1 day     100.0   72.4   77.4   42.7  100.0 normal       sim.23
-  35.0   1 day     100.0   70.3   75.3   46.2  100.0 normal       sim.23
-  40.0   1 night   100.0   68.2   73.2   49.6  100.0 normal       sim.13
-  45.0   1 night   100.0   66.1   71.1   44.4  100.0 normal       sim.13
-  50.0   1 night   100.0   64.0   69.0   39.1  100.0 normal       sim.13
-  55.0   1 night   100.0   61.9   66.9   33.9  100.0 normal       sim.13
-  60.0   1 night    99.7   59.8   64.8   28.6  100.0 normal       sim.17
-  65.0   1 night    98.5   57.7   62.7   23.4  100.0 normal       sim.17
-  70.0   1 night    97.3   55.6   60.6   18.1  100.0 normal       sim.17
-  75.0   1 night    96.1   53.5   58.5   12.9  100.0 normal       sim.17
-  80.0   1 night    94.9   51.4   56.4    7.6  100.0 normal       sim.17
-  85.0   1 night    93.7   49.3   54.3    2.4  100.0 hypothermia  sim.11
-  90.0   1 night    92.5   47.2   52.2    0.0  100.0 hypothermia  sim.11
-  95.0   1 night    91.3   45.1   50.1    0.0  100.0 hypothermia  sim.11
- 100.0   1 night    90.1   43.0   48.0    0.0  100.0 hypothermia  sim.11
- 105.0   1 night    88.9   40.9   45.9    0.0  100.0 hypothermia  sim.11
- 110.0   1 night    87.7   38.8   43.8    0.0  100.0 hypothermia  sim.11
- 115.0   1 night    86.5   36.7   41.7    0.0  100.0 hypothermia  sim.11
- 120.0   1 night    85.3   34.6   39.6    0.0  100.0 hypothermia  sim.11
- 125.0   1 night    84.1   32.5   37.5    0.0  100.0 hypothermia  sim.11
- 130.0   1 night    82.9   30.4   35.4    0.0  100.0 hypothermia  sim.11
- 135.0   1 night    81.7   28.3   33.3    0.0  100.0 hypothermia  sim.11
- 140.0   1 night    80.5   26.2   31.2    0.0  100.0 hypothermia  sim.11
- 145.0   1 night    79.3   24.1   29.1    0.0  100.0 hypothermia  sim.11
- 150.0   1 night    78.1   22.0   27.0    0.0  100.0 hypothermia  sim.11
- 155.0   1 night    76.9   19.9   24.9    0.0  100.0 hypothermia  sim.11
- 160.0   1 night    75.7   17.8   22.8    0.0  100.0 hypothermia  sim.9
- 165.0   1 night    74.5   15.7   20.7    0.0  100.0 hypothermia  sim.9
- 170.0   1 night    73.3   13.6   18.6    0.0  100.0 hypothermia  sim.9
- 175.0   1 night    72.1   11.5   16.5    0.0  100.0 hypothermia  sim.needsCritical
- 180.0   1 night    70.9    9.4   14.4    0.0  100.0 hypothermia  sim.needsCritical
- 185.0   1 night    69.7    7.3   12.3    0.0  100.0 hypothermia  sim.needsCritical
- 190.0   1 night    68.5    5.2   10.2    0.0  100.0 hypothermia  sim.needsCritical
- 195.0   2 day      67.3    3.1    8.1   18.3  100.0 normal       sim.needsCritical
- 200.0   2 day      66.1    1.0    6.0   21.8  100.0 normal       sim.needsCritical
+  30.0   1 day     100.0   72.4   77.4   42.7  100.0 normal       sim.fuelFirst
+  35.0   1 day     100.0   70.3   75.3   46.2  100.0 normal       sim.fuelFirst
+  40.0   1 day     100.0   68.2   73.2   49.6  100.0 normal       sim.13
+  45.0   1 day     100.0   66.1   71.1   53.1  100.0 normal       sim.13
+  50.0   1 night   100.0   64.0   69.0   56.5  100.0 normal       sim.13
+  55.0   1 night   100.0   61.9   66.9   51.3  100.0 normal       sim.13
+  60.0   1 night   100.0   59.8   64.8   46.0  100.0 normal       sim.13
+  65.0   1 night   100.0   57.7   62.7   40.8  100.0 normal       sim.13
+  70.0   1 night   100.0   55.6   60.6   35.5  100.0 normal       sim.13
+  75.0   1 night   100.0   53.5   58.5   30.3  100.0 normal       sim.13
+  80.0   1 night    98.9   51.4   56.4   25.0  100.0 normal       sim.17
+  85.0   1 night    97.7   49.3   54.3   19.8  100.0 normal       sim.17
+  90.0   1 night    96.5   47.2   52.2   14.5  100.0 normal       sim.17
+  95.0   1 night    95.3   45.1   50.1    9.3  100.0 normal       sim.17
+ 100.0   1 night    94.1   43.0   48.0    4.0  100.0 hypothermia  sim.11
+ 105.0   1 night    92.9   40.9   45.9    0.0  100.0 hypothermia  sim.11
+ 110.0   1 night    91.7   38.8   43.8    0.0  100.0 hypothermia  sim.11
+ 115.0   1 night    90.5   36.7   41.7    0.0  100.0 hypothermia  sim.11
+ 120.0   1 night    89.3   34.6   39.6    0.0  100.0 hypothermia  sim.11
+ 125.0   1 night    88.1   32.5   37.5    0.0  100.0 hypothermia  sim.11
+ 130.0   1 night    86.9   30.4   35.4    0.0  100.0 hypothermia  sim.11
+ 135.0   1 night    85.7   28.3   33.3    0.0  100.0 hypothermia  sim.11
+ 140.0   1 night    84.5   26.2   31.2    0.0  100.0 hypothermia  sim.11
+ 145.0   1 night    83.3   24.1   29.1    0.0  100.0 hypothermia  sim.11
+ 150.0   1 night    82.1   22.0   27.0    0.0  100.0 hypothermia  sim.11
+ 155.0   1 night    80.9   19.9   24.9    0.0  100.0 hypothermia  sim.11
+ 160.0   1 night    79.7   17.8   22.8    0.0  100.0 hypothermia  sim.9
+ 165.0   1 night    78.5   15.7   20.7    0.0  100.0 hypothermia  sim.9
+ 170.0   1 night    77.3   13.6   18.6    0.0  100.0 hypothermia  sim.9
+ 175.0   1 night    76.1   11.5   16.5    0.0  100.0 hypothermia  sim.needsCritical
+ 180.0   1 night    74.9    9.4   14.4    0.0  100.0 hypothermia  sim.needsCritical
+ 185.0   1 night    73.7    7.3   12.3    0.0  100.0 hypothermia  sim.needsCritical
+ 190.0   1 night    72.5    5.2   10.2    0.0  100.0 hypothermia  sim.needsCritical
+ 195.0   1 night    71.3    3.1    8.1    0.0  100.0 hypothermia  sim.needsCritical
+ 200.0   1 night    70.1    1.0    6.0    0.0  100.0 hypothermia  sim.needsCritical
 
 结束于 t=202.4  running=false  死因=dehydrated  瘫痪状态=normal
 
 事件流
   t=0.1 message key=msg.1
-  t=10.1 message key=msg.duskNoFire params={"night":150,"logs":1}
+  t=20.1 message key=msg.duskCarryEnough params={"logs":2}
   t=35.8 rest active=true
-  t=40.0 phase phase=night day=1.00
-  t=40.0 message key=msg.duskFireShort
-  t=58.7 rest active=false
-  t=82.6 condition condition=hypothermia
-  t=82.6 message key=msg.37
-  t=190.1 phase phase=day day=2.00
-  t=190.1 message key=msg.43
-  t=190.2 condition condition=normal
-  t=190.2 message key=msg.38
+  t=50.0 phase phase=night day=1.00
+  t=50.0 message key=msg.duskFireShort
+  t=75.3 rest active=false
+  t=99.1 condition condition=hypothermia
+  t=99.1 message key=msg.37
+  t=200.1 phase phase=day day=2.00
+  t=200.1 message key=msg.43
+  t=200.2 condition condition=normal
+  t=200.2 message key=msg.38
   t=202.4 game-over cause=dehydrated condition=normal killer=null

@@ -4,6 +4,7 @@ import {
 } from "./helpers/simHarness";
 import type { Vec2 } from "../src/game/simulation/types";
 import { GameSimulation } from "../src/game/simulation/GameSimulation";
+import { direction, dot } from "../src/game/simulation/geometry";
 
 /*
  * 这四条断言全部来自真实事故，不是凭空写的验收标准。
@@ -181,5 +182,69 @@ describe("攻营犬 · 追丢之后必须再来", () => {
       worst,
       `${campLabel(campId)}：攻营犬 #${worstId} 整夜有 ${worst.toFixed(1)} 秒在巡逻绕圈 —— 它已经不再攻营了`,
     ).toBeLessThan(MAX_PATROL_SECONDS);
+  });
+});
+
+
+describe("咬人 · 必须朝着人", () => {
+  /**
+   * "狗朝另一个方向咬"。1.1.31 实机报的，成因横跨模拟层和表现层两处，
+   * 而**任何一处单独看都不像错**：
+   *
+   *   模拟层  咬击分支是 return 收尾的，够不到 updateWolf 末尾那句
+   *           `wolf.facing = steered`。狗进了 1.75 米就不再移动，
+   *           于是朝向冻在"冲进射程那一帧"。
+   *   表现层  显示朝向只在"这一帧真的位移了"时才更新（那条规矩本身是对的：
+   *           寻路会在障碍前左右试探 facing，跟着转会原地甩身）。
+   *           而咬人时位移恒为 0，于是它永远不更新。
+   *
+   * 所以玩家绕到侧面之后，狗照咬不误、脸却还朝着原来那条冲刺线。
+   * 站桩测不出来 —— 站着不动时冻住的那个方向恰好就是对的。**必须让玩家动。**
+   *
+   * 这条只守模拟层那一半（facing 每帧对着人写）。表现层那一半守不到：
+   * 它要真的起渲染器。两者的因果写在 WolfState.biting 的注释里。
+   */
+  /** cos 0.9 ≈ 25°。真值应该贴着 1.0，留这么多余量是给"玩家在狗更新之后又走了一帧"。 */
+  const MIN_COS = 0.9;
+
+  it("玩家绕着狗走时，正在咬的狗每一帧都朝着玩家", () => {
+    let worst = 1;
+    let worstDistance = 0;
+    let samples = 0;
+
+    runNight({
+      campId: 0,
+      /*
+       * 停 1.2 秒、走 0.6 秒，每个周期换一个方向。
+       *
+       * 一直绕圈是不行的：玩家速度比狗快，整夜只咬到 8 帧，样本不够。
+       * 而这个占空比正好造出要测的那个局面 —— 停的时候狗贴上来开咬（朝向这时是对的），
+       * 走的时候人横着挪开，逼它每一帧重新对准。旧代码正是在这半秒里露馅。
+       */
+      move: (elapsed) => {
+        const cycle = elapsed % 1.8;
+        if (cycle < 1.2) return { x: 0, z: 0 };
+        const angle = Math.floor(elapsed / 1.8) * 1.1;
+        return { x: Math.cos(angle), z: Math.sin(angle) };
+      },
+      onStep: (sim) => {
+        for (const w of sim.wolves) {
+          if (!w.biting || w.mode === "dead") continue;
+          // 完全重合时 direction() 返回 {0,0}（见 geometry.normalize），量不出角度。
+          const d = distanceTo(w, sim.player);
+          if (d < 0.05) continue;
+          samples += 1;
+          const cos = dot(w.facing, direction(w, sim.player));
+          if (cos < worst) { worst = cos; worstDistance = d; }
+        }
+      },
+    });
+
+    expect(samples, "整夜一帧都没咬到人 —— 这条测试等于没测").toBeGreaterThan(20);
+    const degrees = (Math.acos(Math.min(1, Math.max(-1, worst))) * 180) / Math.PI;
+    expect(
+      worst,
+      `有狗在离玩家 ${worstDistance.toFixed(2)} 米处咬人，脸却偏了 ${degrees.toFixed(0)}°`,
+    ).toBeGreaterThan(MIN_COS);
   });
 });
