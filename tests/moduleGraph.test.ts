@@ -167,10 +167,10 @@ describe("模块图", () => {
       // 换来的是绘制调用 299 → 143，见 visuals/mergeStatic.ts。
       // 2363 → 2345：立柴那套几何撤了（难看），换成地面降饱和 + 交互物推色，
       // 净收益 18 行。区分"能捡的"和"布景"这件事现在由颜色承担，不由剪影承担。
-      // 2345 → 2455：接入三档画质（QualityGuard）。判定逻辑全在 render/QualityGuard.ts，
+      // 2345 → 2461：接入三档画质（QualityGuard）。判定逻辑全在 render/QualityGuard.ts，
       // 这里只有档位表、pixelRatioFor / cullDistance / applyTier 三个落点、
-      // 一个 DEV 跳档开关，以及「一档为什么分设备、二三档为什么不分」那段。
-      "src/render/GameRenderer.ts": 2455,
+      // 一个 DEV 跳档开关，以及「一档为什么分设备」「手机上一二档 pixelRatio 为什么不动」两段。
+      "src/render/GameRenderer.ts": 2461,
       // 1171 → 1172：EquipTier 跟着数值搬去了 balance/equipment，
       // 于是这里从两行 import 变成三行。这是全程唯一一处上调，且只此一行。
       "src/ui/HudController.ts": 1172,
