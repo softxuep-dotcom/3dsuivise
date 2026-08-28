@@ -268,3 +268,38 @@ describe("多语言 · 开场第一句说装载而不是灌满", () => {
     expect(table["sim.7"], `${lang} sim.7 说了灌满：${table["sim.7"]}`).not.toMatch(fillVerb[lang]);
   });
 });
+
+/*
+ * 代码里引用的每个键，语言表里都得有。
+ *
+ * 这条是补一个真踩过的坑：删 sim.32 时先把十三个语言文件里的键删了，
+ * 却漏了 ObjectiveNarrator 里那处 `loc("sim.32", …)`。t() 找不到键会**把键名
+ * 原样吐到屏幕上**（见 i18n/index.ts 的注释：「界面上出现 msg.foo.bar 很丑，
+ * 但比空白好定位」），而当时 315 个测试全绿 —— 没有任何一条在管这件事。
+ *
+ * 反过来的方向（表里有、代码不用）不查：那是死键，不影响玩家，
+ * 而且 index.html 的 data-i18n 和动态拼出来的键都会造成假阳性。
+ */
+describe("多语言 · 代码引用的键必须存在", () => {
+  // 用 import.meta.glob 读源码，理由和 moduleGraph.test.ts 一样：
+  // 这个仓库没装 @types/node，而 Vite 的 ?raw 在 vitest 里本来就通。
+  const sources = import.meta.glob("../src/**/*.ts", {
+    query: "?raw", import: "default", eager: true,
+  }) as Record<string, string>;
+
+  it("扫到的源文件足够多（否则这条测试等于没测）", () => {
+    expect(Object.keys(sources).length).toBeGreaterThan(20);
+  });
+
+  it("loc() / t() 里写死的键在英文表里都有", () => {
+    const missing: string[] = [];
+    for (const [path, src] of Object.entries(sources)) {
+      if (path.includes("/i18n/locales/")) continue;
+      for (const m of src.matchAll(/\b(?:loc|t|tx)\(\s*"([a-z][\w.-]*\.[\w.-]+)"/gi)) {
+        // 复数变体（key_one / key_other）由 t() 自己回退，只查基名。
+        if (en[m[1]] === undefined) missing.push(`${path.replace(/^\.\.\//, "")}: ${m[1]}`);
+      }
+    }
+    expect(missing, `这些键代码在用但英文表里没有：\n  ${missing.join("\n  ")}`).toEqual([]);
+  });
+});

@@ -751,7 +751,7 @@ export class WolfDirector {
       const bulk = wolf.kind === "elite" ? 3 : wolf.kind === "large" ? 2 : 1;
       this.ctx.createDrop(wolf, "raw-meat", -0.65, bulk);
       this.ctx.createDrop(wolf, "hide", 0.65, bulk);
-      // 狼牙：三阶装备的共同门槛，**只有白天的大狼和精英狼**掉。
+      // 狼牙：大狼掉 1、精英掉 2，另外**守巢犬也掉 1**（见上面 role === "guard" 那一支）。
       //
       // 大狼占比是 min(0.58, 0.22 + (天数−1)×0.09)，第 1 天只有 22%、第 5 天才 58%，
       // 这把三阶自动锁到第 3 天以后 —— 不需要写任何天数判定。而大狼（血 160 /
