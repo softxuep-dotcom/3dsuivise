@@ -371,7 +371,7 @@ export const tr: Record<string, string> = {
   "sim.43": "dinlenmeye başlamak için {v0} sn daha hareketsiz dur",
   "sim.5": "Mevcut bir {v0} çok yakın",
   "sim.6": "Yolda bir şey var",
-  "sim.7": "Kamyonu {required} varille doldur ve çık · {metres} m {bearing}",
+  "sim.7": "Kamyona {required} varil yükle ve çık · {metres} m {bearing}",
   "sim.9": "Su bitti · hemen bul; sıfırda ölürsün",
   "sim.cookAnywhere": "Can azalıyor · çiğ et ancak yarısını doldurur. Bir ateş yak ve pişir",
   "sim.cookNearby": "Can azalıyor · çiğ eti {metres} m ötedeki ateşte pişir, her biri +{health}",

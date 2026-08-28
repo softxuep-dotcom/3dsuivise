@@ -232,3 +232,39 @@ describe("多语言 · 中文区分的键，译文不许撞词", () => {
     expect(clashes, `${lang} 撞词：\n  ${clashes.join("\n  ")}`).toEqual([]);
   });
 });
+
+/*
+ * 开场第一句必须说"装"，不许说"灌满"。
+ *
+ * sim.7 是 !clockStarted 时的目标行 —— 从游戏加载完到玩家迈出第一步为止都是它，
+ * 全游戏最多人看到的一句话（见 ObjectiveNarrator.getObjective 里那段注释：
+ * 「Poki 那批会话中位数只有 52 秒，绝大多数人从头到尾没被告知过目标是什么」）。
+ *
+ * 而这游戏**没有任何加油动作** —— 油桶是整桶搬起来、走过去、放进车斗的。
+ * 中文原文曾经写作「加满 N 桶油」，六种欧洲语言照着直译成 füllen / Llena /
+ * Remplissez / Riempi / Encha / doldur，于是每种语言的开场白都和它自己
+ * hint.loadFuel 里的动词（Charger / Carica / Carregue / Kasaya yükle）打架。
+ *
+ * 上面那条 loadedTerms 管不到它：那些正则匹配的是**完成态**（loaded / 装车 /
+ * verladen），而这里是祈使句。所以按词干再钉一遍，并且明确禁掉"灌满"系动词。
+ */
+describe("多语言 · 开场第一句说装载而不是灌满", () => {
+  const loadStem: Record<string, RegExp> = {
+    en: /load/i, zh: /装/, fr: /charg/i, de: /laden/i, it: /caric/i,
+    "pt-BR": /carreg/i, es: /carg/i, tr: /yükle/i, ja: /積/,
+    ru: /загруз/i, ko: /싣|적재/, vi: /chất/i, id: /muat/i,
+  };
+  const fillVerb: Record<string, RegExp> = {
+    en: /\bfill/i, zh: /加满|灌/, fr: /rempli/i, de: /füll/i, it: /riempi/i,
+    "pt-BR": /\bench/i, es: /llena|rellena/i, tr: /doldur/i, ja: /満た/,
+    ru: /наполн/i, ko: /채우|가득/, vi: /đổ đầy|làm đầy/i, id: /isi penuh|penuhi/i,
+  };
+
+  it.each(Object.entries(ALL_LOCALES))("%s 的 sim.7 用装载动词", (lang, table) => {
+    expect(table["sim.7"], `${lang} sim.7 没用装载动词：${table["sim.7"]}`).toMatch(loadStem[lang]);
+  });
+
+  it.each(Object.entries(ALL_LOCALES))("%s 的 sim.7 不说灌满", (lang, table) => {
+    expect(table["sim.7"], `${lang} sim.7 说了灌满：${table["sim.7"]}`).not.toMatch(fillVerb[lang]);
+  });
+});

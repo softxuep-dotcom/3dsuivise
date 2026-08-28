@@ -361,7 +361,7 @@ export const es: Record<string, string> = {
   "sim.43": "quédate quieto {v0} s más para empezar a descansar",
   "sim.5": "{v0} demasiado cerca",
   "sim.6": "Hay algo en medio",
-  "sim.7": "Llena la camioneta con {required} bidones y sal · está a {metres} m al {bearing}",
+  "sim.7": "Carga la camioneta con {required} bidones y sal · está a {metres} m al {bearing}",
   "sim.9": "Sin agua · busca ya; a cero mueres",
   "sim.cookAnywhere": "Salud bajando · la carne cruda restaura solo la mitad. Enciende un fuego y cocínala",
   "sim.cookNearby": "Salud bajando · cocina la carne cruda en el fuego a {metres} m, +{health} cada una",

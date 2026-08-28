@@ -354,7 +354,7 @@ export const ptBR: Record<string, string> = {
   "sim.43": "fique parado por mais {v0} s para descansar",
   "sim.5": "{v0} perto demais",
   "sim.6": "Algo está bloqueando",
-  "sim.7": "Encha o caminhão com {required} barris e vá embora · está a {metres} m {bearing}",
+  "sim.7": "Carregue o caminhão com {required} barris e vá embora · está a {metres} m {bearing}",
   "sim.9": "Sem água · encontre agora; em zero você morre",
   "sim.cookAnywhere": "Vida diminuindo · carne crua cura só metade. Acenda uma fogueira e asse",
   "sim.cookNearby": "Vida diminuindo · asse a carne na fogueira a {metres} m, +{health} cada",

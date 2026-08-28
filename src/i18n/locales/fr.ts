@@ -354,7 +354,7 @@ export const fr: Record<string, string> = {
   "sim.43": "restez immobile encore {v0} s pour vous reposer",
   "sim.5": "Trop près d'un autre {v0}",
   "sim.6": "Quelque chose bloque",
-  "sim.7": "Remplissez le camion avec {required} barils et partez · il est à {metres} m {bearing}",
+  "sim.7": "Chargez le camion avec {required} barils et partez · il est à {metres} m {bearing}",
   "sim.9": "Plus d'eau · trouvez-en maintenant ; à zéro, vous mourrez",
   "sim.cookAnywhere": "Santé en baisse · la viande crue soigne deux fois moins. Allumez un feu et faites-la cuire",
   "sim.cookNearby": "Santé en baisse · cuisez la viande au feu à {metres} m, +{health} chacune",
