@@ -3,7 +3,7 @@
  */
 
 export const vi: Record<string, string> = {
-  "action.board": "Khởi hành",
+  "action.board": "Thoát đi",
   "action.cactus": "Cắt",
   "action.drop": "Đặt xuống",
   "action.chop": "Chặt",

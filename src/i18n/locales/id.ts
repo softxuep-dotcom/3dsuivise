@@ -6,7 +6,7 @@
  */
 
 export const id: Record<string, string> = {
-  "action.board": "Berangkat",
+  "action.board": "Pergi",
   "action.cactus": "Ambil getah",
   "action.drop": "Letakkan",
   "action.chop": "Potong",
