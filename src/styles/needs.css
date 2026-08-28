@@ -1,0 +1,48 @@
+/*
+ * 需求告急的指向性提示：背包按钮和那一格存货一起脉冲。
+ *
+ * 为什么需要它：`r1/pack` 实测只有 55% —— 45% 的玩家整局没开过背包，
+ * 而吃、喝、烤肉、造装备全部住在里面。目标行那句"去吃肉"对这批人是无效的，
+ * 因为他们并不知道"肉"是背包里的东西。文字负责说**做什么**，
+ * 这一层负责说**去哪做**，两者共用同一个阈值（balance/survival.ts 的 NEED_WARNING）。
+ *
+ * 用外扩的 box-shadow 环，不用 transform：背包按钮和格子的位移/缩放
+ * 分别被 hud-redesign.css 和 panels.css 占着，动它们会打架。
+ */
+
+@keyframes need-urgent-ring {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(232, 115, 79, .55), 0 0 14px rgba(232, 115, 79, .25); }
+  55% { box-shadow: 0 0 0 6px rgba(232, 115, 79, 0), 0 0 22px rgba(232, 115, 79, .5); }
+}
+
+#backpack-button.need-urgent,
+.inventory-slot.need-urgent {
+  position: relative;
+  border-color: rgba(240, 138, 100, .8);
+  /*
+   * 1.15 秒一次。快过这个会变成焦虑噪音，慢过这个在 42.9 秒的反应窗口里
+   * （NEED_WARNING=18 除以 0.42/s）只跳三十来次，容易被当成呼吸灯忽略掉。
+   */
+  animation: need-urgent-ring 1.15s ease-in-out infinite;
+}
+
+/*
+ * 试过再叠一层图标抖动（rotate ±2.5°，和光环同周期），**撤了**。
+ *
+ * 撤的理由是它和光环说的是同一件事，两个声部在一颗 68px 的按钮上挤不开 ——
+ * 光环已经把"在这里"讲完了，再加一个摆头只是把提示变吵，不是变清楚。
+ *
+ * 留个记录省得下次再走一遍：真要做抖动，**抖图标不要抖按钮**。
+ * `#backpack-button` 的 `transform: translate(50%, 50%)` 是承重定位
+ * （见 hud.css 的 .bottom-right 那组），动它会把按钮甩到错位；而且这提示是给
+ * 手机上那 45% 没开过背包的人看的，**点击目标不能动**，一颗边跳边要被拇指
+ * 按中的按钮是在帮倒忙。
+ */
+
+@media (prefers-reduced-motion: reduce) {
+  #backpack-button.need-urgent,
+  .inventory-slot.need-urgent {
+    animation: none;
+    box-shadow: 0 0 0 2px rgba(232, 115, 79, .7);
+  }
+}

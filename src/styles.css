@@ -17,4 +17,10 @@
 @import "./styles/responsive.css";
 @import "./styles/hud-redesign.css";
 @import "./styles/quick-craft.css";
+/*
+ * needs 排在 hud-redesign 之后：它要给 #backpack-button 加脉冲环，
+ * 而那颗按钮的定位和外观由 hud-redesign 决定，写在前面会被压掉。
+ * 排在 tutorial 之前：教学关灯时压暗全场，那一层仍然应该盖过这个提示。
+ */
+@import "./styles/needs.css";
 @import "./styles/tutorial.css";

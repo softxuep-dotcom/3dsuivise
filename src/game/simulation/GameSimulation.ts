@@ -377,7 +377,8 @@ export class GameSimulation {
       health: 100,
       maxHealth: 100,
       warmth: WARMTH_INITIAL,
-      hunger: 90,
+      // 90 → 40。理由不在这里，在 balance/world.ts 的 STARTING_RATION 那段。
+      hunger: 40,
       water: 85,
       stamina: STAMINA_MAX,
       maxStamina: STAMINA_MAX,

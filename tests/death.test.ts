@@ -95,6 +95,12 @@ describe("死亡判定", () => {
    * 交接文档量过的死亡时刻是 86~141 秒（七种画像全灭于第一夜），
    * 上限放到 400 秒 —— 这条测的是"死亡这件事会不会发生"，不是具体几秒，
    * 免得每次调数值就误报。
+   *
+   * **两条需求轴每帧顶满**，因为初始饱食压到 40 之后饿死线落在 95.2 秒 ——
+   * 正好插进上面那个 86~141 秒的窗口中间，会把这条测试从"狗咬死"变成"饿死"。
+   * 这里要验的是**死因归因**（killed + killer 种类），不是"哪种威胁先到"，
+   * 所以把饥渴这条路堵掉，只留下狗。血量一个字不碰 —— 那才是被测对象。
+   * "不吃东西会饿死"由下面那条单独守。
    */
   it("第一夜会被狗咬死，且死因是 killed", () => {
     const sim = new GameSimulation(createWorld());
@@ -102,6 +108,8 @@ describe("死亡判定", () => {
     let died = false;
     let seconds = 0;
     for (let i = 0; i < 400 * 20 && !died; i += 1) {
+      sim.player.hunger = 100;
+      sim.player.water = 100;
       sim.update(STEP, { x: Math.cos(seconds * 0.3), z: Math.sin(seconds * 0.3) });
       seconds += STEP;
       for (const event of sim.drainEvents()) if (event.type === "game-over") died = true;
@@ -110,5 +118,35 @@ describe("死亡判定", () => {
     expect(sim.deathCause).toBe("killed");
     expect(["small", "large", "elite"]).toContain(sim.deathKiller);
     expect(sim.running).toBe(false);
+  }, 60000);
+
+  /**
+   * 从不开背包的玩家会在第一夜饿死 —— **这是初始饱食 40 存在的全部理由。**
+   *
+   * 上一版初始饱食 90，饿死线在 214 秒，而 1.1.33 实测平均每局只有约 143 秒：
+   * 这一课排在了观众散场之后，`r1/pack` 因此常年停在 55%。压到 40 之后
+   * 预警在 52.4 秒（第一天刚结束、目标行让位的接缝上）、饿死在 95.2 秒，
+   * 都稳稳落在一局之内。
+   *
+   * 关掉狼和猎物，让饥饿成为唯一的死因；不然就是在重测上面那条。
+   */
+  it("从不吃东西的玩家在 100 秒内饿死", () => {
+    // started() 会先迈十步把时钟闸打开 —— 不动的话 running 是 false，
+    // update() 直接 return，五条轴一格都不掉，这条测试会永远跑不完。
+    // 那十步也计入下面的耗时，所以判定窗口比 95.2 秒略宽一点。
+    const sim = started();
+    let seconds = 10 * STEP;
+    let cause: string | null = null;
+    for (let i = 0; i < 200 * 20 && !cause; i += 1) {
+      sim.update(STEP, { x: 0, z: 0 });
+      seconds += STEP;
+      for (const event of sim.drainEvents()) {
+        if (event.type === "game-over") cause = sim.deathCause;
+      }
+    }
+    expect(cause, `跑满 ${seconds.toFixed(0)} 秒还没死`).toBe("starved");
+    // 40 / 0.42 = 95.2 秒。留一点余量给帧步长，但必须远小于平均每局 143 秒。
+    expect(seconds).toBeGreaterThan(90);
+    expect(seconds).toBeLessThan(100);
   }, 60000);
 });

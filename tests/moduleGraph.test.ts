@@ -157,7 +157,8 @@ describe("模块图", () => {
       // 1939 → 1954：noteWoodIntake（柴进包的唯一汇合点）。它挂在 addInventory 上
       // 而不是那两处 pickup 事件旁边，注释解释了为什么 —— 调用点会长第三处，
       // 漏挂不报错，只会让目标行悄悄停在上一阶。
-      "src/game/simulation/GameSimulation.ts": 1954,
+      // +1：初始饱食 90 → 40 那一行的出处注释（理由在 balance/world.ts）。
+      "src/game/simulation/GameSimulation.ts": 1955,
       // 阶段 3 抽走视觉常量与三个动态实体池：2938 → 2274。
       // 剩下的 build*（开局建一次）和 sync*（每帧）还混在一起，是下一刀。
       // 2274 → 2298：screenToWorld 拆成 screenToGround，多交出一个"射线在地面上
@@ -170,10 +171,17 @@ describe("模块图", () => {
       // 2345 → 2455：接入三档画质（QualityGuard）。判定逻辑全在 render/QualityGuard.ts，
       // 这里只有档位表、pixelRatioFor / cullDistance / applyTier 三个落点、
       // 一个 DEV 跳档开关，以及「一档为什么分设备、二三档为什么不分」那段。
-      "src/render/GameRenderer.ts": 2455,
+      // 2455 → 2476：移动端一档 pixelRatio 1.3 → 1.0，以及那 21 行的原因。
+      // 1.1.35 的 800 局量到 r1/t15 83%→76%、r1/enter 的 Left 4.8%→7.7%，
+      // 而弱机最快也要玩满 5 秒才降得下来。这段必须留着 —— 光看常量是 1.0，
+      // 下一个人只会觉得"移动端被一刀切压住了"，然后再把它抬回去。
+      "src/render/GameRenderer.ts": 2476,
       // 1171 → 1172：EquipTier 跟着数值搬去了 balance/equipment，
       // 于是这里从两行 import 变成三行。这是全程唯一一处上调，且只此一行。
-      "src/ui/HudController.ts": 1172,
+      // 1172 → 1198：需求告急时的指向性提示 —— 背包按钮每帧脉冲 + urgentRelief()
+      // 把该点的那一格挑出来。r1/pack 只有 55%，45% 的人整局没开过背包，
+      // 而吃喝烤造全在里面；目标行说做什么，这一层说去哪做。
+      "src/ui/HudController.ts": 1198,
       // styles.css 阶段 3 拆成六段，自己只剩 @import；六段各自都在 600 行以内。
       // 下面三处 +438/+1124/+670 是同一次改动（修"狗朝另一个方向咬"）的三半：
       // 咬击分支 return 收尾，够不到函数末尾那句 wolf.facing = steered，于是朝向

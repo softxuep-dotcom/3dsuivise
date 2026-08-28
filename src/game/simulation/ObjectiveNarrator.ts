@@ -3,7 +3,7 @@ import type { TruckSystem } from "./TruckSystem";
 import { loc } from "./text";
 import { TAU } from "./geometry";
 import { CRITTER_SPECS } from "./types";
-import { COOKED_HEALTH, FIRE_WARMTH_RADIUS } from "../balance/survival";
+import { COOKED_HEALTH, FIRE_WARMTH_RADIUS, NEED_WARNING } from "../balance/survival";
 import type {
   CampDefinition, CampState, CritterState, GameEvent, LocalizedText,
   InventoryItemKind, Phase, PlayerState, Vec2, WorldDefinition,
@@ -131,9 +131,12 @@ export class ObjectiveNarrator {
     }
 
     // 致命轴优先：水分和饥饿归零是立即死亡，必须压过其它所有提示。
-    if (this.owner.player.water < 18 && this.owner.player.hunger < 18) return loc("sim.needsCritical");
-    if (this.owner.player.water < 18) return loc("sim.9");
-    if (this.owner.player.hunger < 18) return loc("sim.10");
+    // 阈值与 HUD 的脉冲共用 NEED_WARNING —— 目标行说"去吃肉"的同一帧，
+    // 背包和那格食物一起跳。两边各写一个 18 就会在下次调参时悄悄错开。
+    const { water, hunger } = this.owner.player;
+    if (water < NEED_WARNING && hunger < NEED_WARNING) return loc("sim.needsCritical");
+    if (water < NEED_WARNING) return loc("sim.9");
+    if (hunger < NEED_WARNING) return loc("sim.10");
     // 其次是瘫痪状态。
     if (this.owner.player.condition === "hypothermia") return loc("sim.11");
     if (this.owner.player.condition === "heatstroke") return loc("sim.12");

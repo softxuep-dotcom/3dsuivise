@@ -1,6 +1,6 @@
 import type { GameSimulation } from "../game/simulation/GameSimulation";
 import type { EquipTier } from "../game/balance/equipment";
-import { COOKED_HEALTH } from "../game/balance/survival";
+import { COOKED_HEALTH, NEED_WARNING } from "../game/balance/survival";
 import { t, tx } from "../i18n";
 import { clamp } from "../game/simulation/geometry";
 import { describeRecords, formatDuration, loadRecords, submitRun } from "./Records";
@@ -600,6 +600,20 @@ export class HudController {
     // 水分与饱食是"归零即死"的轴，所以告警阈值比体温更保守。
     this.waterBar.closest(".meter")?.classList.toggle("critical", player.water < 25);
     this.hungerBar.closest(".meter")?.classList.toggle("critical", player.hunger < 25);
+    /*
+     * 需求告急时让背包自己跳。
+     *
+     * `r1/pack` 只有 55% —— 45% 的人整局没开过背包，而吃、喝、烤、造装备全在里面。
+     * 目标行那句"去吃肉"对这批人是无效的：他们不知道"肉"是背包里的东西。
+     * 所以同一个 NEED_WARNING 阈值上再开一个**指向性**的通道：文字说做什么，
+     * 按钮说去哪做。挂在每帧路径而不是 updateInventory —— 后者只在背包**开着**
+     * 时才跑，而这个提示的全部意义正是提醒那些没开背包的人。
+     */
+    // 背包开着的时候按钮不必再喊 —— 人已经在里面了，这时只有那一格该说话。
+    this.backpackButton.classList.toggle(
+      "need-urgent",
+      !this.inventoryOpen && (player.hunger < NEED_WARNING || player.water < NEED_WARNING),
+    );
     this.warmthBar.closest(".meter")?.classList.toggle("critical", player.condition !== "normal");
     this.staminaBar.closest(".meter")?.classList.toggle("critical", player.stamina < 12);
 
@@ -783,18 +797,43 @@ export class HudController {
     this.toastPriority = priority;
   }
 
+  /**
+   * 现在告急的那条轴，能靠哪几种存货补上。
+   *
+   * 背包跳起来之后玩家打开看到的是八个格子加合成、建造 —— 光让包跳不够，
+   * 还得让**那一格**自己站出来，否则第一次打开背包的人只是从"不知道该干嘛"
+   * 换成了"不知道该点哪个"。仙人掌汁两条轴都补，所以它两种情况下都算。
+   */
+  private urgentRelief(): ReadonlySet<InventoryItemKind> {
+    const player = this.simulation.player;
+    const kinds = new Set<InventoryItemKind>();
+    if (player.hunger < NEED_WARNING) {
+      kinds.add("cooked-meat");
+      kinds.add("raw-meat");
+      kinds.add("cactus-juice");
+    }
+    if (player.water < NEED_WARNING) {
+      kinds.add("water");
+      kinds.add("cactus-juice");
+    }
+    return kinds;
+  }
+
   private updateInventory(): void {
     const player = this.simulation.player;
+    const relief = this.urgentRelief();
     this.slots.forEach((slot, index) => {
       const stack = player.inventory[index];
       if (!stack) {
         slot.innerHTML = "";
         slot.classList.add("empty");
+        slot.classList.remove("need-urgent");
         slot.disabled = true;
         slot.setAttribute("aria-label", t("pack.slot.empty", { index: index + 1 }));
         return;
       }
       slot.classList.remove("empty");
+      slot.classList.toggle("need-urgent", relief.has(stack.kind));
       slot.disabled = false;
       slot.innerHTML = `${itemIcon(stack.kind)}<span class="item-name">${itemName(stack.kind)}</span><b class="item-count">${stack.count}</b>`;
       slot.setAttribute("aria-label", t("pack.slot.filled", { name: itemName(stack.kind), count: stack.count }));
