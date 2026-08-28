@@ -196,7 +196,6 @@ async function bootstrap(): Promise<void> {
   let wolvesReady = false;
   let crittersReady = false;
   let previousTime = performance.now();
-  let hiddenAt = 0;
 
   /**
    * Poki 把第一次 gameplayStart 当作“玩家真的开始玩了”的转化点，必须直接发生在
@@ -412,12 +411,10 @@ async function bootstrap(): Promise<void> {
 
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
-      hiddenAt = performance.now();
       // 切到后台就不算在玩了。不报的话平台统计里会出现"挂了一夜的一局"。
       platform.gameplayStop();
     } else {
       previousTime = performance.now();
-      if (started && hiddenAt > 0) hud.showToast(t("hud.resumed"), 1.5);
       // 回到前台时与平台监听使用同一个谓词；即使背包开着也应恢复会话上报。
       if (started && simulation.running && !hud.isPlatformIdle()) platform.gameplayStart();
     }

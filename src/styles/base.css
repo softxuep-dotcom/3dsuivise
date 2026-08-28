@@ -113,7 +113,7 @@ button { font: inherit; }
  */
 
 /*
- * 顶部中央栏：时钟 / 吐司 / 状态提示排成一列，靠 flex 自己让位。
+ * 顶部中央栏：时钟 / 状态提示排成一列，靠 flex 自己让位。
  * 宽度卡在 44vw 以内，两侧给左上目标条和右上状态栏留出通道 —— 屏幕中央那一块
  * 是玩家真正在看的地方，任何常驻元素都不许落进去。
  */
@@ -143,8 +143,6 @@ button { font: inherit; }
   font-size: 15px;
 }
 
-.objective-chip.muted { opacity: .42; }
-
 .objective-chip {
   transition: opacity .18s ease;
   padding: 11px 16px 13px;
@@ -167,6 +165,25 @@ button { font: inherit; }
 }
 
 .objective-chip strong { display: block; font-size: 14px; letter-spacing: .02em; }
+
+/*
+ * 目标与临时消息共用一块面板。通知出现时不是再叠一块盒子，而是在原位换字；
+ * 通关进度也暂时让位，避免同一个框同时要求玩家看两件事。
+ */
+.objective-chip.notice-active #objective,
+.objective-chip.notice-active .objective-progress { display: none; }
+
+.objective-notice {
+  display: -webkit-box;
+  overflow: hidden;
+  color: #e9fbf8;
+  font-size: 13px;
+  font-weight: 850;
+  line-height: 1.42;
+  letter-spacing: .015em;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
 
 .objective-progress {
   display: block;

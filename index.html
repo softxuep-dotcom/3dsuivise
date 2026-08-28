@@ -22,6 +22,11 @@
           -->
           <section class="objective-chip" id="objective-chip">
             <strong id="objective"></strong>
+            <!--
+              临时消息复用目标框，不再另起一个中央消息框。显示时短暂替换目标，
+              读完就恢复；同一时刻只让玩家处理一条文字。
+            -->
+            <strong id="toast" class="objective-notice hidden"></strong>
             <!-- 通关进度贴着目标走：它就是"我为什么在打狼"的答案。 -->
             <span class="objective-progress" id="hunt-progress"></span>
           </section>
@@ -53,13 +58,9 @@
         -->
         <div id="quick-craft-tray" class="quick-craft-tray hidden"></div>
 
-        <!--
-          顶部中央栏。时钟与提示排在同一个纵向流里，靠 flex 自己让位 ——
-          原先每个元素各写一套 top 偏移，每加一档响应式断点就要重算一遍，迟早叠在一起。
-        -->
+        <!-- 顶部中央只留时钟和休息状态；临时消息已经并入左上目标框。 -->
         <div class="top-stack">
           <div class="clock" id="clock"><span id="phase-label"></span><b id="time-label">00:50</b></div>
-          <div id="toast" class="toast hidden"></div>
           <div id="rest-indicator" class="status-pill rest-indicator hidden"></div>
         </div>
 

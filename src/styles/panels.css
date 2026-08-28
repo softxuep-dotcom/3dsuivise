@@ -294,7 +294,6 @@
   .supply-line { gap: 4px; margin-bottom: 4px; padding: 3px 5px; font-size: 9px; }
   .top-stack { top: max(10px, env(safe-area-inset-top)); gap: 6px; }
   .clock { padding: 5px 10px; }
-  .toast { padding: 7px 12px; font-size: 12px; }
   .status-pill { padding: 5px 11px; font-size: 10px; }
 
   /*
@@ -437,13 +436,4 @@
     transform: none;
   }
 
-  /* Toast 独立居中悬在角色上方，不跟中央栏沉进左下角或拇指操作区。 */
-  #toast {
-    position: fixed;
-    left: 50%;
-    bottom: 62%;
-    width: max-content;
-    max-width: min(84vw, 320px);
-    transform: translateX(-50%);
-  }
 }

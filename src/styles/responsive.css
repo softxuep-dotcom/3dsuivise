@@ -17,7 +17,6 @@
   .drain-note { display: none; }
   .supply-line { margin-bottom: 3px; padding: 2px 5px; font-size: 8px; }
   .top-stack { gap: 5px; }
-  .toast { padding: 6px 11px; font-size: 11px; }
 }
 
 @media (pointer: coarse) and (orientation: landscape) {
@@ -76,7 +75,6 @@
   .supply-line { margin-bottom: 3px; padding: 2px 5px; font-size: 8px; }
   .top-stack { top: max(6px, env(safe-area-inset-top)); gap: 5px; }
   .clock { padding: 4px 8px; }
-  .toast { padding: 6px 11px; font-size: 11px; }
 }
 
 /* 再矮一档：说明行是教学用的，最先让位。 */
