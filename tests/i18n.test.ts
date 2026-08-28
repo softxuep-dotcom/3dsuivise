@@ -190,3 +190,45 @@ describe("多语言 · 品牌与核心目标用词", () => {
     }
   });
 });
+
+/*
+ * 中文分开说的两件事，译文不许合成一个词。
+ *
+ * 这条守的是一类**结构检查抓不到的翻译缺陷**：键不缺、占位符对得上、也不是把英文
+ * 原文留在那儿，但两个不同的行动被译成了同一个词，按钮于是不再区分它们。
+ *
+ * 实际抓到过四种语言同时犯：`action.cactus`（割仙人掌取汁）和 `action.chop`
+ * （砍下枯枝入包）在 fr 都是 "Couper"、it 都是 "Taglia"、pt-BR 都是 "Cortar"、
+ * id 都是 "Potong" —— 一个取水一个取柴，而这游戏教玩家的方式就是**按钮在用得上
+ * 的那一刻自己说出来**。中文玩家看到「取汁 / 砍柴」立刻分得清，那四种语言的玩家
+ * 两次看到同一个词。
+ *
+ * 判据挂在**中文**上而不是英文：中文是源语言，它分开写就说明这是两件事
+ * （英文自己也可能把两件事合成一个词，那时它不能当基准）。
+ */
+describe("多语言 · 中文区分的键，译文不许撞词", () => {
+  const family = (key: string) => key.split(".")[0];
+  const families = [...new Set(enKeys.map(family))].filter(
+    (f) => enKeys.filter((k) => family(k) === f).length > 1,
+  );
+
+  it.each(Object.entries(ALL_LOCALES))("%s 没有把中文分开的两个键译成同一个词", (lang, table) => {
+    const clashes: string[] = [];
+    for (const f of families) {
+      const keys = enKeys.filter((k) => family(k) === f);
+      const byValue = new Map<string, string[]>();
+      for (const key of keys) {
+        const value = table[key];
+        if (!value || value.length < 2) continue;
+        byValue.set(value, [...(byValue.get(value) ?? []), key]);
+      }
+      for (const [value, dup] of byValue) {
+        if (dup.length < 2) continue;
+        // 中文自己也写成同一句的，本来就该一样 —— 不是译文丢了区分。
+        if (new Set(dup.map((k) => zh[k])).size === 1) continue;
+        clashes.push(`${dup.join(" 与 ")} 都是 "${value}"（中文分别是 ${dup.map((k) => zh[k]).join(" / ")}）`);
+      }
+    }
+    expect(clashes, `${lang} 撞词：\n  ${clashes.join("\n  ")}`).toEqual([]);
+  });
+});

@@ -7,17 +7,17 @@
  */
 
 export const en: Record<string, string> = {
-  "action.board": "Drive",
+  "action.board": "Drive out",
   "action.cactus": "Cut",
   "action.drop": "Place",
   "action.chop": "Chop",
   "action.feed": "Add wood",
   "action.ignite": "Ignite",
   "action.load": "Load",
-  "action.mine": "Mine",
+  "action.mine": "Mine ore",
   "action.none": "Act",
   "action.pickup": "Take",
-  "action.well": "Draw",
+  "action.well": "Draw water",
   "blocked.missing": "Need {parts}",
   "blocked.needFire": "Craft it by the fire",
   "boot.generating": "Generating the sands…",

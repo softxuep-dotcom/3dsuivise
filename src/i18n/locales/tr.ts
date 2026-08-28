@@ -22,7 +22,7 @@
  */
 
 export const tr: Record<string, string> = {
-  "action.board": "Sür",
+  "action.board": "Yola çık",
   "action.cactus": "Kes",
   "action.drop": "Bırak",
   "action.chop": "Odun kes",
@@ -192,7 +192,7 @@ export const tr: Record<string, string> = {
   "item.iron-ore.name": "Demir cevheri",
   "item.raw-meat.name": "Çiğ et",
   "item.water.name": "Su",
-  "item.wolf-fang.name": "Diş",
+  "item.wolf-fang.name": "Kurt dişi",
   "item.wood.name": "Odun",
   "line.hide.name": "Post zırh",
   "line.hide.personality": "Yeter ki vurulma<br>Daha hızlı, daha çabuk toparlar",

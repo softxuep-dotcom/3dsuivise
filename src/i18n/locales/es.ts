@@ -12,7 +12,7 @@
  */
 
 export const es: Record<string, string> = {
-  "action.board": "Conducir",
+  "action.board": "Salir",
   "action.cactus": "Cortar",
   "action.drop": "Dejar",
   "action.chop": "Talar",

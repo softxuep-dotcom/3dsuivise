@@ -23,7 +23,7 @@
  */
 
 export const ru: Record<string, string> = {
-  "action.board": "За руль",
+  "action.board": "Уехать",
   "action.cactus": "Срезать",
   "action.drop": "Положить",
   "action.chop": "Рубить",
