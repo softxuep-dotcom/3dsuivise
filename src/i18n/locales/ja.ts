@@ -266,7 +266,7 @@ export const ja: Record<string, string> = {
   "over.remaining": "砂の上にはまだ{count}匹の犬がいる。",
   "over.remaining_one": "砂の上にはまだ{count}匹の犬がいる。",
   "over.remaining_other": "砂の上にはまだ{count}匹の犬がいる。",
-  "over.restart": "もう一晩ぶつかる",
+  "over.restart": "もう一晩挑む",
   "over.summary": "{day}日目まで持ちこたえ、犬を{count}匹倒した。",
   "over.summary_one": "{day}日目まで持ちこたえ、犬を{count}匹倒した。",
   "over.summary_other": "{day}日目まで持ちこたえ、犬を{count}匹倒した。",
