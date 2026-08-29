@@ -181,7 +181,11 @@ describe("模块图", () => {
       // 三处代码分开看每一处都"没写错"，不写下来下一个人一定会再踩一次。
       // 438 → 436：剔除距离改由渲染层算好递进来（端口从 lowPower 换成 cullDistance:
       // number | null）。这里不再知道有几档、哪档配哪个数，反而比原先短。
-      "src/render/entities/CreatureViews.ts": 436,
+      // 436 → 450：猎物步频改由**量出来的**移速驱动，不再用规格常量。
+      // 原先长角羚以 10.5 m/s 掠过时腿只比吃草快 18%（1.9 的上限压死了逃跑档），
+      // 看着是四条腿定住、整只羊在地上滑；而冲刺 4.5 秒一过又反过来腿比身体快。
+      // 多出来的是量位移那三行加一段说明这个因果的注释。
+      "src/render/entities/CreatureViews.ts": 450,
       "src/game/simulation/WolfDirector.ts": 1124,
       // 706 → 709：装饰枯木从 2/5 降到 1/5（7 → 4）+ 三行解释为什么是它被砍。
       "src/game/content/createWorld.ts": 709,

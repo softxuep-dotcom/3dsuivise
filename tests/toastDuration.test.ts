@@ -148,25 +148,34 @@ describe("独占时放宽到 8 秒", () => {
     }
   });
 
-  it("确实存在读不完的字幕 —— 否则上面那条等于没测", () => {
-    const overCap = Object.entries(LOCALES)
-      .filter(([, dict]) => need(longestToast(dict)) > CAP)
-      .map(([locale]) => locale);
-    expect(overCap.length, "没有任何语言的字幕超过 6 秒，这组用例失去意义").toBeGreaterThan(0);
+  /*
+   * 这条原先反着写：断言"确实存在读不完的字幕"，用来保证上面那条不是空测。
+   * 文案精简之后**一条都不剩了**，于是它红了 —— 而那正是想要的结果。
+   * 判据翻过来：守住"没有任何一条字幕需要超过上限的时间"，
+   * 也就是把这一轮砍下来的东西钉住，别让谁再写回一段长文。
+   */
+  it("没有任何语言的字幕需要超过 6 秒", () => {
+    const over: string[] = [];
+    for (const [locale, dict] of Object.entries(LOCALES)) {
+      for (const [key, value] of Object.entries(dict)) {
+        if (!key.startsWith("msg.")) continue;
+        const seconds = need(fill(value));
+        if (seconds > CAP) over.push(`${locale} ${key}: ${seconds.toFixed(1)}s — ${value}`);
+      }
+    }
+    expect(over, `这些字幕长到连独占档都读不完：\n  ${over.join("\n  ")}`).toEqual([]);
   });
 
+  // 下面两条改用**合成串**：上限本身的行为不该依赖"恰好有一句真文案足够长"。
   it("后面有东西排队时，照旧收在 6 秒", () => {
-    // 不点名某一种语言：文案被精简之后，德语最长的那条已经掉到 6 秒以内了。
-    // 取当下还超上限的任意一种来验，没有的话这条自己会红（见上一条用例）。
-    const dict = Object.values(LOCALES).find((d) => need(longestToast(d)) > CAP);
-    expect(dict, `没有任何语言的字幕超过 ${CAP} 秒，这条用例失去意义`).toBeDefined();
-    const text = longestToast(dict!);
-    expect(toastSeconds(text, MESSAGE_NOMINAL, true)).toBeCloseTo(CAP, 9);
+    const wall = "x".repeat(400);
+    expect(need(wall)).toBeGreaterThan(CAP);
+    expect(toastSeconds(wall, MESSAGE_NOMINAL, true)).toBeCloseTo(CAP, 9);
   });
 
   it("默认收着 —— 漏传参数不该悄悄放宽", () => {
-    const text = longestToast(de);
-    expect(toastSeconds(text, MESSAGE_NOMINAL)).toBe(toastSeconds(text, MESSAGE_NOMINAL, true));
+    const wall = "x".repeat(400);
+    expect(toastSeconds(wall, MESSAGE_NOMINAL)).toBe(toastSeconds(wall, MESSAGE_NOMINAL, true));
   });
 
   it("放宽的是上限不是下限：短句仍然按 nominal 挂", () => {

@@ -384,9 +384,19 @@ export class HudController {
   }
 
   setPaused(paused: boolean): void {
-    if (paused && (!this.simulation.running || this.inventoryOpen)) return;
+    if (paused && (this.inventoryOpen || this.isRunOver())) return;
     this.paused = paused;
     this.pauseOverlay.classList.toggle("hidden", !paused);
+  }
+
+  /**
+   * 这一局是不是已经结束。原先问的是 `!simulation.running`，而它有**两种** false：
+   * 死了/通关了（该拦），和**还没开始**（不该拦 —— 模拟层要等玩家第一次真实移动
+   * 才 start）。于是刚进游戏没动时齿轮键是死的，而语言选择器就在那个面板里。
+   */
+  private isRunOver(): boolean {
+    return !this.gameOver.classList.contains("hidden")
+      || !this.victory.classList.contains("hidden");
   }
 
   isPaused(): boolean {
@@ -1155,7 +1165,6 @@ export class HudController {
     this.victoryDifficultyHint.textContent = t("win.tryHarder", {
       current: t(`difficulty.${this.difficulty}`),
       next: t(`difficulty.${next}`),
-      blurb: t(`difficulty.${next}.blurb`),
     });
   }
 }

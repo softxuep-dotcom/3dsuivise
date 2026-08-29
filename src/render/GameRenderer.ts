@@ -705,7 +705,7 @@ export class GameRenderer {
     const edgeMaterial = makeMaterial(0x4b514c, 1);
     const edge = new THREE.Mesh(new THREE.BoxGeometry(this.world.size + 12, 5.5, this.world.size + 12), edgeMaterial);
     edge.position.y = -3.4;
-    edge.receiveShadow = true;
+    edge.receiveShadow = false; // 沉在地下的纯色实心盒，叠影子看不出，而它是全场面积最大的网格
     this.scene.add(edge);
     return ground;
   }
