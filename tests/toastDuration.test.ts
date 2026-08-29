@@ -156,8 +156,11 @@ describe("独占时放宽到 8 秒", () => {
   });
 
   it("后面有东西排队时，照旧收在 6 秒", () => {
-    const text = longestToast(de);
-    expect(need(text)).toBeGreaterThan(CAP);
+    // 不点名某一种语言：文案被精简之后，德语最长的那条已经掉到 6 秒以内了。
+    // 取当下还超上限的任意一种来验，没有的话这条自己会红（见上一条用例）。
+    const dict = Object.values(LOCALES).find((d) => need(longestToast(d)) > CAP);
+    expect(dict, `没有任何语言的字幕超过 ${CAP} 秒，这条用例失去意义`).toBeDefined();
+    const text = longestToast(dict!);
     expect(toastSeconds(text, MESSAGE_NOMINAL, true)).toBeCloseTo(CAP, 9);
   });
 
