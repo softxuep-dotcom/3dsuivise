@@ -1374,7 +1374,7 @@ export class GameSimulation {
     }
     if (this.player.carrying === "fuel") {
       return distance(this.player, this.truck) <= TRUCK_LOAD_REACH
-        ? { action: "load", text: loc("hint.loadFuel", { loaded: this.truck.loaded, required: FUEL_REQUIRED }) }
+        ? { action: "load", text: loc("hint.loadFuel", { loaded: Math.min(this.truck.loaded + 1, FUEL_REQUIRED), required: FUEL_REQUIRED }) }
         : { action: "drop", text: loc("hint.dropFuel") };
     }
     if (this.player.carrying) {

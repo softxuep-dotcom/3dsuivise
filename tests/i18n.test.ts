@@ -14,7 +14,7 @@ import { ru } from "../src/i18n/locales/ru";
 import { ko } from "../src/i18n/locales/ko";
 import { vi } from "../src/i18n/locales/vi";
 import { id } from "../src/i18n/locales/id";
-import { ARMOR_TIERS } from "../src/game/balance/equipment";
+import { ARMOR_TIERS, WEAPON_TIERS } from "../src/game/balance/equipment";
 
 /*
  * 文案的三种坏法，肉眼都很难看出来，而且都是“改一处忘多处”造成的：
@@ -129,6 +129,73 @@ describe("多语言 · 目标提示与实际配方一致", () => {
   it.each(Object.entries(ALL_LOCALES))("%s 的皮甲Ⅰ提示使用真实兽皮数量", (_lang, table) => {
     const firstNumber = Number(table["sim.30"].match(/\d+/)?.[0]);
     expect(firstNumber).toBe(hideArmorCost);
+  });
+});
+
+describe("多语言 · 条件型机制必须写出触发条件", () => {
+  const emptyHandTerms: Record<string, RegExp> = {
+    en: /empty-handed/i,
+    zh: /空手/,
+    fr: /à vide/i,
+    de: /ohne Last/i,
+    it: /senza carico/i,
+    "pt-BR": /sem carga/i,
+    es: /sin carga/i,
+    tr: /yüksüz/i,
+    ja: /何も運んでいない/,
+    ru: /налегке/i,
+    ko: /운반물이 없을 때/,
+    vi: /không mang vật nặng/i,
+    id: /tidak membawa barang/i,
+  };
+  const slowedTerms: Record<string, RegExp> = {
+    en: /slows you down/i,
+    zh: /跑不快/,
+    fr: /ralentit/i,
+    de: /langsamer/i,
+    it: /rallenta/i,
+    "pt-BR": /reduz sua velocidade/i,
+    es: /ralentiza/i,
+    tr: /yavaşlarsın/i,
+    ja: /遅く/,
+    ru: /медленнее/i,
+    ko: /느려/,
+    vi: /chậm/i,
+    id: /memperlambat/i,
+  };
+
+  it.each(Object.entries(ALL_LOCALES))("%s 的装车加速明确只对空手移动生效", (lang, table) => {
+    expect(table["perk.empty-run.desc"]).toMatch(emptyHandTerms[lang]);
+  });
+
+  it.each(Object.entries(ALL_LOCALES))("%s 把扛桶效果写成减速而不是禁止移动", (lang, table) => {
+    expect(table["msg.fuelLoaded"]).toMatch(slowedTerms[lang]);
+  });
+});
+
+describe("多语言 · 篝火帮助与装备规则一致", () => {
+  const armorTerms: Record<string, RegExp> = {
+    en: /armour/i,
+    zh: /护甲/,
+    fr: /armure/i,
+    de: /Rüstungs/i,
+    it: /armatura/i,
+    "pt-BR": /armadura/i,
+    es: /armadura/i,
+    tr: /zırh/i,
+    ja: /防具/,
+    ru: /брони/iu,
+    ko: /방어구/,
+    vi: /giáp/i,
+    id: /zirah/i,
+  };
+
+  it("当前武器升级确实全部可以离开篝火制作", () => {
+    expect(WEAPON_TIERS.filter((tier) => tier.tier > 0).every((tier) => !tier.needsFire)).toBe(true);
+  });
+
+  it.each(Object.entries(ALL_LOCALES))("%s 不再笼统声称所有装备升级都需要篝火", (lang, table) => {
+    expect(table["pack.help"]).toMatch(armorTerms[lang]);
   });
 });
 
@@ -348,5 +415,39 @@ describe("多语言 · 代码引用的键必须存在", () => {
       }
     }
     expect(missing, `这些键代码在用但英文表里没有：\n  ${missing.join("\n  ")}`).toEqual([]);
+  });
+});
+
+/*
+ * 每种语言的百分号写法必须自洽。
+ *
+ * 三种写法都是对的，但**一种语言只能用一种**：
+ *
+ *     法语 / 德语    数字 + 空格 + %     排版规范要求（"−60 %"）
+ *     英西意葡俄…    数字 + %            "−60%"
+ *     土耳其语       % + 数字            "−%60"
+ *
+ * 实际抓到过：法语 36 处里 2 处、德语 36 处里 5 处漏了空格，全部集中在 perk.*
+ * —— 那批描述是后加的，没跟上文件里既有的写法。单看一条谁都不会觉得有问题，
+ * 摆在一起才看得出来是两种写法混着用。
+ */
+describe("多语言 · 百分号写法自洽", () => {
+  it.each(Object.entries(ALL_LOCALES))("%s 的百分号只用一种写法", (_lang, table) => {
+    let spaced = 0;
+    let tight = 0;
+    let prefix = 0;
+    const offenders: string[] = [];
+    for (const [key, value] of Object.entries(table)) {
+      for (const m of value.matchAll(/%\s?\d/g)) { void m; prefix += 1; }
+      for (const m of value.matchAll(/(.)%(?!\d)/g)) {
+        if (/[\s\u00a0\u202f]/.test(m[1])) spaced += 1;
+        else if (/\d/.test(m[1])) { tight += 1; offenders.push(`${key}: ${value}`); }
+      }
+    }
+    // 只在"带空格"是主流写法时报错：贴着写的语言（英西意葡…）本来就该全是 tight。
+    if (spaced > 0 && tight > 0) {
+      expect(offenders, `这几条漏了 % 前的空格，而本语言其余 ${spaced} 处都有：\n  ${offenders.join("\n  ")}`).toEqual([]);
+    }
+    expect(spaced + tight + prefix).toBeGreaterThan(10);
   });
 });
