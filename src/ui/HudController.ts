@@ -62,7 +62,7 @@ const SILENT_MESSAGE_KEYS = new Set([
 ]);
 
 /** 机制教学只说一次；失败原因和资源告警仍然每次都要给反馈。 */
-const ONE_SHOT_MESSAGE_KEYS = new Set(["msg.4", "msg.10", "msg.13", "msg.14"]);
+const ONE_SHOT_MESSAGE_KEYS = new Set(["msg.4", "msg.13", "msg.14"]);
 
 const ACTION_ICON: Record<InteractionHint["action"], string> = {
   pickup: "pickup",

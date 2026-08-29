@@ -61,25 +61,10 @@ export class TutorialStage {
   private readonly caption = required<HTMLElement>("tutorial-caption");
   private readonly line = required<HTMLElement>("tutorial-line");
   private readonly sub = required<HTMLElement>("tutorial-sub");
-  private readonly dots = required<HTMLElement>("tutorial-dots");
-  private readonly skipButton = required<HTMLButtonElement>("tutorial-skip");
 
   /** 当前亮着的 UI 元素 id。换步和收尾时按它回收 class。 */
   private readonly litIds = new Set<string>();
-  private skipHandler: (() => void) | null = null;
-
-  constructor() {
-    this.skipButton.addEventListener("click", () => this.skipHandler?.());
-  }
-
-  /** 谁在用这个舞台，就由谁接跳过。两段教学的收尾动作不一样。 */
-  onSkip(handler: () => void): void {
-    this.skipHandler = handler;
-  }
-
-  show(skipLabel: string): void {
-    this.skipButton.textContent = skipLabel;
-    this.skipButton.classList.remove("hidden");
+  show(): void {
     this.root.classList.remove("hidden");
     this.hud.classList.add("tutorial-dim");
   }
@@ -104,10 +89,6 @@ export class TutorialStage {
     this.caption.classList.toggle("urgent", urgent);
   }
 
-  setSkipVisible(visible: boolean): void {
-    this.skipButton.classList.toggle("hidden", !visible);
-  }
-
   /** 收掉界面压暗，只留字幕。背包那一步要这个状态。 */
   setDimVisible(visible: boolean): void {
     this.hud.classList.toggle("tutorial-dim", visible);
@@ -121,17 +102,6 @@ export class TutorialStage {
   setOverPack(over: boolean): void {
     this.root.classList.toggle("over-pack", over);
     this.caption.classList.toggle("over-pack", over);
-  }
-
-  buildDots(total: number): void {
-    this.dots.replaceChildren(...Array.from({ length: total }, () => document.createElement("i")));
-  }
-
-  setDots(index: number): void {
-    Array.from(this.dots.children).forEach((dot, position) => {
-      dot.classList.toggle("done", position < index);
-      dot.classList.toggle("on", position === index);
-    });
   }
 
   /**

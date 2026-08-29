@@ -47,7 +47,6 @@
 结束于 t=202.4  running=false  死因=dehydrated  瘫痪状态=normal
 
 事件流
-  t=0.1 message key=msg.1
   t=20.1 message key=msg.duskCarryEnough params={"logs":2}
   t=35.8 rest active=true
   t=50.0 phase phase=night day=1.00

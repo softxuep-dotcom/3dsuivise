@@ -476,7 +476,6 @@ export class GameSimulation {
 
   start(): void {
     this.running = true;
-    this.events.push({ type: "message", key: "msg.1" });
   }
 
   /**
@@ -1018,7 +1017,6 @@ export class GameSimulation {
         }
       }
     }
-    if (!hit && this.objectives.objectiveStage >= 3) this.events.push({ type: "message", key: "msg.10" });
   }
 
   /**
@@ -1723,10 +1721,6 @@ export class GameSimulation {
    * `running` 这道闸是关键 —— 开局口粮在构造函数里就发了，那时 running 还是 false，
    * 而"口粮里的柴不算他捡的"正是这一整条修复的全部内容。
    */
-  private noteWoodIntake(kind: InventoryItemKind): void {
-    if (kind === "wood" && this.running) this.objectives.noteWoodGathered();
-  }
-
   private addTutorialWood(): void {
     const angle = this.spawnFacing + TUTORIAL_WOOD_SPREAD;
     const spot = this.collision.findNearestWalkablePoint({
@@ -1821,7 +1815,6 @@ export class GameSimulation {
   private addInventory(kind: InventoryItemKind, count: number): boolean {
     // 背包满时 add 返回 false，什么也没进包 —— 那一下不算"他捡到了柴"。
     if (!this.inventory.add(kind, count)) return false;
-    this.noteWoodIntake(kind);
     return true;
   }
 

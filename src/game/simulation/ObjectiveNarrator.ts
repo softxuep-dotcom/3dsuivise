@@ -64,19 +64,6 @@ export class ObjectiveNarrator {
    * 要不要提示。那两处都是**事件驱动的跳转**，不是叙述本身。
    */
   objectiveStage = 0;
-  /**
-   * 这一局有没有**真的从地上或树上**拿到过柴。
-   *
-   * 第 0 阶原先的判据是 `getInventoryCount("wood") > 0`，而开局口粮里就带着柴
-   * （见 balance/world.ts 的 STARTING_RATION），于是它在**第一帧**就成立 ——
-   * objectiveStage 0 → 1 当场跳过，`sim.26`「捡起身边的枯木」在任何一局里
-   * 一次都不会显示。实机确认：起局前 stage=0 / wood=2，跑一帧就变 stage=1。
-   *
-   * 这不是那条"第一个白天目标行只说通关目标"的设计（那条在 getObjective 里，
-   * 用 sim.fuelFirst 的优先级实现，没动）。这是判据写错了对象：
-   * 要问的是"他捡过柴没有"，不是"他包里有没有柴"。
-   */
-  private gatheredWood = false;
   /** 入夜前的燃料警告每晚只发一次。 */
   private duskWarningSent = false;
 
@@ -89,14 +76,6 @@ export class ObjectiveNarrator {
   /** 新的一夜开始，警告可以再发一次。 */
   resetDuskWarning(): void {
     this.duskWarningSent = false;
-  }
-
-  /**
-   * 玩家把一根柴收进了背包。**开局口粮不走这里** —— 那是在构造函数里发的，
-   * 而这个口子挂在 addInventory 上、只在 running 之后才算数。
-   */
-  noteWoodGathered(): void {
-    this.gatheredWood = true;
   }
 
   getCurrentLocationLabel(): LocalizedText {
@@ -197,7 +176,9 @@ export class ObjectiveNarrator {
     if (this.owner.phase === "day" && this.owner.day === 1 && this.owner.phaseTime <= 14) return loc("sim.23");
     if (this.owner.player.warmth > 78) return loc("sim.24");
     if (this.objectiveStage === 0) return loc("sim.26");
-    if (this.objectiveStage === 1) return loc("sim.27");
+    // 「走到篝火旁，按互动键添柴」这一段删掉了：它只会在白天出现（夜间分支在上面
+    // 就 return 了），而添柴是夜里的事，夜间教学第二拍已经在教。白天的目标行
+    // 该说通关目标，所以第 1 阶现在是个不出声的过渡段，只负责往第 2 阶推。
     if (this.objectiveStage === 2) return loc("sim.28");
     if (this.owner.getInventoryCount("water") === 0 && this.owner.getInventoryCount("cactus-juice") === 0) return loc("sim.29");
     //
@@ -289,13 +270,14 @@ export class ObjectiveNarrator {
       this.warnDuskFuel();
     }
     /*
-     * 第 0 阶：**捡起过柴**才算，不是"包里有柴"。见 gatheredWood 那段。
+     * 第 0 阶：**把第一桶油装上车**才算完成。开局那桶就在脚边，这一步同时
+     * 教了"搬"和"装车"两个动作，而且第一帧就把玩家指向通关目标。
      *
      * carrying 也一起去掉了。它是枯木还能扛在手上那个年代的遗留 —— 现在柴进背包，
      * 手上扛的只可能是油桶、石头或木桩，而"捡起了一桶油"不该算作"捡起了身边的枯木"。
      * 留着它等于把这一阶交给开局那 8.5 米外的教学桶去收口，换个方式再废一次。
      */
-    if (this.objectiveStage === 0 && this.gatheredWood) {
+    if (this.objectiveStage === 0 && this.owner.truck.loaded > 0) {
       this.objectiveStage = 1;
     } else if (this.objectiveStage === 1 && this.owner.camps.some((camp) => camp.fuel > 90)) {
       this.objectiveStage = 2;
