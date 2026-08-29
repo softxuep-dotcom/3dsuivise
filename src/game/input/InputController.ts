@@ -29,7 +29,8 @@ export class InputController {
   private pickAt: ((point: Vec2, forward: Vec2) => ClickPick | null) | null = null;
   /** 连续多久没有实质推进；超过阈值就放弃这次点击，免得人一直顶着崖壁。 */
   private stalledFor = 0;
-  private lastPosition: Vec2 | null = null;
+  /** 这次点击迄今**最接近**目标的距离。判"推进"看它变没变小，不看每帧挪了多少。 */
+  private bestRemaining: number | null = null;
   /** 浮动摇杆当前吃住的那根手指；null = 没人在推。 */
   private joystickPointer: number | null = null;
   private readonly joystickBase = document.getElementById("joystick");
@@ -126,7 +127,7 @@ export class InputController {
          * 再加一道兜底：连续 1.2 秒没挪够距离就放弃这次点击。流场也有画不出路的
          * 时候（目标在不可达的崖上），那时"停下来"比"一直顶着"体面得多。
          */
-        this.trackStall(player);
+        this.trackStall(player, this.moveTarget);
         if (this.stalledFor > 1.2) {
           this.moveTarget = null;
         } else {
@@ -142,7 +143,7 @@ export class InputController {
      * 超时放弃，都走这一条。漏掉任何一条都会让动作在玩家早就改主意之后突然发出来。
      * 到位那一支例外：它在上面已经先发过动作、并把 pendingPick 置空了。
      */
-    if (!this.moveTarget) { this.stalledFor = 0; this.lastPosition = null; this.pendingPick = null; }
+    if (!this.moveTarget) { this.stalledFor = 0; this.bestRemaining = null; this.pendingPick = null; }
 
     // Fixed isometric camera: convert screen axes to world axes.
     const factor = Math.SQRT1_2;
@@ -177,21 +178,33 @@ export class InputController {
     else this.callbacks.onAction();
   }
 
-  /** getMovement 每帧调一次；这里只看"两帧之间到底挪了多少"。 */
-  private trackStall(player: PlayerState): void {
-    if (this.lastPosition) {
-      const moved = distance(player, this.lastPosition);
-      // 8.2 m/s 的正常步进，一帧至少也有几厘米；0.01 已经是"基本没动"。
-      this.stalledFor = moved < 0.01 ? this.stalledFor + 1 / 60 : 0;
+  /**
+   * getMovement 每帧调一次：这次点击**有没有更靠近目标**。
+   *
+   * 原先量的是"两帧之间挪了多少"，而那个判据漏掉了最常见的一种卡住 ——
+   * 点在卡车、矿脉这类走不进去的东西上时，人物会顶着它一帧前一帧后地来回抖：
+   * 每帧都挪了一大截（远超 0.01），于是 stalledFor 每帧被清零，1.2 秒的防呆
+   * 永远不触发，玩家就一直原地抽搐。改成看"离目标最近到过多少"：抖得再欢，
+   * 只要没真的靠近就是没推进。
+   *
+   * 0.05 是门槛：流场绕行时距离可能短暂回升（先横着走开再绕过去），
+   * 只要总体在逼近就不算卡住。
+   */
+  private trackStall(player: PlayerState, target: Vec2): void {
+    const remaining = distance(player, target);
+    if (this.bestRemaining === null || remaining < this.bestRemaining - 0.05) {
+      this.bestRemaining = remaining;
+      this.stalledFor = 0;
+      return;
     }
-    this.lastPosition = { x: player.x, z: player.z };
+    this.stalledFor += 1 / 60;
   }
 
   cancelMoveTarget(): void {
     this.moveTarget = null;
     this.pendingPick = null;
     this.stalledFor = 0;
-    this.lastPosition = null;
+    this.bestRemaining = null;
   }
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
