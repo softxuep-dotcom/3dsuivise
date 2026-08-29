@@ -34,7 +34,7 @@ import type { SimContext } from "./SimContext";
  *
  * 死亡、通关、软重开全部清零（{@link reset}），也不写 localStorage ——
  * 记录板仍然只存最快脱出和最远油量。这是刻意的：一旦奖励能跨局累积，
- * 它就变成局外成长，而这个游戏的全部张力在"这一局能不能把六桶搬完"。
+ * 它就变成局外成长，而这个游戏的全部张力在"这一局能不能把所需油桶搬完"。
  */
 export interface FuelPerkWorld extends SimContext {
   /** 后座补给要直接改这三条轴，走 owner 的结算口而不是自己碰 player。 */
@@ -90,7 +90,7 @@ export class FuelPerkSystem {
   /**
    * 装车完成时由 TruckSystem 调。
    *
-   * `loaded` 是**装完之后**的桶数。第 6 桶不弹 —— 那时游戏就要结束了，
+   * `loaded` 是**装完之后**的桶数。最后一桶不弹 —— 那时游戏就要结束了，
    * 给了也来不及用，反而把「装满 → 上车 → 发车」那串收尾拆开。
    */
   noteFuelLoaded(loaded: number, required: number): void {

@@ -1528,7 +1528,7 @@ export class GameSimulation {
     if (distance(this.player, target) < STRAIGHT_WALK_MAX && this.collision.canWalkStraight(this.player, target)) {
       return direction(this.player, target);
     }
-    return this.clickRoute.directionFrom(this.player);
+    return this.clickRoute.reachedTargetCell(this.player) ? null : this.clickRoute.directionFrom(this.player);
   }
 
   /** 剑线连击的当前层数与上限，供 HUD 在攻击按钮上画进度弧。 */

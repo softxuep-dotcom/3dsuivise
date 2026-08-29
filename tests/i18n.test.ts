@@ -14,6 +14,7 @@ import { ru } from "../src/i18n/locales/ru";
 import { ko } from "../src/i18n/locales/ko";
 import { vi } from "../src/i18n/locales/vi";
 import { id } from "../src/i18n/locales/id";
+import { ARMOR_TIERS } from "../src/game/balance/equipment";
 
 /*
  * 文案的三种坏法，肉眼都很难看出来，而且都是“改一处忘多处”造成的：
@@ -93,6 +94,12 @@ describe("多语言 · 结构对齐", () => {
   });
 });
 
+describe("多语言 · 富文本控件间距", () => {
+  it.each(Object.entries(ALL_LOCALES))("%s 的键帽不会和后续文字粘连", (_lang, table) => {
+    expect(table["hud.pcControls"]).not.toMatch(/<\/kbd>\S/u);
+  });
+});
+
 describe("多语言 · 数值一致", () => {
   /**
    * 装备文案（equip.*）里写死的数字必须各语言一致。
@@ -111,6 +118,17 @@ describe("多语言 · 数值一致", () => {
       .filter((key) => nums(en[key]) !== nums(table[key]))
       .map((key) => `${key}: en[${nums(en[key])}] ≠ ${lang}[${nums(table[key])}]`);
     expect(bad, `装备数值不一致：\n  ${bad.join("\n  ")}`).toEqual([]);
+  });
+});
+
+describe("多语言 · 目标提示与实际配方一致", () => {
+  const hideArmorCost = ARMOR_TIERS
+    .find((tier) => tier.id === "hide-1")!
+    .cost.find(([kind]) => kind === "hide")![1];
+
+  it.each(Object.entries(ALL_LOCALES))("%s 的皮甲Ⅰ提示使用真实兽皮数量", (_lang, table) => {
+    const firstNumber = Number(table["sim.30"].match(/\d+/)?.[0]);
+    expect(firstNumber).toBe(hideArmorCost);
   });
 });
 
@@ -183,11 +201,40 @@ describe("多语言 · 品牌与核心目标用词", () => {
     expect(table["difficulty.insane"]).toBe(hardLabels[lang]);
   });
 
-  it.each(Object.entries(ALL_LOCALES))("%s 始终把六桶油描述为装车", (lang, table) => {
+  it.each(Object.entries(ALL_LOCALES))("%s 始终把所需油桶描述为装车", (lang, table) => {
     const term = loadedTerms[lang];
     for (const key of ["msg.fuelFull", "sim.fuelReady", "toast.truckDepart"]) {
       expect(table[key], key).toMatch(term);
     }
+  });
+
+  const staleSixTerms: Record<string, RegExp> = {
+    en: /\bsix(?:th)?\b/i,
+    zh: /六|6/u,
+    fr: /\bsix(?:ième)?\b/i,
+    de: /sechs|sechst/i,
+    it: /\bsei\b|\bsest[oa]\b/i,
+    "pt-BR": /\bseis\b|\bsext[oa]\b/i,
+    es: /\bseis\b|\bsext[oa]\b/i,
+    tr: /altı(?:ncı)?/i,
+    ja: /六|6/u,
+    ru: /шест/iu,
+    ko: /여섯|6/u,
+    vi: /\bsáu\b|6/iu,
+    id: /\benam\b|\bkeenam\b|6/iu,
+  };
+  const fuelGoalKeys = [
+    "intro.tagline",
+    "msg.fuelFull",
+    "sim.fuelReady",
+    "toast.truckDepart",
+    "win.summary",
+    "win.summary_one",
+    "win.summary_other",
+  ];
+
+  it.each(Object.entries(ALL_LOCALES))("%s 的通关文案不再写死旧六桶规则", (lang, table) => {
+    for (const key of fuelGoalKeys) expect(table[key], key).not.toMatch(staleSixTerms[lang]);
   });
 });
 
