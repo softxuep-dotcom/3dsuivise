@@ -64,6 +64,11 @@ export class InputController {
        */
       this.callbacks.onGameplayIntent();
       if (event.pointerType === "touch") {
+        // 摇杆只对触摸有用（下面的分支才是鼠标点地走），所以它也只该在**真的有人
+        // 用手指推过**之后才露面。原先它按 (pointer: coarse) 显示，而那个判据在
+        // 带触屏的笔记本、以及一些浏览器容器里都会误判成"这是触屏设备"，
+        // 结果电脑端左下角常年挂着一个按不动的圈。
+        document.documentElement.classList.add("touch-input");
         this.startJoystick(canvas, event);
         return;
       }

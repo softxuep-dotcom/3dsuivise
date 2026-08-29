@@ -419,7 +419,9 @@ export class HudController {
   }
 
   toggleInventory(): void {
-    if (!this.simulation.running) return;
+    // 和 setPaused 同一道闸：问"这局结束没有"，不是"开始没有"。拿 running 挡的话，
+    // 玩家第一次移动前背包键是死的 —— 齿轮键已经这么坏过一次，见 isRunOver。
+    if (this.isRunOver()) return;
     this.inventoryOpen = !this.inventoryOpen;
     this.inventoryOverlay.classList.toggle("hidden", !this.inventoryOpen);
     if (this.inventoryOpen) this.updateInventory();

@@ -325,6 +325,10 @@
    * 由 InputController.startJoystick 把它挪到手指落点（见那里的注释）。
    * 角落里这个位置只是"待机位"，让玩家知道左半屏能推。
    */
+  /* 默认藏着，第一次真的用手指推过才露面 —— 见 InputController 的 touch-input。 */
+  .joystick { display: none; }
+  :root.touch-input .joystick { display: block; }
+
   .joystick {
     position: absolute;
     left: max(20px, env(safe-area-inset-left));
