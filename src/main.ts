@@ -13,6 +13,7 @@ import { bumpRunIndex, loadDifficulty, loadRunIndex, saveDifficulty } from "./ui
 import { normalizeDifficulty } from "./game/simulation/difficulty";
 import type { Difficulty } from "./game/simulation/difficulty";
 import { createPlatform } from "./platform";
+import { RunProgress } from "./platform/RunProgress";
 
 /**
  * index.html 内联脚本留下的引导桥，见那段注释。
@@ -132,6 +133,27 @@ async function bootstrap(): Promise<void> {
       hud.setAdPlaying(false);
     },
   });
+  /*
+   * 关键节点上报（Poki 后台的 Progress Events）。见 platform/RunProgress.ts ——
+   * 那张表原先只有 SDK 自己报的 game/loading 一行，我们一个节点都没报过。
+   *
+   * **构造放在这里，但一个字节都不往外发。**
+   *
+   * 构造要早：帧循环里每个事件都要过一次 runProgress.handle()，而帧循环的
+   * requestAnimationFrame 排在 loadingFinished 之前。放到后面去赋值的话，
+   * 只要有人往中间插一个 await，第一帧就会撞上 undefined，而且是每帧抛一次。
+   *
+   * 上报要晚：第一次 measure 挂在 enterGame()（玩家迈第一步）里，
+   * **加载期我们一行都不跑** —— 那一段的去留 SDK 自己已经在计
+   * （后台 game/loading 那一行的 Left 列）。理由见 enterGame 里那段。
+   *
+   * 所以这里剩下的只有一次对象分配：两个空 Set，没有 IO、没有 postMessage。
+   */
+  const runProgress = new RunProgress({
+    // getter：软重启会换掉 simulation，这里读的必须是当前那一个。
+    get simulation() { return simulation; },
+    measure: (category, what, action) => platform.measure(category, what, action),
+  });
   if (import.meta.env.DEV) console.info(`[platform] ${platform.name}`);
 
   setProgress(0.58, t("boot.terrain"));
@@ -169,6 +191,16 @@ async function bootstrap(): Promise<void> {
   let crittersReady = false;
   let previousTime = performance.now();
   let hiddenAt = 0;
+  /*
+   * 当前页面会话内的重开次数。给遥测定局次用：0 = 本次会话的第一局，
+   * 之后都算重开局（见 RunProgress.beginRun 的 r1 / rr 前缀）。
+   *
+   * **声明必须排在 enterGame 之前。** 它现在只被 enterGame 和 softRestart 读，
+   * 而这两个都是回调、执行时 bootstrap 早就跑完了，所以放在后面也不会炸。
+   * 但那是"碰巧安全"：中间一旦有人加一个 await，玩家正好在那一瞬点下去就是 TDZ 崩溃，
+   * 而且只在极窄的窗口里复现。提前声明的成本是零。
+   */
+  let restartsThisSession = 0;
 
   /**
    * Poki 把第一次 gameplayStart 当作“玩家真的开始玩了”的转化点，必须直接发生在
@@ -181,6 +213,23 @@ async function bootstrap(): Promise<void> {
     started = true;
     simulation.start();
     platform.gameplayStart();
+    /*
+     * 进度节点从**玩家真的开始玩**才计，不在加载完那一刻计。
+     *
+     * 两个理由，第二个才是主要的：
+     *
+     * 1. 加载期不该跑我们的任何东西 —— 那一段的去留 SDK 自己已经在计
+     *    （后台 game/loading 那一行的 Left 列），我们再插一脚只有坏处。
+     *
+     * 2. **口径**：加载完就报 fuel/1 start，等于把"打开页面看了一眼就走"的人
+     *    算成"开始装第一桶然后放弃了"。那批人已经被 game/loading 记过一次，
+     *    在这里再记一次就是双重计数，而且会让装车漏斗凭空显得更差。
+     *    fuel/1 start 的语义应该是"这一局开始了"，而这一局从他迈第一步才开始。
+     *
+     * enterGame 有 started 闸，一局只会进来一次；软重启把 started 退回 false，
+     * 所以新的一局自动再报一次 —— softRestart 里不用也不该再调 beginRun()。
+     */
+    runProgress.beginRun(restartsThisSession);
   };
 
   const input = new InputController({
@@ -326,6 +375,13 @@ async function bootstrap(): Promise<void> {
     restartPending = true;
     setRestartControlsDisabled(true);
     const run = bumpRunIndex();
+    restartsThisSession += 1;
+    /*
+     * 必须排在 beginRun() 之前：它收口的是**上一局**结算页开出来的那个节点。
+     * 而 beginRun() 由新一局的 enterGame() 发起，所以这里只要赶在广告之前就够了。
+     * 位置也必须在上面那道 restartPending 闸之内 —— 连点两下不该记成两次重开。
+     */
+    runProgress.noteRestart();
     try {
       await platform.commercialBreak();
 
@@ -483,6 +539,7 @@ async function bootstrap(): Promise<void> {
         audio.handle(event);
         hud.handle(event);
         nightIntro.handle(event);
+        runProgress.handle(event);
         if (event.type === "player-hit") renderer.impact(0.22);
         if (event.type === "wolf-hit") renderer.impact(0.09);
         if (event.type === "fuel-loaded") renderer.fuelLoaded(event.loaded);
@@ -503,6 +560,14 @@ async function bootstrap(): Promise<void> {
         started && simulation.running && !hud.isGameplayBlocked(),
       );
       hud.update(delta);
+      /*
+       * 「打开过背包没有」。
+       *
+       * 看状态翻转而不是挂在开关的调用点上 —— 背包有**两个入口**
+       * （键盘 B/Tab 走 onInventory，HUD 那颗键在 HudController 里自己挂了监听），
+       * 挂其中一个会漏掉另一个。notePackOpened 是幂等的，开着的每一帧调都行。
+       */
+      if (hud.isInventoryOpen()) runProgress.notePackOpened();
       // 教学走在 HUD 之后：它要读背包的开合状态，也要按最新的一帧投影去挖亮洞。
       nightIntro.update(delta);
       renderer.render(delta);
@@ -515,6 +580,9 @@ async function bootstrap(): Promise<void> {
 
   setProgress(1, t("boot.ready"));
   platform.loadingFinished();
+  // 「加载完、看了一眼、没动就走」是现在唯一看不见的一段流失。
+  // 这是全仓唯一在玩家迈第一步之前就报的节点，理由见 RunProgress 的 ENTER。
+  runProgress.noteInteractive();
   // 场景可以先展示，但 gameplayStart 与模拟层都必须等玩家第一次实际游戏输入。
   // HUD 已经提示“移动或拿起枯木，开始第一天”，无需重新加一层开始按钮。
   hud.showGame();
