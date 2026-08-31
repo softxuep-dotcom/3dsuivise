@@ -80,6 +80,22 @@ export class NavigationGrid {
     }
   }
 
+  /**
+   * 已经走进这张流场真正采用的终点格。
+   *
+   * 目标点可能压在卡车、石头或陡坡里，rebuild() 会把 BFS 起点挪到最近的开放格，
+   * 但 this.target 仍保留玩家点击的原坐标。鼠标寻路若只按原坐标判到达，就永远
+   * 到不了；directionFrom() 在 flow=0 的格子里又只能朝本格中心走，于是一步越过
+   * 格心、下一帧立刻反向，人物会在两个点之间无限抽动。
+   *
+   * 普通开放目标仍由 GameSimulation 先走精确直线，只有原目标确实不可达时才会
+   * 用这条作为“已经走到最近可达处”的停止条件。
+   */
+  reachedTargetCell(position: Vec2): boolean {
+    const cell = this.toCell(position);
+    return cell >= 0 && this.flow[cell] === 0;
+  }
+
   directionFrom(position: Vec2): Vec2 {
     const cell = this.toCell(position);
     if (cell < 0) return direction(position, this.target);

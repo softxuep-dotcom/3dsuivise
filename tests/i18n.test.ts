@@ -14,6 +14,7 @@ import { ru } from "../src/i18n/locales/ru";
 import { ko } from "../src/i18n/locales/ko";
 import { vi } from "../src/i18n/locales/vi";
 import { id } from "../src/i18n/locales/id";
+import { ARMOR_TIERS, WEAPON_TIERS } from "../src/game/balance/equipment";
 
 /*
  * 文案的三种坏法，肉眼都很难看出来，而且都是“改一处忘多处”造成的：
@@ -93,6 +94,12 @@ describe("多语言 · 结构对齐", () => {
   });
 });
 
+describe("多语言 · 富文本控件间距", () => {
+  it.each(Object.entries(ALL_LOCALES))("%s 的键帽不会和后续文字粘连", (_lang, table) => {
+    expect(table["hud.pcControls"]).not.toMatch(/<\/kbd>\S/u);
+  });
+});
+
 describe("多语言 · 数值一致", () => {
   /**
    * 装备文案（equip.*）里写死的数字必须各语言一致。
@@ -111,6 +118,84 @@ describe("多语言 · 数值一致", () => {
       .filter((key) => nums(en[key]) !== nums(table[key]))
       .map((key) => `${key}: en[${nums(en[key])}] ≠ ${lang}[${nums(table[key])}]`);
     expect(bad, `装备数值不一致：\n  ${bad.join("\n  ")}`).toEqual([]);
+  });
+});
+
+describe("多语言 · 目标提示与实际配方一致", () => {
+  const hideArmorCost = ARMOR_TIERS
+    .find((tier) => tier.id === "hide-1")!
+    .cost.find(([kind]) => kind === "hide")![1];
+
+  it.each(Object.entries(ALL_LOCALES))("%s 的皮甲Ⅰ提示使用真实兽皮数量", (_lang, table) => {
+    const firstNumber = Number(table["sim.30"].match(/\d+/)?.[0]);
+    expect(firstNumber).toBe(hideArmorCost);
+  });
+});
+
+describe("多语言 · 条件型机制必须写出触发条件", () => {
+  const emptyHandTerms: Record<string, RegExp> = {
+    en: /empty-handed/i,
+    zh: /空手/,
+    fr: /à vide/i,
+    de: /ohne Last/i,
+    it: /senza carico/i,
+    "pt-BR": /sem carga/i,
+    es: /sin carga/i,
+    tr: /yüksüz/i,
+    ja: /何も運んでいない/,
+    ru: /налегке/i,
+    ko: /운반물이 없을 때/,
+    vi: /không mang vật nặng/i,
+    id: /tidak membawa barang/i,
+  };
+  const slowedTerms: Record<string, RegExp> = {
+    en: /slows you down/i,
+    zh: /跑不快/,
+    fr: /ralentit/i,
+    de: /langsamer/i,
+    it: /rallenta/i,
+    "pt-BR": /reduz sua velocidade/i,
+    es: /ralentiza/i,
+    tr: /yavaşlarsın/i,
+    ja: /遅く/,
+    ru: /медленнее/i,
+    ko: /느려/,
+    vi: /chậm/i,
+    id: /memperlambat/i,
+  };
+
+  it.each(Object.entries(ALL_LOCALES))("%s 的装车加速明确只对空手移动生效", (lang, table) => {
+    expect(table["perk.empty-run.desc"]).toMatch(emptyHandTerms[lang]);
+  });
+
+  it.each(Object.entries(ALL_LOCALES))("%s 把扛桶效果写成减速而不是禁止移动", (lang, table) => {
+    expect(table["msg.fuelLoaded"]).toMatch(slowedTerms[lang]);
+  });
+});
+
+describe("多语言 · 篝火帮助与装备规则一致", () => {
+  const armorTerms: Record<string, RegExp> = {
+    en: /armour/i,
+    zh: /护甲/,
+    fr: /armure/i,
+    de: /Rüstungs/i,
+    it: /armatura/i,
+    "pt-BR": /armadura/i,
+    es: /armadura/i,
+    tr: /zırh/i,
+    ja: /防具/,
+    ru: /брони/iu,
+    ko: /방어구/,
+    vi: /giáp/i,
+    id: /zirah/i,
+  };
+
+  it("当前武器升级确实全部可以离开篝火制作", () => {
+    expect(WEAPON_TIERS.filter((tier) => tier.tier > 0).every((tier) => !tier.needsFire)).toBe(true);
+  });
+
+  it.each(Object.entries(ALL_LOCALES))("%s 不再笼统声称所有装备升级都需要篝火", (lang, table) => {
+    expect(table["pack.help"]).toMatch(armorTerms[lang]);
   });
 });
 
@@ -183,10 +268,186 @@ describe("多语言 · 品牌与核心目标用词", () => {
     expect(table["difficulty.insane"]).toBe(hardLabels[lang]);
   });
 
-  it.each(Object.entries(ALL_LOCALES))("%s 始终把六桶油描述为装车", (lang, table) => {
+  it.each(Object.entries(ALL_LOCALES))("%s 始终把所需油桶描述为装车", (lang, table) => {
     const term = loadedTerms[lang];
     for (const key of ["msg.fuelFull", "sim.fuelReady", "toast.truckDepart"]) {
       expect(table[key], key).toMatch(term);
     }
+  });
+
+  const staleSixTerms: Record<string, RegExp> = {
+    en: /\bsix(?:th)?\b/i,
+    zh: /六|6/u,
+    fr: /\bsix(?:ième)?\b/i,
+    de: /sechs|sechst/i,
+    it: /\bsei\b|\bsest[oa]\b/i,
+    "pt-BR": /\bseis\b|\bsext[oa]\b/i,
+    es: /\bseis\b|\bsext[oa]\b/i,
+    tr: /altı(?:ncı)?/i,
+    ja: /六|6/u,
+    ru: /шест/iu,
+    ko: /여섯|6/u,
+    vi: /\bsáu\b|6/iu,
+    id: /\benam\b|\bkeenam\b|6/iu,
+  };
+  const fuelGoalKeys = [
+    "intro.tagline",
+    "msg.fuelFull",
+    "sim.fuelReady",
+    "toast.truckDepart",
+    "win.summary",
+    "win.summary_one",
+    "win.summary_other",
+  ];
+
+  it.each(Object.entries(ALL_LOCALES))("%s 的通关文案不再写死旧六桶规则", (lang, table) => {
+    for (const key of fuelGoalKeys) expect(table[key], key).not.toMatch(staleSixTerms[lang]);
+  });
+});
+
+/*
+ * 中文分开说的两件事，译文不许合成一个词。
+ *
+ * 这条守的是一类**结构检查抓不到的翻译缺陷**：键不缺、占位符对得上、也不是把英文
+ * 原文留在那儿，但两个不同的行动被译成了同一个词，按钮于是不再区分它们。
+ *
+ * 实际抓到过四种语言同时犯：`action.cactus`（割仙人掌取汁）和 `action.chop`
+ * （砍下枯枝入包）在 fr 都是 "Couper"、it 都是 "Taglia"、pt-BR 都是 "Cortar"、
+ * id 都是 "Potong" —— 一个取水一个取柴，而这游戏教玩家的方式就是**按钮在用得上
+ * 的那一刻自己说出来**。中文玩家看到「取汁 / 砍柴」立刻分得清，那四种语言的玩家
+ * 两次看到同一个词。
+ *
+ * 判据挂在**中文**上而不是英文：中文是源语言，它分开写就说明这是两件事
+ * （英文自己也可能把两件事合成一个词，那时它不能当基准）。
+ */
+describe("多语言 · 中文区分的键，译文不许撞词", () => {
+  const family = (key: string) => key.split(".")[0];
+  const families = [...new Set(enKeys.map(family))].filter(
+    (f) => enKeys.filter((k) => family(k) === f).length > 1,
+  );
+
+  it.each(Object.entries(ALL_LOCALES))("%s 没有把中文分开的两个键译成同一个词", (lang, table) => {
+    const clashes: string[] = [];
+    for (const f of families) {
+      const keys = enKeys.filter((k) => family(k) === f);
+      const byValue = new Map<string, string[]>();
+      for (const key of keys) {
+        const value = table[key];
+        if (!value || value.length < 2) continue;
+        byValue.set(value, [...(byValue.get(value) ?? []), key]);
+      }
+      for (const [value, dup] of byValue) {
+        if (dup.length < 2) continue;
+        // 中文自己也写成同一句的，本来就该一样 —— 不是译文丢了区分。
+        if (new Set(dup.map((k) => zh[k])).size === 1) continue;
+        clashes.push(`${dup.join(" 与 ")} 都是 "${value}"（中文分别是 ${dup.map((k) => zh[k]).join(" / ")}）`);
+      }
+    }
+    expect(clashes, `${lang} 撞词：\n  ${clashes.join("\n  ")}`).toEqual([]);
+  });
+});
+
+/*
+ * 开场第一句必须说"装"，不许说"灌满"。
+ *
+ * sim.7 是 !clockStarted 时的目标行 —— 从游戏加载完到玩家迈出第一步为止都是它，
+ * 全游戏最多人看到的一句话（见 ObjectiveNarrator.getObjective 里那段注释：
+ * 「Poki 那批会话中位数只有 52 秒，绝大多数人从头到尾没被告知过目标是什么」）。
+ *
+ * 而这游戏**没有任何加油动作** —— 油桶是整桶搬起来、走过去、放进车斗的。
+ * 中文原文曾经写作「加满 N 桶油」，六种欧洲语言照着直译成 füllen / Llena /
+ * Remplissez / Riempi / Encha / doldur，于是每种语言的开场白都和它自己
+ * hint.loadFuel 里的动词（Charger / Carica / Carregue / Kasaya yükle）打架。
+ *
+ * 上面那条 loadedTerms 管不到它：那些正则匹配的是**完成态**（loaded / 装车 /
+ * verladen），而这里是祈使句。所以按词干再钉一遍，并且明确禁掉"灌满"系动词。
+ */
+describe("多语言 · 开场第一句说装载而不是灌满", () => {
+  const loadStem: Record<string, RegExp> = {
+    en: /load/i, zh: /装/, fr: /charg/i, de: /laden/i, it: /caric/i,
+    "pt-BR": /carreg/i, es: /carg/i, tr: /yükle/i, ja: /積/,
+    ru: /загруз/i, ko: /싣|적재/, vi: /chất/i, id: /muat/i,
+  };
+  const fillVerb: Record<string, RegExp> = {
+    en: /\bfill/i, zh: /加满|灌/, fr: /rempli/i, de: /füll/i, it: /riempi/i,
+    "pt-BR": /\bench/i, es: /llena|rellena/i, tr: /doldur/i, ja: /満た/,
+    ru: /наполн/i, ko: /채우|가득/, vi: /đổ đầy|làm đầy/i, id: /isi penuh|penuhi/i,
+  };
+
+  it.each(Object.entries(ALL_LOCALES))("%s 的 sim.7 用装载动词", (lang, table) => {
+    expect(table["sim.7"], `${lang} sim.7 没用装载动词：${table["sim.7"]}`).toMatch(loadStem[lang]);
+  });
+
+  it.each(Object.entries(ALL_LOCALES))("%s 的 sim.7 不说灌满", (lang, table) => {
+    expect(table["sim.7"], `${lang} sim.7 说了灌满：${table["sim.7"]}`).not.toMatch(fillVerb[lang]);
+  });
+});
+
+/*
+ * 代码里引用的每个键，语言表里都得有。
+ *
+ * 这条是补一个真踩过的坑：删 sim.32 时先把十三个语言文件里的键删了，
+ * 却漏了 ObjectiveNarrator 里那处 `loc("sim.32", …)`。t() 找不到键会**把键名
+ * 原样吐到屏幕上**（见 i18n/index.ts 的注释：「界面上出现 msg.foo.bar 很丑，
+ * 但比空白好定位」），而当时 315 个测试全绿 —— 没有任何一条在管这件事。
+ *
+ * 反过来的方向（表里有、代码不用）不查：那是死键，不影响玩家，
+ * 而且 index.html 的 data-i18n 和动态拼出来的键都会造成假阳性。
+ */
+describe("多语言 · 代码引用的键必须存在", () => {
+  // 用 import.meta.glob 读源码，理由和 moduleGraph.test.ts 一样：
+  // 这个仓库没装 @types/node，而 Vite 的 ?raw 在 vitest 里本来就通。
+  const sources = import.meta.glob("../src/**/*.ts", {
+    query: "?raw", import: "default", eager: true,
+  }) as Record<string, string>;
+
+  it("扫到的源文件足够多（否则这条测试等于没测）", () => {
+    expect(Object.keys(sources).length).toBeGreaterThan(20);
+  });
+
+  it("loc() / t() 里写死的键在英文表里都有", () => {
+    const missing: string[] = [];
+    for (const [path, src] of Object.entries(sources)) {
+      if (path.includes("/i18n/locales/")) continue;
+      for (const m of src.matchAll(/\b(?:loc|t|tx)\(\s*"([a-z][\w.-]*\.[\w.-]+)"/gi)) {
+        // 复数变体（key_one / key_other）由 t() 自己回退，只查基名。
+        if (en[m[1]] === undefined) missing.push(`${path.replace(/^\.\.\//, "")}: ${m[1]}`);
+      }
+    }
+    expect(missing, `这些键代码在用但英文表里没有：\n  ${missing.join("\n  ")}`).toEqual([]);
+  });
+});
+
+/*
+ * 每种语言的百分号写法必须自洽。
+ *
+ * 三种写法都是对的，但**一种语言只能用一种**：
+ *
+ *     法语 / 德语    数字 + 空格 + %     排版规范要求（"−60 %"）
+ *     英西意葡俄…    数字 + %            "−60%"
+ *     土耳其语       % + 数字            "−%60"
+ *
+ * 实际抓到过：法语 36 处里 2 处、德语 36 处里 5 处漏了空格，全部集中在 perk.*
+ * —— 那批描述是后加的，没跟上文件里既有的写法。单看一条谁都不会觉得有问题，
+ * 摆在一起才看得出来是两种写法混着用。
+ */
+describe("多语言 · 百分号写法自洽", () => {
+  it.each(Object.entries(ALL_LOCALES))("%s 的百分号只用一种写法", (_lang, table) => {
+    let spaced = 0;
+    let tight = 0;
+    let prefix = 0;
+    const offenders: string[] = [];
+    for (const [key, value] of Object.entries(table)) {
+      for (const m of value.matchAll(/%\s?\d/g)) { void m; prefix += 1; }
+      for (const m of value.matchAll(/(.)%(?!\d)/g)) {
+        if (/[\s\u00a0\u202f]/.test(m[1])) spaced += 1;
+        else if (/\d/.test(m[1])) { tight += 1; offenders.push(`${key}: ${value}`); }
+      }
+    }
+    // 只在"带空格"是主流写法时报错：贴着写的语言（英西意葡…）本来就该全是 tight。
+    if (spaced > 0 && tight > 0) {
+      expect(offenders, `这几条漏了 % 前的空格，而本语言其余 ${spaced} 处都有：\n  ${offenders.join("\n  ")}`).toEqual([]);
+    }
+    expect(spaced + tight + prefix).toBeGreaterThan(10);
   });
 });

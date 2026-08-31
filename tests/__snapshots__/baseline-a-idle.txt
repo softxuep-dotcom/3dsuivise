@@ -26,7 +26,6 @@
 结束于 t=95.2  running=false  死因=starved  瘫痪状态=normal
 
 事件流
-  t=0.1 message key=msg.1
   t=3.0 rest active=true
   t=20.1 message key=msg.duskCarryEnough params={"logs":2}
   t=47.6 rest active=false

@@ -477,7 +477,6 @@ export class GameSimulation {
 
   start(): void {
     this.running = true;
-    this.events.push({ type: "message", key: "msg.1" });
   }
 
   /**
@@ -1019,7 +1018,6 @@ export class GameSimulation {
         }
       }
     }
-    if (!hit && this.objectives.objectiveStage >= 3) this.events.push({ type: "message", key: "msg.10" });
   }
 
   /**
@@ -1375,7 +1373,7 @@ export class GameSimulation {
     }
     if (this.player.carrying === "fuel") {
       return distance(this.player, this.truck) <= TRUCK_LOAD_REACH
-        ? { action: "load", text: loc("hint.loadFuel", { loaded: this.truck.loaded, required: FUEL_REQUIRED }) }
+        ? { action: "load", text: loc("hint.loadFuel", { loaded: Math.min(this.truck.loaded + 1, FUEL_REQUIRED), required: FUEL_REQUIRED }) }
         : { action: "drop", text: loc("hint.dropFuel") };
     }
     if (this.player.carrying) {
@@ -1529,7 +1527,7 @@ export class GameSimulation {
     if (distance(this.player, target) < STRAIGHT_WALK_MAX && this.collision.canWalkStraight(this.player, target)) {
       return direction(this.player, target);
     }
-    return this.clickRoute.directionFrom(this.player);
+    return this.clickRoute.reachedTargetCell(this.player) ? null : this.clickRoute.directionFrom(this.player);
   }
 
   /** 剑线连击的当前层数与上限，供 HUD 在攻击按钮上画进度弧。 */
@@ -1724,10 +1722,6 @@ export class GameSimulation {
    * `running` 这道闸是关键 —— 开局口粮在构造函数里就发了，那时 running 还是 false，
    * 而"口粮里的柴不算他捡的"正是这一整条修复的全部内容。
    */
-  private noteWoodIntake(kind: InventoryItemKind): void {
-    if (kind === "wood" && this.running) this.objectives.noteWoodGathered();
-  }
-
   private addTutorialWood(): void {
     const angle = this.spawnFacing + TUTORIAL_WOOD_SPREAD;
     const spot = this.collision.findNearestWalkablePoint({
@@ -1822,7 +1816,6 @@ export class GameSimulation {
   private addInventory(kind: InventoryItemKind, count: number): boolean {
     // 背包满时 add 返回 false，什么也没进包 —— 那一下不算"他捡到了柴"。
     if (!this.inventory.add(kind, count)) return false;
-    this.noteWoodIntake(kind);
     return true;
   }
 

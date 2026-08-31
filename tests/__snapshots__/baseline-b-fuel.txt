@@ -12,7 +12,6 @@
 总用时 8.6s  目标行=sim.26
 
 事件流
-  t=0.1 message key=msg.1
   t=3.0 pickup kind=fuel
   t=8.6 fuel-loaded loaded=1.00 required=4.00
   t=8.6 fuel-perk-offer loaded=1.00

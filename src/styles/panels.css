@@ -294,7 +294,6 @@
   .supply-line { gap: 4px; margin-bottom: 4px; padding: 3px 5px; font-size: 9px; }
   .top-stack { top: max(10px, env(safe-area-inset-top)); gap: 6px; }
   .clock { padding: 5px 10px; }
-  .toast { padding: 7px 12px; font-size: 12px; }
   .status-pill { padding: 5px 11px; font-size: 10px; }
 
   /*
@@ -326,6 +325,10 @@
    * 由 InputController.startJoystick 把它挪到手指落点（见那里的注释）。
    * 角落里这个位置只是"待机位"，让玩家知道左半屏能推。
    */
+  /* 默认藏着，第一次真的用手指推过才露面 —— 见 InputController 的 touch-input。 */
+  .joystick { display: none; }
+  :root.touch-input .joystick { display: block; }
+
   .joystick {
     position: absolute;
     left: max(20px, env(safe-area-inset-left));
@@ -437,13 +440,4 @@
     transform: none;
   }
 
-  /* Toast 独立居中悬在角色上方，不跟中央栏沉进左下角或拇指操作区。 */
-  #toast {
-    position: fixed;
-    left: 50%;
-    bottom: 62%;
-    width: max-content;
-    max-width: min(84vw, 320px);
-    transform: translateX(-50%);
-  }
 }

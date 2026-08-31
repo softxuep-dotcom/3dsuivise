@@ -112,6 +112,11 @@ export class CreatureViews {
       const spec = CRITTER_SPECS[critter.kind];
       const terrainY = this.owner.worldHeight(critter.x, critter.z);
       view.animal?.mixer.update(delta);
+      // 上一帧的坐标还在 group 里，先量位移再写新的 —— 步频要跟实际速度走，不能用
+      // 规格常量：长角羚 sprintSeconds 只有 4.5 秒，冲刺一过身体慢下来而腿还在狂奔。
+      const paceSpeed = delta > 0
+        ? Math.hypot(critter.x - view.group.position.x, critter.z - view.group.position.z) / delta
+        : 0;
       view.group.position.set(critter.x, terrainY, critter.z);
       // 朝向走**最短弧**插值，不能直接赋值也不能对角度做朴素 lerp：
       // 后者在 ±π 交界处会绕远路转一整圈，正好发生在猎物调头的那一刻。
@@ -130,10 +135,19 @@ export class CreatureViews {
       } else {
         view.group.rotation.z = 0;
         if (view.animal) {
-          // 逃跑用 Gallop、吃草用 Walk。播放速度跟着实际移速走 ——
-          // 长角羚吃草 1.4、逃跑 10.5，同一个 Walk 拿来两用会像开了快进。
-          view.animal.play(critter.mode === "flee" ? "Gallop" : "Walk", {
-            timeScale: clamp(critter.mode === "flee" ? spec.fleeSpeed / 7 : spec.grazeSpeed / 1.1, 0.6, 1.9),
+          /*
+           * 逃跑用 Gallop、吃草用 Walk，播放速度跟**量出来的**移速走。
+           *
+           * 原先用的是规格常量（fleeSpeed / 7），两个毛病：冲刺 4.5 秒一过身体慢下来
+           * 而腿还在狂奔；而且 1.9 的上限把逃跑档死死压住 —— 长角羚以 10.5 m/s 掠过，
+           * 腿只比吃草快 18%，看着就是四条腿定住、整只羊在地上滑。
+           *
+           * 除数是片段本身的自然步速（Walk ≈ 1.1 m/s，Gallop ≈ 4.5 m/s），
+           * 上限放到 2.6 才够让 10.5 m/s 的冲刺看着像在跑。
+           */
+          const fleeing = critter.mode === "flee";
+          view.animal.play(fleeing ? "Gallop" : "Walk", {
+            timeScale: clamp(paceSpeed / (fleeing ? 4.5 : 1.1), 0.6, 2.6),
           });
         } else {
           // 使用连续的落脚曲线，避免 abs(sin) 在触地瞬间形成尖角，看起来像模型发抖。

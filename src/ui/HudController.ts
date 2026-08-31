@@ -41,16 +41,28 @@ const required = <T extends HTMLElement>(id: string): T => {
 /** HUD 每 0.08 秒更新一次；三拍余量防止交互距离边缘轻微晃动造成闪烁。 */
 const ARMED_GRACE_TICKS = 3;
 
-/*
- * Toast 分三档：关键消息可顶掉普通消息；拾取/猎杀只争当下，不进入队列。
- * 这样同一帧涌入的昼夜提示、燃料警告和顺手反馈不会再互相覆盖。
- */
-const TOAST_CASUAL = 0;
+/* 临时消息分两档：昼夜/发车可以顶掉普通的操作解释。 */
 const TOAST_NORMAL = 1;
 const TOAST_CRITICAL = 2;
-const TOAST_GAP = 0.14;
 const TOAST_MIN_SECONDS = 0.9;
 const TOAST_STALE_SECONDS = 6;
+
+/*
+ * 这些反馈已经有更直接的画面变化：物品换成烤肉、建筑落地、体温条跳动、
+ * 状态徽章消失、时钟跨天、卡车开走。再用文字复述只会顶掉当前目标。
+ */
+const SILENT_MESSAGE_KEYS = new Set([
+  "msg.22",
+  "msg.25",
+  "msg.32",
+  "msg.34",
+  "msg.38",
+  "msg.43",
+  "msg.truckDepart",
+]);
+
+/** 机制教学只说一次；失败原因和资源告警仍然每次都要给反馈。 */
+const ONE_SHOT_MESSAGE_KEYS = new Set(["msg.4", "msg.13", "msg.14"]);
 
 const ACTION_ICON: Record<InteractionHint["action"], string> = {
   pickup: "pickup",
@@ -226,9 +238,9 @@ export class HudController {
   private actionOverride: InteractionHint | null = null;
   private toastTimer = 0;
   private toastPriority = -1;
-  private toastGap = 0;
   private toastClock = 0;
   private readonly toastQueue: { text: string; seconds: number; priority: number; queuedAt: number }[] = [];
+  private readonly shownOneShotMessages = new Set<string>();
   private lastHudUpdate = 0;
   private inventoryOpen = false;
   private adPlaying = false;
@@ -303,10 +315,10 @@ export class HudController {
     this.setPaused(false);
     this.toast.classList.add("hidden");
     this.toastTimer = 0;
-    this.toastGap = 0;
     this.toastPriority = -1;
     this.toastQueue.length = 0;
-    this.objectiveChip.classList.remove("muted");
+    this.shownOneShotMessages.clear();
+    this.objectiveChip.classList.remove("notice-active");
     this.huntProgress.classList.remove("fuel-loaded");
     // 两个搏动提示本来就是"每局第一次"的口径（见字段上的注释，它们不写 localStorage）,
     // 所以新的一局要放回来。
@@ -372,9 +384,19 @@ export class HudController {
   }
 
   setPaused(paused: boolean): void {
-    if (paused && (!this.simulation.running || this.inventoryOpen)) return;
+    if (paused && (this.inventoryOpen || this.isRunOver())) return;
     this.paused = paused;
     this.pauseOverlay.classList.toggle("hidden", !paused);
+  }
+
+  /**
+   * 这一局是不是已经结束。原先问的是 `!simulation.running`，而它有**两种** false：
+   * 死了/通关了（该拦），和**还没开始**（不该拦 —— 模拟层要等玩家第一次真实移动
+   * 才 start）。于是刚进游戏没动时齿轮键是死的，而语言选择器就在那个面板里。
+   */
+  private isRunOver(): boolean {
+    return !this.gameOver.classList.contains("hidden")
+      || !this.victory.classList.contains("hidden");
   }
 
   isPaused(): boolean {
@@ -397,7 +419,9 @@ export class HudController {
   }
 
   toggleInventory(): void {
-    if (!this.simulation.running) return;
+    // 和 setPaused 同一道闸：问"这局结束没有"，不是"开始没有"。拿 running 挡的话，
+    // 玩家第一次移动前背包键是死的 —— 齿轮键已经这么坏过一次，见 isRunOver。
+    if (this.isRunOver()) return;
     this.inventoryOpen = !this.inventoryOpen;
     this.inventoryOverlay.classList.toggle("hidden", !this.inventoryOpen);
     if (this.inventoryOpen) this.updateInventory();
@@ -577,14 +601,10 @@ export class HudController {
     if (this.toastTimer > 0) {
       this.toastTimer -= deltaSeconds;
       if (this.toastTimer <= 0) {
-        this.toast.classList.add("hidden");
-        this.toastPriority = -1;
-        if (this.toastQueue.length > 0) this.toastGap = TOAST_GAP;
-        else this.objectiveChip.classList.remove("muted");
+        this.toastTimer = 0;
+        if (this.toastQueue.length > 0) this.playNextToast();
+        else this.finishToast();
       }
-    } else if (this.toastGap > 0) {
-      this.toastGap -= deltaSeconds;
-      if (this.toastGap <= 0) this.playNextToast();
     }
     this.lastHudUpdate += deltaSeconds;
     if (this.lastHudUpdate < 0.08) return;
@@ -699,21 +719,19 @@ export class HudController {
     // 拾取和添柴都算学会了行动键 —— 它们是这颗键最早能做到的两件事。
     if (event.type === "pickup" || event.type === "feed-fire") this.actionHintUsed = true;
     if (event.type === "nourish") this.flashNourish(event);
-    if (event.type === "message") this.showToast(t(event.key, event.params), 3.1);
+    if (event.type === "message" && !SILENT_MESSAGE_KEYS.has(event.key)) {
+      const oneShot = ONE_SHOT_MESSAGE_KEYS.has(event.key);
+      if (!oneShot || !this.shownOneShotMessages.has(event.key)) {
+        if (oneShot) this.shownOneShotMessages.add(event.key);
+        this.showToast(t(event.key, event.params), 3.1);
+      }
+    }
     if (event.type === "phase") {
       this.showToast(
         t(event.phase === "night" ? "toast.nightfall" : "toast.daybreak", { day: event.day }),
         3.4,
         TOAST_CRITICAL,
       );
-    }
-    if (event.type === "pickup" && (event.kind === "raw-meat" || event.kind === "hide" || event.kind === "water")) {
-      const label = t(`loot.${event.kind}`);
-      this.showToast(label, 1.4, TOAST_CASUAL);
-    }
-    if (event.type === "critter-killed") {
-      const label = this.simulation.getCritterLabel(event.kind);
-      this.showToast(t(event.kind === "oryx" ? "toast.huntBig" : "toast.hunt", { name: label }), 1.8, TOAST_CASUAL);
     }
     if (event.type === "fuel-loaded") {
       // 模拟层紧接着还会发详细 message；再发一条同义 toast 会在同一帧互相覆盖。
@@ -737,17 +755,9 @@ export class HudController {
     }
   }
 
-  /**
-   * 中央 toast。**显示期间把左上角的目标条压暗。**
-   *
-   * 原先两处会同时下指令：目标条说"去捡一根枯木回营地添柴"，toast 说
-   * "侦察野狗正在逼近 · 面向它攻击" —— 同一瞬间到达、而且 toast 正好盖在它上面。
-   * 玩家没有"两个都做"的选项，只会愣一下。
-   *
-   * 压暗而不是隐藏：目标条要保持在原位不跳，玩家的眼睛才知道回哪儿找它。
-   */
+  /** 临时消息在目标框原位替换目标；队列只保留仍然需要玩家处理的反馈。 */
   showToast(text: string, seconds = 2.3, priority: number = TOAST_NORMAL): void {
-    const busy = this.toastTimer > 0 || this.toastGap > 0;
+    const busy = this.toastTimer > 0;
     const hold = toastSeconds(text, seconds, busy || this.toastQueue.length > 0);
 
     if (this.toastTimer > 0 && this.toast.textContent === text) {
@@ -760,7 +770,6 @@ export class HudController {
       this.playToast(text, hold, priority);
       return;
     }
-    if (priority <= TOAST_CASUAL) return;
     if (priority > this.toastPriority && this.toastTimer > 0) {
       if (this.toastPriority >= TOAST_NORMAL) {
         this.toastQueue.unshift({
@@ -785,16 +794,21 @@ export class HudController {
       this.playToast(entry.text, Math.max(entry.seconds * crowded, TOAST_MIN_SECONDS), entry.priority);
       return;
     }
-    this.objectiveChip.classList.remove("muted");
+    this.finishToast();
   }
 
   private playToast(text: string, seconds: number, priority: number): void {
     this.toast.textContent = text;
     this.toast.classList.remove("hidden");
-    this.objectiveChip.classList.add("muted");
+    this.objectiveChip.classList.add("notice-active");
     this.toastTimer = seconds;
-    this.toastGap = 0;
     this.toastPriority = priority;
+  }
+
+  private finishToast(): void {
+    this.toast.classList.add("hidden");
+    this.objectiveChip.classList.remove("notice-active");
+    this.toastPriority = -1;
   }
 
   /**
@@ -1192,7 +1206,6 @@ export class HudController {
     this.victoryDifficultyHint.textContent = t("win.tryHarder", {
       current: t(`difficulty.${this.difficulty}`),
       next: t(`difficulty.${next}`),
-      blurb: t(`difficulty.${next}.blurb`),
     });
   }
 }

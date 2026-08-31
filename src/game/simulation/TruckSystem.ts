@@ -10,7 +10,7 @@ export interface TruckState extends Vec2 {
   loaded: number;
 }
 
-/** 通关进度。目标行、HUD 的边缘指示器和「汽油 n/6」都读它。 */
+/** 通关进度。目标行、HUD 的边缘指示器和「汽油 n/所需数」都读它。 */
 export interface FuelProgress {
   loaded: number;
   required: number;
@@ -22,7 +22,7 @@ export interface FuelProgress {
 /**
  * 卡车与油桶 —— **这个游戏唯一的通关条件**。
  *
- * 往车斗里装满 6 桶汽油、上车驶出地图边界就赢了。所有和这件事有关的规则都在这里：
+ * 往车斗里装满所需汽油桶、上车驶出地图边界就赢了。所有和这件事有关的规则都在这里：
  * 手上扛没扛桶、装了几桶、发车之后那几秒结算动画怎么走。
  *
  * 单独成文件的理由不是行数（七十来行），是**它是终局条件**。以后要改通关规则
@@ -35,7 +35,7 @@ export interface FuelProgress {
  * 最后这十秒会出现"通关动画里渴死"这种荒唐结局。
  */
 export interface TruckOwner {
-  /** 装车完成 → 通知三选一。第 6 桶不弹的判断在 FuelPerkSystem 里。 */
+  /** 装车完成 → 通知三选一。最后一桶不弹的判断在 FuelPerkSystem 里。 */
   notePerkFuelLoaded(loaded: number, required: number): void;
   readonly player: PlayerState;
   readonly world: WorldDefinition;
@@ -81,7 +81,7 @@ export class TruckSystem {
     return this.departTimer > 0;
   }
 
-  /** 把扛着的那桶装进车斗。装满第 6 桶时换一句不同的提示。 */
+  /** 把扛着的那桶装进车斗。装满最后一桶时换一句不同的提示。 */
   loadCarried(): void {
     const barrel = this.carried;
     if (!barrel) return;
@@ -93,7 +93,7 @@ export class TruckSystem {
     /*
      * 三选一接在**装车完成**这一刻，不是拾取那一侧 —— 拿起和放下同一桶可以
      * 反复做，装车不行。奖励是完成一次危险运输之后的结算。
-     * 第 6 桶不弹（判断在 FuelPerkSystem 里），那时该直接进上车发车。
+     * 最后一桶不弹（判断在 FuelPerkSystem 里），那时该直接进上车发车。
      */
     this.owner.notePerkFuelLoaded(this.owner.truck.loaded, FUEL_REQUIRED);
     this.owner.emit({

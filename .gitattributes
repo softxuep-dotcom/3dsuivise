@@ -1,0 +1,23 @@
+# 仓库里一律存 LF。
+#
+# 为什么是 LF 而不是 CRLF：定这条之前仓库里 107 个文件是 LF、13 个是 CRLF，
+# 而那 13 个是一次事故 —— 某次提交把语言表整体写成了 CRLF，于是每个文件都成了
+# "整文件改动"，git blame 全部指向那一个提交。改成 CRLF 要重写 107 个文件，
+# 代价比修回来大一个数量级。而且 CI 跑在 ubuntu-latest。
+#
+# 这不影响 Windows 上的编辑体验：core.autocrlf=true 检出时仍然给你 CRLF，
+# 提交时再转回 LF。工作区看到什么不变，变的只是仓库里存什么。
+* text=auto eol=lf
+
+# 二进制资源不许被当成文本改行尾。
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.glb binary
+*.gltf binary
+*.mp3 binary
+*.ogg binary
+*.wav binary
+*.zip binary
+*.w3x binary

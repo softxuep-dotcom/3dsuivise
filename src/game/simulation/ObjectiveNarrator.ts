@@ -64,19 +64,6 @@ export class ObjectiveNarrator {
    * 要不要提示。那两处都是**事件驱动的跳转**，不是叙述本身。
    */
   objectiveStage = 0;
-  /**
-   * 这一局有没有**真的从地上或树上**拿到过柴。
-   *
-   * 第 0 阶原先的判据是 `getInventoryCount("wood") > 0`，而开局口粮里就带着柴
-   * （见 balance/world.ts 的 STARTING_RATION），于是它在**第一帧**就成立 ——
-   * objectiveStage 0 → 1 当场跳过，`sim.26`「捡起身边的枯木」在任何一局里
-   * 一次都不会显示。实机确认：起局前 stage=0 / wood=2，跑一帧就变 stage=1。
-   *
-   * 这不是那条"第一个白天目标行只说通关目标"的设计（那条在 getObjective 里，
-   * 用 sim.fuelFirst 的优先级实现，没动）。这是判据写错了对象：
-   * 要问的是"他捡过柴没有"，不是"他包里有没有柴"。
-   */
-  private gatheredWood = false;
   /** 入夜前的燃料警告每晚只发一次。 */
   private duskWarningSent = false;
 
@@ -89,14 +76,6 @@ export class ObjectiveNarrator {
   /** 新的一夜开始，警告可以再发一次。 */
   resetDuskWarning(): void {
     this.duskWarningSent = false;
-  }
-
-  /**
-   * 玩家把一根柴收进了背包。**开局口粮不走这里** —— 那是在构造函数里发的，
-   * 而这个口子挂在 addInventory 上、只在 running 之后才算数。
-   */
-  noteWoodGathered(): void {
-    this.gatheredWood = true;
   }
 
   getCurrentLocationLabel(): LocalizedText {
@@ -156,13 +135,13 @@ export class ObjectiveNarrator {
      *
      * 平台数据（1.0.14，n=500）最高的一根柱子在 1~2 分钟，而录像显示大部分人
      * **没死就走了**。也就是说卡住他们的不是难度，是"这游戏要我干嘛"从头到尾没有答案：
-     * 玩家一迈步，目标行就从「加满 6 桶油，开着卡车离开」跳成「走到篝火旁添柴」
+     * 玩家一迈步，目标行就从「装满所需油桶，开着卡车离开」跳成「走到篝火旁添柴」
      * （因为开局口粮里就有一根柴，下面那条 sim.14 恒真），t=26s 再跳成「用大石封门」。
      * 整个第一昼夜 190 秒里，通关进度一格都不动 —— 而囤柴封门这笔投资是为第 2 天付的，
      * 大部分人没有第 2 天。
      *
      * 所以这条排在捡柴生火链**之前**：出生点 8.5 米就有一桶（createWorld 末尾的教学桶），
-     * 扛到 7.7 米外的车上，「汽油 1/6」当场跳格。第一桶进车之后这条自己消失，
+     * 扛到 7.7 米外的车上，「汽油 1/所需数」当场跳格。第一桶进车之后这条自己消失，
      * 后面那条链原样接上，一个字没删。
      *
      * 三道闸：只在第 1 天、只在白天、只在还没装过任何一桶之前。
@@ -200,7 +179,9 @@ export class ObjectiveNarrator {
     if (this.owner.phase === "day" && this.owner.day === 1 && this.owner.phaseTime <= 14) return loc("sim.23");
     if (this.owner.player.warmth > 78) return loc("sim.24");
     if (this.objectiveStage === 0) return loc("sim.26");
-    if (this.objectiveStage === 1) return loc("sim.27");
+    // 「走到篝火旁，按互动键添柴」这一段删掉了：它只会在白天出现（夜间分支在上面
+    // 就 return 了），而添柴是夜里的事，夜间教学第二拍已经在教。白天的目标行
+    // 该说通关目标，所以第 1 阶现在是个不出声的过渡段，只负责往第 2 阶推。
     if (this.objectiveStage === 2) return loc("sim.28");
     if (this.owner.getInventoryCount("water") === 0 && this.owner.getInventoryCount("cactus-juice") === 0) return loc("sim.29");
     //
@@ -210,13 +191,13 @@ export class ObjectiveNarrator {
     // "没穿甲 + 地图上有野狗" 在前三天里一直成立。实测跑到第 2 天白天，目标行说的是
     // "沙海上有 5 只野狗 · 兽皮只从野狗和长角羚身上来" —— 玩家**从头到尾看不到自己在为什么活着**。
     //
-    // 现在只有"现在就能做完的一步"能排在通关目标前面：手上已经有皮了（走两步就能穿上）、
-    // 或者卡在三阶的最后一样材料上。其余的提示要么收紧到"真的还没入门"，要么删掉。
+    // 现在只有"现在就能做完的一步"能排在通关目标前面，而且只剩一条：手上已经有皮了
+    // （走两步就能穿上）。其余的提示要么收紧到"真的还没入门"，要么删掉。
     if (this.equipment.equipped("armor").line === "none" && this.owner.getInventoryCount("hide") > 0) return loc("sim.30");
-    // 三阶卡在狼牙上，而狼牙只有白天的大狼掉 —— 这条线索不给的话玩家找不到。
-    if (this.equipment.equipped("weapon").tier === 2 && this.owner.getInventoryCount("wolf-fang") < 3) {
-      return loc("sim.32", { v0: this.owner.getInventoryCount("wolf-fang") });
-    }
+    // 「三阶要 3 颗犬牙 · 只有白天的壮犬掉」这一条删掉了 —— 和上面那条兽皮提示同一个毛病：
+    // 条件宽、在目标行上占很久，而玩家不读它。而且它讲错了掉落：犬牙有三个来源
+    // （守巢犬 1、大狼 1、精英 2），它只说了中间一个还加了个「只有」。
+    // 与其修一句没人看的提示，不如把这个位子直接让给通关目标。
     // 「沙海上有 N 只野狗 · 兽皮只从野狗和长角羚身上来」这一条删掉了。
     // 它的触发条件是"没穿甲 + 地图上有野狗"，前两三天一直成立，等于常年占着目标行；
     // 而它说的事已经有三个地方在说：开场卡的玩法三条、拿到第一张皮后的 sim.30、
@@ -292,13 +273,14 @@ export class ObjectiveNarrator {
       this.warnDuskFuel();
     }
     /*
-     * 第 0 阶：**捡起过柴**才算，不是"包里有柴"。见 gatheredWood 那段。
+     * 第 0 阶：**把第一桶油装上车**才算完成。开局那桶就在脚边，这一步同时
+     * 教了"搬"和"装车"两个动作，而且第一帧就把玩家指向通关目标。
      *
      * carrying 也一起去掉了。它是枯木还能扛在手上那个年代的遗留 —— 现在柴进背包，
      * 手上扛的只可能是油桶、石头或木桩，而"捡起了一桶油"不该算作"捡起了身边的枯木"。
      * 留着它等于把这一阶交给开局那 8.5 米外的教学桶去收口，换个方式再废一次。
      */
-    if (this.objectiveStage === 0 && this.gatheredWood) {
+    if (this.objectiveStage === 0 && this.owner.truck.loaded > 0) {
       this.objectiveStage = 1;
     } else if (this.objectiveStage === 1 && this.owner.camps.some((camp) => camp.fuel > 90)) {
       this.objectiveStage = 2;

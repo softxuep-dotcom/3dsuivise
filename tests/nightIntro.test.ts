@@ -5,92 +5,80 @@ import { NightIntro } from "../src/ui/NightIntro";
 import type { TutorialStage } from "../src/ui/TutorialStage";
 
 const NIGHT_EVENT = { type: "phase", phase: "night", day: 1 } as GameEvent;
+const HOLD_SECONDS = 3.4;
 
 function makeIntro() {
   const camp = { id: 1, x: 12, z: -4 };
-  let fireLit = false;
-  let warmed = false;
   const simulation = {
     player: { x: 0, z: 0 },
     world: { camps: [camp] },
-    getInventoryCount: () => 1,
-    getNearestLitCamp: () => (fireLit ? camp : null),
-    isWarmedByFire: () => warmed,
   } as unknown as GameSimulation;
   const stage = {
-    onSkip: vi.fn(),
-    buildDots: vi.fn(),
     show: vi.fn(),
     setCaption: vi.fn(),
-    setDots: vi.fn(),
-    setUrgent: vi.fn(),
     setLit: vi.fn(),
     hide: vi.fn(),
   } as unknown as TutorialStage;
   const spotlight = vi.fn();
   const focusCamera = vi.fn();
   const setHold = vi.fn();
-  const setActionLabel = vi.fn();
   const intro = new NightIntro({
-    simulation,
-    stage,
-    spotlight,
-    focusCamera,
-    setHold,
-    setActionLabel,
-    isTimerFrozen: () => false,
+    simulation, stage, spotlight, focusCamera, setHold, isTimerFrozen: () => false,
   });
-  return {
-    intro,
-    camp,
-    spotlight,
-    focusCamera,
-    setHold,
-    lightFire: () => { fireLit = true; },
-    setWarmed: () => { warmed = true; },
-  };
+  return { intro, camp, stage, spotlight, focusCamera, setHold };
 }
 
 afterEach(() => vi.unstubAllGlobals());
 
-describe("第一夜教学 · 镜头、时间与光照边界", () => {
-  it("只在镜头推向营地时冻结时间，镜头返回便恢复时间和正常光照", () => {
+/*
+ * 这一段从三拍二十秒砍成了一拍三秒半：推镜过去、说一句「点燃篝火」、收回来。
+ *
+ * 所以这里守的东西也跟着变了。原先要守"哪一拍冻时间、哪一拍恢复光照"那条边界，
+ * 现在整段只有一个边界：**推镜期间世界冻着，镜头一收全部还给玩家**。
+ * 顺带守住"没有第二拍"——一旦有人再把操作要求加回来，第一条就会红。
+ */
+describe("第一夜教学 · 一次推镜就结束", () => {
+  it("推镜时冻住世界，到点收镜并把时间和光照一起还回去", () => {
     const ctx = makeIntro();
     ctx.intro.handle(NIGHT_EVENT);
 
     expect(ctx.focusCamera).toHaveBeenLastCalledWith(ctx.camp);
+    expect(ctx.spotlight).toHaveBeenLastCalledWith(ctx.camp);
     expect(ctx.setHold).toHaveBeenLastCalledWith(true);
+    expect(ctx.intro.active).toBe(true);
 
-    ctx.intro.update(3.4);
+    ctx.intro.update(HOLD_SECONDS);
+
     expect(ctx.focusCamera).toHaveBeenLastCalledWith(null);
-    expect(ctx.setHold).toHaveBeenLastCalledWith(false);
-
-    ctx.spotlight.mockClear();
-    ctx.intro.update(0.016);
     expect(ctx.spotlight).toHaveBeenLastCalledWith(null);
+    expect(ctx.setHold).toHaveBeenLastCalledWith(false);
+    expect(ctx.intro.active).toBe(false);
   });
 
-  it("点火与取暖阶段都保持正常光照，不再把玩家压回黑暗", () => {
+  it("整段只说一句话，不等玩家做任何操作", () => {
     const ctx = makeIntro();
     ctx.intro.handle(NIGHT_EVENT);
-    ctx.intro.update(3.4);
+    ctx.intro.update(HOLD_SECONDS);
 
-    ctx.spotlight.mockClear();
-    ctx.lightFire();
-    ctx.intro.update(0.9);
-    ctx.setWarmed();
-    ctx.intro.update(0.1);
-
-    expect(ctx.spotlight).toHaveBeenCalled();
-    expect(ctx.spotlight.mock.calls.every(([target]) => target === null)).toBe(true);
-    expect(ctx.setHold).toHaveBeenLastCalledWith(false);
+    expect(ctx.stage.setCaption).toHaveBeenCalledTimes(1);
+    expect(ctx.stage.hide).toHaveBeenCalledTimes(1);
   });
 
-  it("旧版 v1 标记不会吞掉修正版，并在播完后写入 v2 标记", () => {
+  it("死亡立刻收摊，不会隔着结算页留一块压暗的 HUD", () => {
+    const ctx = makeIntro();
+    ctx.intro.handle(NIGHT_EVENT);
+    ctx.intro.handle({ type: "game-over" } as GameEvent);
+
+    expect(ctx.intro.active).toBe(false);
+    expect(ctx.setHold).toHaveBeenLastCalledWith(false);
+    expect(ctx.stage.hide).toHaveBeenCalled();
+  });
+
+  it("看过 v1 / v2 的玩家仍会看到这一版一次，播完写 v3", () => {
     const setItem = vi.fn();
     vi.stubGlobal("window", {
       localStorage: {
-        getItem: (key: string) => key === "desert-survivor.nightIntro.v1" ? "1" : null,
+        getItem: (key: string) => (key === "desert-survivor.nightIntro.v3" ? null : "1"),
         setItem,
       },
     });
@@ -98,7 +86,7 @@ describe("第一夜教学 · 镜头、时间与光照边界", () => {
     expect(NightIntro.shouldRun()).toBe(true);
     const ctx = makeIntro();
     ctx.intro.handle(NIGHT_EVENT);
-    ctx.intro.update(46);
-    expect(setItem).toHaveBeenCalledWith("desert-survivor.nightIntro.v2", "1");
+    ctx.intro.update(HOLD_SECONDS);
+    expect(setItem).toHaveBeenCalledWith("desert-survivor.nightIntro.v3", "1");
   });
 });

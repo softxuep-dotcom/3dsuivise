@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createWorld } from "../src/game/content/createWorld";
 import { GameSimulation } from "../src/game/simulation/GameSimulation";
-import type { Vec2 } from "../src/game/simulation/types";
+import { FUEL_REQUIRED, type Vec2 } from "../src/game/simulation/types";
 import { FirstBarrelHint } from "../src/ui/FirstBarrelHint";
 
 describe("出生点油桶提示灯", () => {
@@ -77,6 +77,20 @@ describe("出生点油桶提示灯", () => {
     expect(game.simulation.player.carrying).toBe("fuel");
     game.walkAway(4);
     expect(game.lit()).toBeNull();
+  });
+
+  it("车边的装油提示显示动作完成后的进度", () => {
+    const game = build();
+    game.simulation.requestInteraction();
+    expect(game.simulation.player.carrying).toBe("fuel");
+    game.simulation.player.x = game.simulation.truck.x;
+    game.simulation.player.z = game.simulation.truck.z;
+
+    const interaction = game.simulation.getInteractionHint();
+    expect(interaction.action).toBe("load");
+    expect(interaction.text.key).toBe("hint.loadFuel");
+    expect(interaction.text.params?.loaded).toBe(1);
+    expect(interaction.text.params?.required).toBe(FUEL_REQUIRED);
   });
 
   it("玩家开场长时间没输入不会提前禁用提示", () => {

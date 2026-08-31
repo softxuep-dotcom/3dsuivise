@@ -121,42 +121,61 @@ describe("字幕时长按实际字数折算", () => {
  *
  * 6 秒上限的职责只有一个：别让长文案饿死后面排队的指令（见 HudController 的
  * TOAST_STALE_SECONDS）。所以它只在**确实有东西在排队**时才该收 ——
- * 而 `msg.1`（玩家看到的第一句话）在 t=0 出现时队列是空的，它谁也没饿着。
+ * 一条独自出现的字幕谁也没饿着，凭什么被截断。
  *
- * 那 6 秒收掉的东西不小：msg.1 塞了两条指令（「首次移动后开始计时」+
- * 「天黑前添柴并封住入口」），中文 22 个字装得下，德文要 106 个字符。
- * 十三种语言里**八种读不完**，而读得完的五种恰好是 ja / tr / ko / en / zh ——
- * 这条上限一直在按语言分配"看不看得懂第一夜怎么玩"。
+ * 这里不再点名某一个键。原先守的是 `msg.1`（开场第一句），而它后来被整条删掉了，
+ * 四条用例跟着一起烂 —— 用例的主语不该是某句会被改掉的文案。现在改成
+ * **各语言当前最长的那条 msg.\***：不管以后谁被删、谁被加长，这条守的东西不变。
  */
 describe("独占时放宽到 8 秒", () => {
   const fill = (raw: string): string => raw.replace(/\{[^}]+\}/g, "12");
   const need = (text: string): number => NOTICE + readingSeconds(text);
+  /** 这一语言里最长的一条字幕。字幕走的是 msg.*，别的键族不进 toast。 */
+  const longestToast = (dict: Record<string, string>): string => Object.entries(dict)
+    .filter(([key]) => key.startsWith("msg."))
+    .map(([, value]) => fill(value))
+    .reduce((best, text) => (readingSeconds(text) > readingSeconds(best) ? text : best), "");
 
-  it("十三种语言的开场第一句，独占时都读得完", () => {
+  // 判据是"读得完，或者撞上 8 秒的天花板"——天花板是故意留的（见上一条 describe
+  // 的注释），不能要求它对任意长度的文案都让路。
+  it("十三种语言里最长的那条字幕，独占时要么读得完、要么正好顶在上限", () => {
     for (const [locale, dict] of Object.entries(LOCALES)) {
-      const text = fill(dict["msg.1"]);
+      const text = longestToast(dict);
       expect(
         toastSeconds(text, MESSAGE_NOMINAL, false),
-        `${locale} 的 msg.1 独占时应当读得完（需 ${need(text).toFixed(1)}s）`,
-      ).toBeGreaterThanOrEqual(need(text) - 1e-9);
+        `${locale} 最长的字幕独占时应当读得完（需 ${need(text).toFixed(1)}s）：${text}`,
+      ).toBeGreaterThanOrEqual(Math.min(need(text), 8) - 1e-9);
     }
   });
 
-  it("最长的那句（德文 msg.1）独占时超过 6 秒，但仍然收得住", () => {
-    const text = fill(de["msg.1"]);
-    expect(need(text)).toBeGreaterThan(CAP);          // 前提：它确实读不完
-    expect(toastSeconds(text, MESSAGE_NOMINAL, false)).toBeGreaterThan(CAP);
-    expect(toastSeconds(text, MESSAGE_NOMINAL, false)).toBeLessThanOrEqual(8);
+  /*
+   * 这条原先反着写：断言"确实存在读不完的字幕"，用来保证上面那条不是空测。
+   * 文案精简之后**一条都不剩了**，于是它红了 —— 而那正是想要的结果。
+   * 判据翻过来：守住"没有任何一条字幕需要超过上限的时间"，
+   * 也就是把这一轮砍下来的东西钉住，别让谁再写回一段长文。
+   */
+  it("没有任何语言的字幕需要超过 6 秒", () => {
+    const over: string[] = [];
+    for (const [locale, dict] of Object.entries(LOCALES)) {
+      for (const [key, value] of Object.entries(dict)) {
+        if (!key.startsWith("msg.")) continue;
+        const seconds = need(fill(value));
+        if (seconds > CAP) over.push(`${locale} ${key}: ${seconds.toFixed(1)}s — ${value}`);
+      }
+    }
+    expect(over, `这些字幕长到连独占档都读不完：\n  ${over.join("\n  ")}`).toEqual([]);
   });
 
+  // 下面两条改用**合成串**：上限本身的行为不该依赖"恰好有一句真文案足够长"。
   it("后面有东西排队时，照旧收在 6 秒", () => {
-    const text = fill(de["msg.1"]);
-    expect(toastSeconds(text, MESSAGE_NOMINAL, true)).toBeCloseTo(CAP, 9);
+    const wall = "x".repeat(400);
+    expect(need(wall)).toBeGreaterThan(CAP);
+    expect(toastSeconds(wall, MESSAGE_NOMINAL, true)).toBeCloseTo(CAP, 9);
   });
 
   it("默认收着 —— 漏传参数不该悄悄放宽", () => {
-    const text = fill(de["msg.1"]);
-    expect(toastSeconds(text, MESSAGE_NOMINAL)).toBe(toastSeconds(text, MESSAGE_NOMINAL, true));
+    const wall = "x".repeat(400);
+    expect(toastSeconds(wall, MESSAGE_NOMINAL)).toBe(toastSeconds(wall, MESSAGE_NOMINAL, true));
   });
 
   it("放宽的是上限不是下限：短句仍然按 nominal 挂", () => {
