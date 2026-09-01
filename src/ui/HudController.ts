@@ -160,6 +160,12 @@ export class HudController {
   private armedGrace = 0;
   private readonly conditionBadge = required<HTMLElement>("condition-badge");
   private readonly huntProgress = required<HTMLElement>("hunt-progress");
+  /** 随身补给的只读计数；消耗一律回背包里点物品格。 */
+  private readonly supplies: Array<[HTMLElement, InventoryItemKind]> = [
+    [required<HTMLElement>("supply-water"), "water"],
+    [required<HTMLElement>("supply-juice"), "cactus-juice"],
+    [required<HTMLElement>("supply-meat"), "cooked-meat"],
+  ];
   private readonly bagUsage = required<HTMLElement>("bag-usage");
   private readonly backpackButton = required<HTMLButtonElement>("backpack-button");
   private readonly quickCraftTray = required<HTMLElement>("quick-craft-tray");
@@ -645,6 +651,15 @@ export class HudController {
 
     this.updateConditionBadge();
     this.updateHuntProgress();
+    // 补给计数每帧刷。三次 getInventoryCount 是读三个整数，和已经在做的量级一样。
+    for (const [element, kind] of this.supplies) {
+      const count = this.simulation.getInventoryCount(kind);
+      const value = element.querySelector("b");
+      if (value) value.textContent = String(count);
+      // 位置固定不随有无变动 —— 归零时压暗而不是隐藏，否则三个格子会互相挤位，
+      // 而"第几个位置是水"正是玩家扫一眼时依赖的东西。
+      element.classList.toggle("empty", count === 0);
+    }
     this.syncThermalButton(player.warmth);
     this.bagUsage.textContent = `${player.inventory.filter(Boolean).length}/8`;
     this.quickCraft.update();

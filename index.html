@@ -49,6 +49,19 @@
           <div class="meter hunger" id="meter-hunger"><span data-i18n="meter.food">Food</span><i><b id="hunger-bar"></b></i><em id="hunger-value">82</em></div>
           <div class="meter warmth" id="warmth-meter"><span data-i18n="meter.warmth">Warmth</span><i><b id="warmth-bar"></b></i><em id="warmth-value">22</em></div>
           <div class="meter stamina"><span data-i18n="meter.stamina">Stamina</span><i><b id="stamina-bar"></b></i><em id="stamina-value">100</em></div>
+          <!--
+            补给计数是**只读**的：消耗一律回背包操作，但"我还有没有水"是随时要瞄一眼的决策信息，
+            不能只藏在背包里。位置固定不随有无变动，扫一眼就知道。
+
+            它贴在五条之下是刻意的：眼睛读完"水分快没了"，视线不用移动就看到"我还有 2 瓶水" ——
+            问题和答案在同一个视觉块里。实测 r1/pack 只有 55~60%，四成玩家整局没开过背包，
+            而这三个数原先只存在于背包里。
+          -->
+          <div class="supply-line" data-i18n-attr="aria-label:hud.supply.aria">
+            <span id="supply-water"><i data-i18n="supply.water">Wtr</i> <b>0</b></span>
+            <span id="supply-juice"><i data-i18n="supply.juice">Sap</i> <b>0</b></span>
+            <span id="supply-meat"><i data-i18n="supply.meat">Meat</i> <b>0</b></span>
+          </div>
         </section>
 
         <!--

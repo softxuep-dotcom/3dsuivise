@@ -170,13 +170,21 @@ describe("模块图", () => {
       // 2345 → 2461：接入三档画质（QualityGuard）。判定逻辑全在 render/QualityGuard.ts，
       // 这里只有档位表、pixelRatioFor / cullDistance / applyTier 三个落点、
       // 一个 DEV 跳档开关，以及「一档为什么分设备」「手机上一二档 pixelRatio 为什么不动」两段。
-      "src/render/GameRenderer.ts": 2461,
+      // 2461 → 2558：移植 1.0.28 的移动端阴影缓存（autoUpdate 关闭 + 按锚点重画
+      // + 脏标记 + 30 帧兜底）。阴影 pass 每帧把全部投影体重画一遍，而这个场景里
+      // 绝大多数投影体不动 —— 1.0.28 实测光栅化 59 万降到约 2 万/帧摊销。
+      // 这段注释必须留着：关掉逐帧之后，没有脏标记就会留下不该存在的影子，
+      // 而那种 bug 在截图和测试里都看不见。
+      "src/render/GameRenderer.ts": 2558,
       // 1171 → 1172：EquipTier 跟着数值搬去了 balance/equipment，
       // 于是这里从两行 import 变成三行。这是全程唯一一处上调，且只此一行。
       // 1172 → 1211：合并时把需求脉冲的 urgentRelief() 接了回来。
       // 它和远端的 finishToast() 落在同一位置，是假冲突 —— 两个不相干的方法，
       // 照"以远端为准"直接取一边会把告急提示整块删掉，所以两个都留。
-      "src/ui/HudController.ts": 1211,
+      // 1211 → 1226：把 supply-line（水/汁/熟三个只读计数）接回来。
+      // 它 1.1.26 改版时被删了，而 r1/pack 只有 55~60% —— 四成玩家整局没开过背包，
+      // 这三个数原先只存在于背包里。摆在五条之下，问题和答案就在同一个视觉块里。
+      "src/ui/HudController.ts": 1226,
       // styles.css 阶段 3 拆成六段，自己只剩 @import；六段各自都在 600 行以内。
       // 下面三处 +438/+1124/+670 是同一次改动（修"狗朝另一个方向咬"）的三半：
       // 咬击分支 return 收尾，够不到函数末尾那句 wolf.facing = steered，于是朝向

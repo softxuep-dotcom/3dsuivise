@@ -64,6 +64,30 @@ const TIER_PIXEL_RATIO: Record<QualityTier, number> = { 1: 1.6, 2: 1.0, 3: 0.8 }
 const TIER1_MOBILE_PIXEL_RATIO = 1.0;
 
 /*
+ * 移动端阴影不再逐帧重画，改成**按锚点缓存**。
+ *
+ * 阴影 pass 是把所有投影几何体再画一遍深度。它和主 pass 画的是同一批东西，
+ * 而这个场景里绝大多数投影体（地形、树、仙人掌、石头、卡车、营地）**是不动的** ——
+ * 每帧重画等于每帧把同一张图算一遍。1.0.28 实测：光栅化 59 万降到约 2 万/帧摊销，
+ * 少 6 倍多。
+ *
+ * 代价是阴影相机得跟着焦点跑，而它一动图就失效。所以只在焦点漂出 MARGIN 时重锚，
+ * 并把移动端的覆盖范围从 ±32 放宽到 ±44 —— 多出来的 12 米就是买给漂移的余量，
+ * 不然玩家走到边上会看见一条「影子到此为止」的硬线。
+ *
+ * 30 帧的强制上限是**兜底**：砍树、割仙人掌、上下文恢复这些改变投影体的事件都挂了
+ * 钩子（markShadowDirty），但漏一个就会留下一片不该存在的影子。30 帧把任何漏网之鱼
+ * 的存活时间压到 1 秒出头，而它对摊销成本几乎没有影响。
+ *
+ * 阴影图顺带从 512 回到 768：省下逐帧重画之后这点填充率不再是瓶颈，
+ * 而 512 在 ±44 的覆盖下每纹素要盖 0.11 米，锯齿肉眼可见。**又快又更好看。**
+ */
+const SHADOW_ANCHOR_MARGIN = 10;
+const SHADOW_MAX_STALE_FRAMES = 30;
+const LOW_POWER_SHADOW_EXTENT = 44;
+const LOW_POWER_SHADOW_MAP = 768;
+
+/*
  * 狼和猎物在多远之外停止绘制。
  *
  * 45 米是改造前就有的移动档数字，依据是雾：FogExp2 密度 0.0075 在这个距离已经
@@ -218,6 +242,15 @@ export class GameRenderer {
   private tutorialFocus: Vec2 | null = null;
   /** 0~1 的淡入淡出，避免开关灯是硬切。 */
   private tutorialLight = 0;
+  /**
+   * 阴影相机当前锚在哪。移动端不再每帧跟着相机走，只在漂移超过余量时重锚。
+   * 初值是 NaN，保证第一帧必定重锚一次。
+   */
+  private readonly shadowAnchor = new THREE.Vector3(NaN, 0, 0);
+  /** 有投影体发生变化，下一帧必须重画。 */
+  private shadowDirty = true;
+  /** 距离上次重画过了几帧。到 SHADOW_MAX_STALE_FRAMES 强制重画，兜住漏挂的钩子。 */
+  private shadowStaleFrames = 0;
   /** 脚下的取暖光环，见 buildWarmthAura。 */
   private readonly warmthAura: THREE.Group;
   private readonly warmthRing: THREE.Mesh;
@@ -274,6 +307,8 @@ export class GameRenderer {
     });
     this.renderer.setPixelRatio(this.pixelRatioFor(1));
     this.renderer.shadowMap.enabled = true;
+    // 移动端关掉逐帧重画，交给 scheduleShadowUpdate 按锚点决定。桌面端不卡，照旧。
+    this.renderer.shadowMap.autoUpdate = !this.lowPower;
     /*
      * 低功耗档也保留 PCF，不降级成 BasicShadowMap。
      *
@@ -312,11 +347,14 @@ export class GameRenderer {
      * far 从 130 收到 110：太阳架在焦点上方 (−35,+55,+25)、距离约 70，
      * 130 给了 60 单位的富余，用不着那么多。收紧只赚深度精度，不损画面。
      */
-    this.sun.shadow.mapSize.set(this.lowPower ? 512 : 1024, this.lowPower ? 512 : 1024);
-    this.sun.shadow.camera.left = -32;
-    this.sun.shadow.camera.right = 32;
-    this.sun.shadow.camera.top = 32;
-    this.sun.shadow.camera.bottom = -32;
+    const shadowMap = this.lowPower ? LOW_POWER_SHADOW_MAP : 1024;
+    this.sun.shadow.mapSize.set(shadowMap, shadowMap);
+    // 低功耗档覆盖放大到 ±44 是为了给锚点漂移买余量，见 SHADOW_ANCHOR_MARGIN 那段。
+    const extent = this.lowPower ? LOW_POWER_SHADOW_EXTENT : 32;
+    this.sun.shadow.camera.left = -extent;
+    this.sun.shadow.camera.right = extent;
+    this.sun.shadow.camera.top = extent;
+    this.sun.shadow.camera.bottom = -extent;
     this.sun.shadow.camera.near = 1;
     this.sun.shadow.camera.far = this.lowPower ? 110 : 130;
     this.scene.add(this.sun, this.fireLight);
@@ -412,6 +450,7 @@ export class GameRenderer {
     // 二档起扬沙整个停掉：既不画也不再每帧改 240 个顶点。
     if (this.tier < 2) this.updateSand(delta);
     this.updateWarmthAura(delta);
+    this.scheduleShadowUpdate();
     this.renderer.render(this.scene, this.camera);
     // 排在最后：要量的是这一帧渲染的全部耗时。降过档之后这一句直接 return。
     this.quality.sample(frameStart);
@@ -492,6 +531,45 @@ export class GameRenderer {
     }
     this.tutorialSpot.intensity = this.tutorialLight * 165;
     this.tutorialSpot.visible = this.tutorialLight > 0.01;
+  }
+
+  /**
+   * 决定这一帧要不要重画阴影图，以及要不要把阴影相机挪个窝。
+   *
+   * 桌面端直接返回：那边 autoUpdate 开着，three.js 每帧自己重画，本来就不卡。
+   *
+   * 移动端**太阳只在重锚那一帧移动**。这一点是必须的：three.js 在 needsUpdate
+   * 为 false 时会跳过 shadow.updateMatrices，采样矩阵停在上次重画的状态；
+   * 如果这期间还每帧挪灯，灯和贴图就对不上了。反过来说，灯不挪也不影响光照方向 ——
+   * 位置是焦点加固定偏移 (−35,+55,+25)，方向恒定。
+   */
+  private scheduleShadowUpdate(): void {
+    if (!this.lowPower) return;
+    this.shadowStaleFrames += 1;
+    const focus = this.cameraFocus;
+    const drift = Math.hypot(focus.x - this.shadowAnchor.x, focus.z - this.shadowAnchor.z);
+    // 取反写法：首帧 shadowAnchor 是 NaN，drift 也是 NaN，NaN <= margin 为 false。
+    const needsRedraw = this.shadowDirty
+      || this.shadowStaleFrames >= SHADOW_MAX_STALE_FRAMES
+      // 卡车是静态投影体里唯一会自己跑的：驶离那十几秒退回逐帧。
+      || this.simulation.isDeparting()
+      || !(drift <= SHADOW_ANCHOR_MARGIN);
+    if (!needsRedraw) {
+      this.renderer.shadowMap.needsUpdate = false;
+      return;
+    }
+    this.shadowAnchor.set(focus.x, focus.y, focus.z);
+    this.sun.position.set(focus.x - 35, focus.y + 55, focus.z + 25);
+    this.sun.target.position.set(focus.x, focus.y, focus.z);
+    this.sun.target.updateMatrixWorld();
+    this.renderer.shadowMap.needsUpdate = true;
+    this.shadowDirty = false;
+    this.shadowStaleFrames = 0;
+  }
+
+  /** 投影体变了（砍树、割仙人掌、上下文恢复），下一帧必须重画阴影图。 */
+  private markShadowDirty(): void {
+    this.shadowDirty = true;
   }
 
   screenToWorld(clientX: number, clientY: number): Vec2 | null {
@@ -611,6 +689,10 @@ export class GameRenderer {
     for (const view of this.structureViews.values()) this.scene.remove(view);
     this.structureViews.clear();
     this.barrierFlash.clear();
+
+    // 软重开换了世界：投影体全变了，下一帧必须重画并重锚。
+    this.markShadowDirty();
+    this.shadowAnchor.set(NaN, 0, 0);
 
     // 相机与过场回到开局：上一局若死在推镜或教学聚光灯里，这些值会留着。
     this.cameraPanTarget = null;
@@ -784,6 +866,8 @@ export class GameRenderer {
       this.contextLost = false;
       // 尺寸在丢失期间可能变过（转屏），恢复后重新对齐一次。
       this.resize();
+      // autoUpdate 在移动端关闭，上下文恢复后阴影图是空的，必须显式重建。
+      this.markShadowDirty();
       console.info("WebGL 上下文已恢复");
     });
   }
@@ -893,6 +977,8 @@ export class GameRenderer {
       if (felled) this.felledTrees.add(tree.id);
       else this.felledTrees.delete(tree.id);
       this.placeTree(tree.id, felled ? 0 : 1);
+      // 树是阴影图里最大的一块，砍倒/长回必须立刻重画，等不到 30 帧兜底。
+      this.markShadowDirty();
     }
   }
 
@@ -2156,7 +2242,12 @@ export class GameRenderer {
     for (const patch of this.simulation.cacti) {
       const view = this.cactusViews.get(patch.id);
       // 割光的仙人掌整株隐藏，等它自己长回来。
-      if (view) view.visible = patch.juice > 0;
+      if (!view) continue;
+      const visible = patch.juice > 0;
+      if (view.visible === visible) continue;
+      view.visible = visible;
+      // 主干和手臂在阴影图里，割光/长回要立刻重画 —— 同 syncTrees，等不到 30 帧兜底。
+      this.markShadowDirty();
     }
   }
 
@@ -2346,9 +2437,15 @@ export class GameRenderer {
     );
     this.camera.lookAt(this.cameraFocus.x, this.cameraFocus.y + 0.8, this.cameraFocus.z);
     this.cameraShake = Math.max(0, this.cameraShake - delta * 0.8);
-    this.sun.position.set(this.cameraFocus.x - 35, this.cameraFocus.y + 55, this.cameraFocus.z + 25);
-    this.sun.target.position.set(this.cameraFocus.x, this.cameraFocus.y, this.cameraFocus.z);
-    this.sun.target.updateMatrixWorld();
+    /*
+     * 低功耗档的太阳交给 scheduleShadowUpdate 管：那边只在重锚那一帧挪，
+     * 挪灯必须和重画阴影图同一帧发生，否则灯和贴图对不上。
+     */
+    if (!this.lowPower) {
+      this.sun.position.set(this.cameraFocus.x - 35, this.cameraFocus.y + 55, this.cameraFocus.z + 25);
+      this.sun.target.position.set(this.cameraFocus.x, this.cameraFocus.y, this.cameraFocus.z);
+      this.sun.target.updateMatrixWorld();
+    }
   }
 
   /**
