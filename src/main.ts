@@ -284,6 +284,7 @@ async function bootstrap(): Promise<void> {
     spotlight: (target) => renderer.spotlightOn(target),
     focusCamera: (target) => renderer.focusOn(target),
     setHold: (active) => simulation.setTutorialHold(active),
+    setActionLabel: (hint) => hud.setActionOverride(hint),
     isTimerFrozen: () => hud.isGameplayBlocked() && !hud.isInventoryOpen(),
   });
 

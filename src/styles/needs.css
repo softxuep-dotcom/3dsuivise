@@ -17,7 +17,16 @@
 
 #backpack-button.need-urgent,
 .inventory-slot.need-urgent {
-  position: relative;
+  /*
+   * **这里不许出现 position。**
+   *
+   * 1.1.36~1.1.43 里这条写着 position: relative，而 needs.css 排在 hud.css 之后，
+   * 于是它把 #backpack-button 的 position: absolute 顶掉了 —— 那颗按钮是靠
+   * absolute + transform: translate(50%,50%) 钉在弧上的，一改就掉回文档流，
+   * 实机表现是「一饿背包就飞走」。
+   *
+   * 外扩的 box-shadow 光环根本不需要定位上下文，那行纯属多写。
+   */
   border-color: rgba(240, 138, 100, .8);
   /*
    * 1.15 秒一次。快过这个会变成焦虑噪音，慢过这个在 42.9 秒的反应窗口里

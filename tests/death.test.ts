@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createWorld } from "../src/game/content/createWorld";
 import { GameSimulation } from "../src/game/simulation/GameSimulation";
+import { FIRST_DAY_DURATION, FIRST_NIGHT_DURATION } from "../src/game/balance/world";
 
 const STEP = 1 / 20;
 
@@ -121,19 +122,22 @@ describe("死亡判定", () => {
   }, 60000);
 
   /**
-   * 从不开背包的玩家会在第一夜饿死 —— **这是初始饱食 40 存在的全部理由。**
+   * 从不开背包的玩家**赶在第二个黎明之前**饿死。
    *
-   * 上一版初始饱食 90，饿死线在 214 秒，而 1.1.33 实测平均每局只有约 143 秒：
-   * 这一课排在了观众散场之后，`r1/pack` 因此常年停在 55%。压到 40 之后
-   * 预警在 52.4 秒（第一天刚结束、目标行让位的接缝上）、饿死在 95.2 秒，
-   * 都稳稳落在一局之内。
+   * 这是「开局口粮是门票」这条设定的硬前提，而它曾经断过：初始饱食 90 时
+   * 饿死线在 214.3 秒，而第二个黎明是 50 + 150 = 200 秒 —— 空着背包也能撑过
+   * 第一夜，口粮沦为可有可无。
    *
+   * 现在初始 75：预警 135.7s、饿死 178.6s，卡在黎明前 21 秒。中间试过 40
+   * （饿死 95.2s），那一档太狠 —— 45% 不开背包的人统一暴毙在第 95 秒，连夜都没见过。
+   *
+   * 断言写成「早于黎明」而不是某个秒数：数值还会调，而这条不变量不该跟着调。
    * 关掉狼和猎物，让饥饿成为唯一的死因；不然就是在重测上面那条。
    */
-  it("从不吃东西的玩家在 100 秒内饿死", () => {
+  it("从不吃东西的玩家赶在第二个黎明之前饿死", () => {
     // started() 会先迈十步把时钟闸打开 —— 不动的话 running 是 false，
     // update() 直接 return，五条轴一格都不掉，这条测试会永远跑不完。
-    // 那十步也计入下面的耗时，所以判定窗口比 95.2 秒略宽一点。
+    // 那十步也计入下面的耗时。
     const sim = started();
     let seconds = 10 * STEP;
     let cause: string | null = null;
@@ -145,8 +149,10 @@ describe("死亡判定", () => {
       }
     }
     expect(cause, `跑满 ${seconds.toFixed(0)} 秒还没死`).toBe("starved");
-    // 40 / 0.42 = 95.2 秒。留一点余量给帧步长，但必须远小于平均每局 143 秒。
-    expect(seconds).toBeGreaterThan(90);
-    expect(seconds).toBeLessThan(100);
+    // 饿死必须早于第二个黎明，否则空着背包也能过夜，口粮就不再是门票。
+    const secondDawn = FIRST_DAY_DURATION + FIRST_NIGHT_DURATION;
+    expect(seconds).toBeLessThan(secondDawn);
+    // 也不能太早：95 秒那一档实测把不开背包的人全按死在见夜之前。
+    expect(seconds).toBeGreaterThan(120);
   }, 60000);
 });

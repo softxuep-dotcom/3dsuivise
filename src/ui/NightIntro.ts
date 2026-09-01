@@ -1,5 +1,5 @@
 import type { GameSimulation } from "../game/simulation/GameSimulation";
-import type { CampDefinition, GameEvent, Vec2 } from "../game/simulation/types";
+import type { CampDefinition, GameEvent, InteractionHint, Vec2 } from "../game/simulation/types";
 import { t } from "../i18n";
 import type { TutorialStage } from "./TutorialStage";
 
@@ -41,8 +41,14 @@ import type { TutorialStage } from "./TutorialStage";
  *   重新打开页面   → 播（他多半已经忘了，或者上次压根没看完）
  *   死了点重开     → 不播（同一次坐下，三秒半的推镜第二遍只是打断）
  */
-/** 推镜停留多久。整段就这么长。 */
-const HOLD_SECONDS = 3.4;
+/**
+ * 推镜停留多久。整段就这么长。
+ *
+ * 3.4 → 3.9：镜头在营地多待半秒。3.4 秒里有相当一部分花在推过去和收回来的
+ * 插值上，真正停在营火上的时间比读数短，半秒是为了让「你今晚要守的是那堆火」
+ * 这句话有时间落地。
+ */
+export const HOLD_SECONDS = 3.9;
 
 export interface NightIntroDeps {
   simulation: GameSimulation;
@@ -53,6 +59,13 @@ export interface NightIntroDeps {
   focusCamera: (target: Vec2 | null) => void;
   /** 时钟闸。见 GameSimulation.setTutorialHold。 */
   setHold: (active: boolean) => void;
+  /**
+   * 教学期间把"行动"键改写成别的；传 null 还原。见 HudController.setActionOverride。
+   *
+   * 顶掉的只是**显示**，按下去做什么完全没变。这一段要它写成「点燃」而不是
+   * 通用的"行动" —— 教学正指着那颗键，而它此刻还没写上答案。
+   */
+  setActionLabel: (hint: InteractionHint | null) => void;
   /** 广告 / 暂停期间冻结计时。 */
   isTimerFrozen: () => boolean;
 }
@@ -114,6 +127,17 @@ export class NightIntro {
     this.deps.spotlight(camp);
     this.deps.focusCamera(camp);
     this.deps.setHold(true);
+    /*
+     * 推镜期间那颗键写「点燃」并且呼吸。
+     *
+     * 镜头这时在营火上、玩家看不见自己，屏幕上唯一还认得出的交互物就是这颗键 ——
+     * 它得当场说出答案，而不是等镜头收回来玩家自己去猜。呼吸（tutorial-lit）
+     * 负责把眼睛引过去，标签负责回答「引过去要干嘛」。
+     *
+     * 两者都在 finish() 里还原，也就是**镜头收回来的同一刻**。
+     */
+    this.deps.setActionLabel({ action: "ignite", text: { key: "night.lightFire" } });
+    this.deps.stage.setLit(["action-button"]);
   }
 
   update(delta: number): void {
@@ -130,6 +154,9 @@ export class NightIntro {
     this.deps.spotlight(null);
     this.deps.focusCamera(null);
     this.deps.setHold(false);
+    // 和收镜头同一刻还原：镜头回到玩家身上，那颗键也该变回通用的「行动」。
+    this.deps.setActionLabel(null);
+    this.deps.stage.setLit([]);
     this.deps.stage.hide();
   }
 
