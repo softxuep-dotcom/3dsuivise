@@ -40,7 +40,14 @@
 .tutorial-caption {
   position: absolute;
   left: 50%;
-  bottom: 13%;
+  /*
+   * 13% → 26%：13% 在 892 高的竖屏上落在 y≈776，而右下按钮弧占 y 690~880 ——
+   * 实测字幕（338×74）压住背包键 64×58、攻击键 44×65。玩家看到的是
+   * 「按钮位置变了」，其实是这块 25px 大字盖在上面。
+   *
+   * 26% 让字幕底边落在 y≈660，整块在按钮弧之上。
+   */
+  bottom: 26%;
   transform: translateX(-50%);
   display: grid;
   justify-items: center;

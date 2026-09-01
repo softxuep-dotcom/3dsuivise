@@ -451,14 +451,14 @@
 
   .status-strip {
     /*
-     * 时钟让出顶栏之后，面板从 y=50 提到顶部，正好腾出下方给目标条。
-     * 宽度 250 → 202：138px 的条长在手机上远超「读出还剩多少」所需，
-     * 而它每多一像素，左边的目标条就少一像素。
+     * 宽度 250 → 202 → 168。条只负责**扫一眼**，精确值右边的数字已经给了，
+     * 60 多像素足够读出「满 / 过半 / 见底」。而面板每宽一像素，
+     * 左边的目标条就少一像素 —— 两块要并排放进 412px 里。
      */
     top: max(10px, env(safe-area-inset-top));
     right: max(10px, env(safe-area-inset-right));
-    width: min(202px, 52vw);
-    padding: 9px 10px 8px;
+    width: min(168px, 44vw);
+    padding: 8px 9px 7px;
     gap: 5px;
     border-radius: 14px;
   }
@@ -470,19 +470,24 @@
    * 改成竖排之后每条能吃到 144px 的条宽，没有理由再压。
    * 8px 低于移动端可读下限，而水分/饱食归零即死，读不出来等于没有。
    */
-  .meter { grid-template-columns: 50px minmax(0, 1fr) 26px; gap: 7px; font-size: 11px; }
-  .meter span { gap: 5px; }
+  .meter { grid-template-columns: 44px minmax(0, 1fr) 24px; gap: 5px; font-size: 11px; }
+  .meter span { gap: 4px; }
   .meter em { font-size: 10px; }
   .meter i, .meter.warmth i { height: 7px; }
   .left-stack {
     /*
-     * 排在状态栏正下方。上一版写的是 112px，而状态栏改成竖排后底边到了 178 ——
-     * 两块重叠 202×29，目标条被压掉大半，实机上直接看不全。
+     * 和状态栏**并排**放在顶部，不再上下堆叠。
+     *
+     * 上一版把它推到状态栏下方（top 148），于是顶部两大块摞起来吃掉约 35% 的
+     * 屏高，中间还空出一大片 —— 而这是竖屏，纵向空间本来就是最紧的。
+     * 并排之后目标条回到视线最先落到的位置，中段整个还给场景。
+     *
+     * 宽度 = 100vw − 168（面板）− 30（左右边距 + 中间留空）。
      */
-    top: max(148px, calc(env(safe-area-inset-top) + 148px));
+    top: max(10px, env(safe-area-inset-top));
     left: max(10px, env(safe-area-inset-left));
-    grid-template-columns: minmax(0, 1fr) 40px;
-    width: calc(100vw - max(20px, env(safe-area-inset-left) + env(safe-area-inset-right)));
+    grid-template-columns: minmax(0, 1fr) 36px;
+    width: calc(100vw - 198px);
     max-width: none;
   }
 

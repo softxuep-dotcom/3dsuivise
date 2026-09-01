@@ -74,19 +74,51 @@ describe("第一夜教学 · 一次推镜就结束", () => {
     expect(ctx.stage.hide).toHaveBeenCalled();
   });
 
-  it("看过 v1 / v2 的玩家仍会看到这一版一次，播完写 v3", () => {
-    const setItem = vi.fn();
-    vi.stubGlobal("window", {
-      localStorage: {
-        getItem: (key: string) => (key === "desert-survivor.nightIntro.v3" ? null : "1"),
-        setItem,
-      },
-    });
+  /**
+   * 这段教学**按页面会话记，不写 localStorage**。
+   *
+   * 原先看过一次就永久熄灭，前提是「玩家记得住」。而平均每局约 143 秒、
+   * r1/pack 只有 55~60% —— 大部分人第一次根本没走完就走了，隔几天回来
+   * 那面旗还立着，于是他永远看不到这段教学。
+   */
+  it("同一次页面里只播一次：死了重开不再播", () => {
+    const ctx = makeIntro();
+    expect(ctx.intro.shouldRun()).toBe(true);
 
-    expect(NightIntro.shouldRun()).toBe(true);
+    ctx.intro.handle(NIGHT_EVENT);
+    expect(ctx.intro.active).toBe(true);
+    ctx.intro.update(HOLD_SECONDS);
+    expect(ctx.intro.active).toBe(false);
+
+    // 死了 → 软重启 → 又一次入夜：不该再播。
+    ctx.intro.reset();
+    expect(ctx.intro.shouldRun()).toBe(false);
+    ctx.intro.handle(NIGHT_EVENT);
+    expect(ctx.intro.active).toBe(false);
+  });
+
+  it("在推镜半路死掉，重开也不再播 —— 置位在 start 不在 finish", () => {
     const ctx = makeIntro();
     ctx.intro.handle(NIGHT_EVENT);
-    ctx.intro.update(HOLD_SECONDS);
-    expect(setItem).toHaveBeenCalledWith("desert-survivor.nightIntro.v3", "1");
+    ctx.intro.update(HOLD_SECONDS / 2);   // 只走了一半
+    ctx.intro.handle({ type: "game-over" } as GameEvent);
+
+    ctx.intro.reset();
+    expect(ctx.intro.shouldRun()).toBe(false);
+    ctx.intro.handle(NIGHT_EVENT);
+    expect(ctx.intro.active).toBe(false);
+  });
+
+  it("重新打开页面（新实例）会再播一次", () => {
+    const first = makeIntro();
+    first.intro.handle(NIGHT_EVENT);
+    first.intro.update(HOLD_SECONDS);
+    expect(first.intro.shouldRun()).toBe(false);
+
+    // 刷新页面 = 新的 NightIntro 实例。
+    const second = makeIntro();
+    expect(second.intro.shouldRun()).toBe(true);
+    second.intro.handle(NIGHT_EVENT);
+    expect(second.intro.active).toBe(true);
   });
 });

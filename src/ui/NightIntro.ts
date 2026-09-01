@@ -1,7 +1,6 @@
 import type { GameSimulation } from "../game/simulation/GameSimulation";
 import type { CampDefinition, GameEvent, Vec2 } from "../game/simulation/types";
 import { t } from "../i18n";
-import { readTutorialFlag, writeTutorialFlag } from "./TutorialStage";
 import type { TutorialStage } from "./TutorialStage";
 
 /**
@@ -31,8 +30,17 @@ import type { TutorialStage } from "./TutorialStage";
  * 而那颗按钮是整个 TutorialStage 里唯一需要接事件的部件。
  */
 
-// v3：从三拍砍成一拍。看过 v1 / v2 的玩家应当再看到这一版一次。
-const STORAGE_KEY = "desert-survivor.nightIntro.v3";
+/*
+ * **不写 localStorage：每次重新打开页面都播一次。**
+ *
+ * 原先看过一次就永久熄灭。那条规则的前提是「玩家记得住」，而这个游戏的
+ * 平均每局约 143 秒、r1/pack 只有 55~60% —— 大部分人第一次根本没走完
+ * 就离开了，隔几天回来时那面旗还立着，于是他**永远看不到这段教学**。
+ *
+ * 改成按页面会话记：
+ *   重新打开页面   → 播（他多半已经忘了，或者上次压根没看完）
+ *   死了点重开     → 不播（同一次坐下，三秒半的推镜第二遍只是打断）
+ */
 /** 推镜停留多久。整段就这么长。 */
 const HOLD_SECONDS = 3.4;
 
@@ -52,12 +60,20 @@ export interface NightIntroDeps {
 export class NightIntro {
   private elapsed = 0;
   private running = false;
+  /**
+   * 本次页面会话里播过没有。**故意是实例字段，不是 localStorage。**
+   *
+   * 在 start() 里置位而不是 finish()：玩家完全可能在这三秒半里死掉，
+   * 那时 finish() 走的是 game-over 那条早退分支，置位放在 finish 里会漏掉，
+   * 重开之后又播一遍。
+   */
+  private playedThisPageLoad = false;
 
   constructor(private readonly deps: NightIntroDeps) {}
 
-  /** 这一局要不要播。看过一次就永久熄灭。 */
-  static shouldRun(): boolean {
-    return !readTutorialFlag(STORAGE_KEY);
+  /** 这一局要不要播。见 playedThisPageLoad —— 按页面会话，不跨会话。 */
+  shouldRun(): boolean {
+    return !this.playedThisPageLoad;
   }
 
   get active(): boolean {
@@ -67,8 +83,8 @@ export class NightIntro {
   /**
    * 软重启：退回未开始。
    *
-   * 第二局起它多半根本不会跑（shouldRun 查的是 localStorage 那面旗），
-   * 但玩家完全可能在这三秒半里死掉再重开，那时 elapsed 还停在半路。
+   * **不碰 playedThisPageLoad** —— 死了重开属于同一次坐下，这段推镜不该再来一遍。
+   * 但玩家完全可能在这三秒半里死掉再重开，那时 elapsed 还停在半路，要清。
    */
   reset(): void {
     this.elapsed = 0;
@@ -87,9 +103,10 @@ export class NightIntro {
   }
 
   private start(): void {
-    if (this.running || !NightIntro.shouldRun()) return;
+    if (this.running || !this.shouldRun()) return;
     const camp = this.findHomeCamp();
     if (!camp) return;
+    this.playedThisPageLoad = true;
     this.running = true;
     this.elapsed = 0;
     this.deps.stage.show();
@@ -106,7 +123,7 @@ export class NightIntro {
     if (this.elapsed >= HOLD_SECONDS) this.finish();
   }
 
-  /** 走完就从这里出去：收镜头、收灯、放时钟、收界面、写盘。 */
+  /** 走完就从这里出去：收镜头、收灯、放时钟、收界面。 */
   private finish(): void {
     if (!this.running) return;
     this.running = false;
@@ -114,7 +131,6 @@ export class NightIntro {
     this.deps.focusCamera(null);
     this.deps.setHold(false);
     this.deps.stage.hide();
-    writeTutorialFlag(STORAGE_KEY);
   }
 
   /**
