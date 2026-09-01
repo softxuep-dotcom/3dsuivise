@@ -82,6 +82,46 @@ const TIER1_MOBILE_PIXEL_RATIO = 1.0;
  * 阴影图顺带从 512 回到 768：省下逐帧重画之后这点填充率不再是瓶颈，
  * 而 512 在 ±44 的覆盖下每纹素要盖 0.11 米，锯齿肉眼可见。**又快又更好看。**
  */
+/*
+ * 贴地圆斑，替代低功耗档下**会动的东西**的真阴影。
+ *
+ * 这一条和上面的阴影缓存是**一对，不能只上一半**：关掉逐帧重画之后，
+ * 阴影图只在锚点漂移时才更新，而人、狼、猎物每帧都在动 —— 它们的真阴影会
+ * 冻在上一次重画的位置，实机表现就是「影子延时才跟上人」。
+ *
+ * 所以低功耗档把会动的东西整个移出阴影图（applyLowPowerShadowPolicy），
+ * 改画一片贴地的半透明圆斑。它是一次 InstancedMesh 的绘制，和阴影图那一整个
+ * 深度 pass 不是一个量级。
+ */
+const BLOB_SHADOW_TEXTURE_SIZE = 64;
+/** 同屏最多画几片。玩家 1 + 45 米内的狼与猎物，实测远不到这个数。 */
+const BLOB_SHADOW_CAPACITY = 48;
+/** 抬离地面多少，避免与地面 z-fighting。 */
+const BLOB_SHADOW_LIFT = 0.04;
+/** 估地形法线时左右各采样多远。 */
+const BLOB_SHADOW_NORMAL_STEP = 0.5;
+const BLOB_SHADOW_UP = new THREE.Vector3(0, 1, 0);
+const BLOB_SHADOW_NORMAL = new THREE.Vector3();
+
+const createBlobShadowTexture = (): THREE.DataTexture => {
+  const size = BLOB_SHADOW_TEXTURE_SIZE;
+  const data = new Uint8Array(size * size * 4);
+  const centre = (size - 1) / 2;
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const index = (y * size + x) * 4;
+      const spread = Math.hypot(x - centre, y - centre) / centre;
+      // (1 - r²)^1.6：中心实、边缘平滑归零。指数比 1 大是为了让边缘收得比线性快，
+      // 免得斑点看起来像一块糊在地上的圆形污渍。
+      const alpha = spread >= 1 ? 0 : Math.pow(1 - spread * spread, 1.6);
+      data[index + 3] = Math.round(alpha * 255);
+    }
+  }
+  const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+  texture.needsUpdate = true;
+  return texture;
+};
+
 const SHADOW_ANCHOR_MARGIN = 10;
 const SHADOW_MAX_STALE_FRAMES = 30;
 const LOW_POWER_SHADOW_EXTENT = 44;
@@ -204,6 +244,8 @@ export class GameRenderer {
       get dropMeatMaterial() { return renderer.dropMeatMaterial; },
       get dropBoneMaterial() { return renderer.dropBoneMaterial; },
       worldHeight: (x, z) => renderer.worldHeight(x, z),
+      pushBlobShadow: (x, z, radius) => renderer.pushBlobShadow(x, z, radius),
+      applyLowPowerShadowPolicy: (root) => renderer.applyLowPowerShadowPolicy(root),
     });
   }
   /* 材质跟随渲染器实例共享；软重开不会为每份掉落物再造一套。 */
@@ -251,6 +293,14 @@ export class GameRenderer {
   private shadowDirty = true;
   /** 距离上次重画过了几帧。到 SHADOW_MAX_STALE_FRAMES 强制重画，兜住漏挂的钩子。 */
   private shadowStaleFrames = 0;
+  /** 角色贴地阴影。只在低功耗档存在；桌面用真阴影，那边不卡。 */
+  private readonly blobShadows: THREE.InstancedMesh | null;
+  /** 本帧已经写了几片。每帧从 0 重新累计，写完直接设 count，不留隐藏实例。 */
+  private blobShadowCount = 0;
+  private readonly blobShadowMatrix = new THREE.Matrix4();
+  private readonly blobShadowPosition = new THREE.Vector3();
+  private readonly blobShadowRotation = new THREE.Quaternion();
+  private readonly blobShadowScale = new THREE.Vector3(1, 1, 1);
   /** 脚下的取暖光环，见 buildWarmthAura。 */
   private readonly warmthAura: THREE.Group;
   private readonly warmthRing: THREE.Mesh;
@@ -359,6 +409,10 @@ export class GameRenderer {
     this.sun.shadow.camera.far = this.lowPower ? 110 : 130;
     this.scene.add(this.sun, this.fireLight);
 
+    // 低功耗档才有：会动的东西改用贴地圆斑，见 BLOB_SHADOW_* 那段。
+    this.blobShadows = this.lowPower ? this.createBlobShadows() : null;
+    if (this.blobShadows) this.scene.add(this.blobShadows);
+
     this.terrainMesh = this.buildGround();
     this.buildCampWalls();
     this.buildTrees();
@@ -430,6 +484,8 @@ export class GameRenderer {
     const frameStart = performance.now();
     const delta = Math.min(deltaSeconds, 0.05);
     this.time += delta;
+    // 圆斑每帧从 0 重新累计；写完在 render 之前设 count，不留隐藏实例。
+    this.blobShadowCount = 0;
     this.syncPlayer(delta);
     this.syncItems(delta);
     this.syncBarrels(delta);
@@ -450,6 +506,10 @@ export class GameRenderer {
     // 二档起扬沙整个停掉：既不画也不再每帧改 240 个顶点。
     if (this.tier < 2) this.updateSand(delta);
     this.updateWarmthAura(delta);
+    if (this.blobShadows) {
+      this.blobShadows.count = this.blobShadowCount;
+      this.blobShadows.instanceMatrix.needsUpdate = true;
+    }
     this.scheduleShadowUpdate();
     this.renderer.render(this.scene, this.camera);
     // 排在最后：要量的是这一帧渲染的全部耗时。降过档之后这一句直接 return。
@@ -543,6 +603,77 @@ export class GameRenderer {
    * 如果这期间还每帧挪灯，灯和贴图就对不上了。反过来说，灯不挪也不影响光照方向 ——
    * 位置是焦点加固定偏移 (−35,+55,+25)，方向恒定。
    */
+  private createBlobShadows(): THREE.InstancedMesh {
+    const geometry = new THREE.PlaneGeometry(1, 1);
+    // PlaneGeometry 默认立在 XY 平面上，转成贴地的 XZ 平面。
+    geometry.rotateX(-Math.PI / 2);
+    const material = new THREE.MeshBasicMaterial({
+      map: createBlobShadowTexture(),
+      transparent: true,
+      // 不写深度：几十片半透明圆斑互相之间不该有遮挡关系，写了反而会互相裁。
+      depthWrite: false,
+      opacity: 0.4,
+      color: 0x000000,
+    });
+    const mesh = new THREE.InstancedMesh(geometry, material, BLOB_SHADOW_CAPACITY);
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    mesh.frustumCulled = false;
+    // 排在贴地装饰之后、角色之前。
+    mesh.renderOrder = 2;
+    mesh.count = 0;
+    return mesh;
+  }
+
+  /**
+   * 低功耗档的「这东西不投影」开关。
+   *
+   * 两类东西走这里：
+   *
+   * **角色**（玩家、狼、鹿、程序化猎物）—— 改用 pushBlobShadow 的贴地圆斑。
+   * 它们的 castShadow 设在共享源网格上，clone 全部继承 true，而那些模块
+   * 并不知道画质档存在。
+   *
+   * **会移动的小件**（油桶、树桩）—— 阴影图每米 8.7 texel，1.18 米的油桶只有
+   * 10 个 texel、树桩更是不到 2 个，本来就看不出形状；而它们一动就让缓存的
+   * 阴影图作废。关掉之后阴影图里只剩真正静态的几何，缓存才立得住。
+   */
+  applyLowPowerShadowPolicy(root: THREE.Object3D): void {
+    if (!this.lowPower) return;
+    root.traverse((object) => {
+      if (object instanceof THREE.Mesh) object.castShadow = false;
+    });
+  }
+
+  /**
+   * 记一片贴地阴影。由 syncPlayer 与 CreatureViews 在**已经通过 45 米剔除
+   * 之后**调用 —— 剔除逻辑只写一份，这里不重复判距离。
+   */
+  pushBlobShadow(x: number, z: number, radius: number): void {
+    const mesh = this.blobShadows;
+    if (!mesh || this.blobShadowCount >= BLOB_SHADOW_CAPACITY) return;
+    /*
+     * **必须贴着坡面躺，不能一律水平。**
+     *
+     * 地形可走坡度上限是 0.78。一片水平的圆斑半宽 0.75 米（精英狼那一档），
+     * 落在 0.5 的坡上，上坡那半边要抬 0.37 米 —— 整个埋进地里，剩下半个月牙。
+     * 抬高解决不了：抬够了不埋，下坡那边就浮在半空。
+     *
+     * 所以按地形法线转一次。法线用左右各 0.5 米的高度差估，两次额外的
+     * worldHeight —— 那是纯函数采样，和已经在做的每帧一次同一个量级。
+     */
+    const height = this.worldHeight(x, z);
+    const step = BLOB_SHADOW_NORMAL_STEP;
+    const slopeX = (this.worldHeight(x + step, z) - this.worldHeight(x - step, z)) / (2 * step);
+    const slopeZ = (this.worldHeight(x, z + step) - this.worldHeight(x, z - step)) / (2 * step);
+    BLOB_SHADOW_NORMAL.set(-slopeX, 1, -slopeZ).normalize();
+    this.blobShadowPosition.set(x, height + BLOB_SHADOW_LIFT, z);
+    this.blobShadowRotation.setFromUnitVectors(BLOB_SHADOW_UP, BLOB_SHADOW_NORMAL);
+    this.blobShadowScale.set(radius * 2, 1, radius * 2);
+    this.blobShadowMatrix.compose(this.blobShadowPosition, this.blobShadowRotation, this.blobShadowScale);
+    mesh.setMatrixAt(this.blobShadowCount, this.blobShadowMatrix);
+    this.blobShadowCount += 1;
+  }
+
   private scheduleShadowUpdate(): void {
     if (!this.lowPower) return;
     this.shadowStaleFrames += 1;
@@ -1990,6 +2121,9 @@ export class GameRenderer {
       if (this.playerCape) this.playerCape.visible = this.simulation.player.armor !== "none";
       this.playerFallback.visible = false;
       this.playerGroup.add(model);
+      // 低功耗档角色移出阴影图，改用贴地圆斑 —— 阴影图不再逐帧重画，
+      // 会动的东西留在里面只会得到一片冻住的影子。
+      this.applyLowPowerShadowPolicy(this.playerGroup);
       this.attachPlayerWeapons(model);
 
       this.playerMixer = new THREE.AnimationMixer(model);
@@ -2103,6 +2237,7 @@ export class GameRenderer {
     const restingHeight = player.resting ? (this.playerModel ? -0.12 : -0.5) : 0;
     const idleBob = this.playerModel ? 0 : player.resting ? Math.sin(this.time * 2) * 0.012 : Math.sin(this.time * 9) * 0.025;
     this.playerGroup.position.set(player.x, this.worldHeight(player.x, player.z) + restingHeight + idleBob, player.z);
+    this.pushBlobShadow(player.x, player.z, 0.42);
     const angle = -Math.atan2(player.facing.z, player.facing.x);
     this.playerGroup.rotation.y = angle;
     const attackProgress = player.attackFlash > 0 ? 1 - player.attackFlash / 0.22 : 0;

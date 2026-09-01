@@ -66,6 +66,14 @@ export interface CreatureViewsOwner {
    */
   readonly cullDistance: number | null;
   readonly wolfAsset: AnimalAsset | null;
+  /**
+   * 记一片贴地圆斑。低功耗档下角色不投真阴影 —— 阴影图只在锚点漂移时重画，
+   * 而角色每帧都在动，真阴影会冻在原地（实机表现是「影子延时才跟上人」）。
+   * 剔除已经在上面做过，这里传进来的一定是要画的。
+   */
+  pushBlobShadow(x: number, z: number, radius: number): void;
+  /** 把一棵子树移出阴影图。低功耗档才生效，见 GameRenderer 的同名方法。 */
+  applyLowPowerShadowPolicy(root: THREE.Object3D): void;
   readonly deerAsset: AnimalAsset | null;
   readonly dropHideMaterial: THREE.MeshStandardMaterial;
   readonly dropMeatMaterial: THREE.MeshStandardMaterial;
@@ -101,6 +109,7 @@ export class CreatureViews {
       if (!view) {
         view = this.createCritterView(critter);
         this.critterViews.set(critter.id, view);
+        this.owner.applyLowPowerShadowPolicy(view.group);
         this.owner.scene.add(view.group);
       }
       const cull = this.owner.cullDistance;
@@ -118,6 +127,10 @@ export class CreatureViews {
         ? Math.hypot(critter.x - view.group.position.x, critter.z - view.group.position.z) / delta
         : 0;
       view.group.position.set(critter.x, terrainY, critter.z);
+      // 低功耗档角色不投真阴影，改这一片贴地圆斑（见 GameRenderer 的 BLOB_SHADOW_*）。
+      if (critter.mode !== "dead") {
+        this.owner.pushBlobShadow(critter.x, critter.z, critter.kind === "oryx" ? 0.5 : 0.22);
+      }
       // 朝向走**最短弧**插值，不能直接赋值也不能对角度做朴素 lerp：
       // 后者在 ±π 交界处会绕远路转一整圈，正好发生在猎物调头的那一刻。
       // 模拟层已经限了转向速率（CritterSpec.turnRate），这里是第二层保险，
@@ -201,6 +214,7 @@ export class CreatureViews {
       if (!view) {
         view = this.createWolfView(wolf);
         this.wolfViews.set(wolf.id, view);
+        this.owner.applyLowPowerShadowPolicy(view.group);
         this.owner.scene.add(view.group);
         this.owner.scene.add(view.bar);
       }
@@ -253,6 +267,7 @@ export class CreatureViews {
       view.moveAmount = lerp(view.moveAmount, targetMoveAmount, movementBlend);
       view.lastPosition.set(wolf.x, wolf.z);
       view.group.position.set(wolf.x, this.owner.worldHeight(wolf.x, wolf.z) + (wolf.mode === "dead" ? 0.2 : 0), wolf.z);
+      if (wolf.mode !== "dead") this.owner.pushBlobShadow(wolf.x, wolf.z, 0.46 * wolfScale(wolf));
       view.group.rotation.y = view.visualHeading;
       view.group.scale.setScalar(wolfScale(wolf));
       view.animal?.mixer.update(delta);
@@ -328,6 +343,7 @@ export class CreatureViews {
       if (!view) {
         view = this.createDropView(drop);
         this.dropViews.set(drop.id, view);
+        this.owner.applyLowPowerShadowPolicy(view);
         this.owner.scene.add(view);
       }
       const age = this.owner.simulation.elapsed - drop.createdAt;

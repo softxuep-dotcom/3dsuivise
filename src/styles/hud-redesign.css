@@ -429,23 +429,37 @@
 }
 
 @media (orientation: portrait) {
+  /*
+   * 竖屏把时钟从顶部中央搬到**左侧中部**。
+   *
+   * 顶部中央要抬眼睛才看得到，而昼夜倒计时是这个游戏最该随时瞄一眼的东西 ——
+   * 第一夜是全局最大的一道坎。左中正好落在拇指视线的余光里，抬头的成本是零。
+   *
+   * 顺带把顶部整行让出来：状态栏因此能从 y=50 上移到顶部，
+   * 不再压到下面的目标条上（改成竖排之后它高了 128px，原来的排布放不下）。
+   * 右中是快捷合成的地盘，左中空着，两边不打架。
+   */
   .top-stack {
-    top: max(9px, env(safe-area-inset-top));
+    top: 52%;
     bottom: auto;
-    left: 50%;
-    align-items: center;
-    transform: translateX(-50%);
+    left: max(10px, env(safe-area-inset-left));
+    align-items: flex-start;
+    transform: translateY(-50%);
   }
 
   .clock { padding: 7px 13px 7px 16px; }
 
   .status-strip {
-    /* 竖排之后不再拉满屏宽：左边留给场景，面板收回右上角。 */
-    top: max(50px, calc(env(safe-area-inset-top) + 50px));
+    /*
+     * 时钟让出顶栏之后，面板从 y=50 提到顶部，正好腾出下方给目标条。
+     * 宽度 250 → 202：138px 的条长在手机上远超「读出还剩多少」所需，
+     * 而它每多一像素，左边的目标条就少一像素。
+     */
+    top: max(10px, env(safe-area-inset-top));
     right: max(10px, env(safe-area-inset-right));
-    width: min(250px, 62vw);
-    padding: 10px 10px 8px;
-    gap: 6px;
+    width: min(202px, 52vw);
+    padding: 9px 10px 8px;
+    gap: 5px;
     border-radius: 14px;
   }
 
@@ -461,7 +475,11 @@
   .meter em { font-size: 10px; }
   .meter i, .meter.warmth i { height: 7px; }
   .left-stack {
-    top: max(112px, calc(env(safe-area-inset-top) + 112px));
+    /*
+     * 排在状态栏正下方。上一版写的是 112px，而状态栏改成竖排后底边到了 178 ——
+     * 两块重叠 202×29，目标条被压掉大半，实机上直接看不全。
+     */
+    top: max(148px, calc(env(safe-area-inset-top) + 148px));
     left: max(10px, env(safe-area-inset-left));
     grid-template-columns: minmax(0, 1fr) 40px;
     width: calc(100vw - max(20px, env(safe-area-inset-left) + env(safe-area-inset-right)));
