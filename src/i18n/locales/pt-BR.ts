@@ -6,7 +6,7 @@
  */
 export const ptBR: Record<string, string> = {
   "action.board": "Partir",
-  "action.cactus": "Cortar",
+  "action.cactus": "Tirar seiva",
   "action.chop": "Cortar",
   "action.drop": "Colocar",
   "action.feed": "Pôr lenha",

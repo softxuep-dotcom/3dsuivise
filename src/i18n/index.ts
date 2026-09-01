@@ -46,6 +46,7 @@ export const SUPPORTED_LOCALES = [
   { code: "ru", htmlLang: "ru", label: "Русский" },
   { code: "ko", htmlLang: "ko", label: "한국어" },
   { code: "vi", htmlLang: "vi", label: "Tiếng Việt" },
+  { code: "id", htmlLang: "id", label: "Bahasa Indonesia" },
 ] as const;
 
 export type Locale = (typeof SUPPORTED_LOCALES)[number]["code"];
@@ -67,6 +68,7 @@ const LOADERS: Record<Locale, () => Promise<Table>> = {
   ru: () => import("./locales/ru").then((m) => m.ru),
   ko: () => import("./locales/ko").then((m) => m.ko),
   vi: () => import("./locales/vi").then((m) => m.vi),
+  id: () => import("./locales/id").then((m) => m.id),
 };
 
 const FALLBACK: Locale = "en";

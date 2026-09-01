@@ -356,7 +356,7 @@
           if (!tag) return null;
           var base = String(tag).trim().toLowerCase().replace("_", "-").split("-")[0];
           if (base === "pt") return "pt-BR";
-          return ["zh", "en", "fr", "de", "it", "es", "tr", "ja", "ru", "ko", "vi"].indexOf(base) >= 0 ? base : null;
+          return ["zh", "en", "fr", "de", "it", "es", "tr", "ja", "ru", "ko", "vi", "id"].indexOf(base) >= 0 ? base : null;
         }
         var initialLocale = matchInitialLocale(new URLSearchParams(location.search).get("lang"));
         if (!initialLocale) {
@@ -500,6 +500,17 @@
             "intro.verbs.aria": "Mục tiêu ngày và đêm",
             "boot.landscapeHint": "Trải nghiệm tốt nhất ở chế độ ngang",
             boot: "Đang tải trò chơi…",
+          },
+          id: {
+            "intro.title": "Last Truck Out",
+            "intro.tagline": "Temukan enam drum bahan bakar. Kabur dengan truk.",
+            "intro.phase.day": "Siang",
+            "intro.verb1": "Cari air dan bahan bakar",
+            "intro.phase.night": "Malam",
+            "intro.verb2": "Jaga api tetap menyala, halau kawanan anjing",
+            "intro.verbs.aria": "Tujuan siang dan malam",
+            "boot.landscapeHint": "Paling nyaman dimainkan dalam mode lanskap",
+            boot: "Memuat permainan…",
           },
         };
         var activeInitialCopy = initialCopy[initialLocale];

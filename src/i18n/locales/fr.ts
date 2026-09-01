@@ -6,7 +6,7 @@
  */
 export const fr: Record<string, string> = {
   "action.board": "Partir",
-  "action.cactus": "Couper",
+  "action.cactus": "Récolter",
   "action.chop": "Couper",
   "action.drop": "Poser",
   "action.feed": "Ajouter du bois",

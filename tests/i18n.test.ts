@@ -13,6 +13,7 @@ import { ja } from "../src/i18n/locales/ja";
 import { ru } from "../src/i18n/locales/ru";
 import { ko } from "../src/i18n/locales/ko";
 import { vi } from "../src/i18n/locales/vi";
+import { id } from "../src/i18n/locales/id";
 
 /*
  * 文案的三种坏法，肉眼都很难看出来，而且都是“改一处忘多处”造成的：
@@ -40,6 +41,7 @@ const LOCALES: Record<string, Record<string, string>> = {
   ru,
   ko,
   vi,
+  id,
 };
 const ALL_LOCALES: Record<string, Record<string, string>> = { en, ...LOCALES };
 const enKeys = Object.keys(en).sort();
