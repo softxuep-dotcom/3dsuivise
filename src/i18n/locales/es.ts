@@ -8,6 +8,8 @@
  *   Wild dog = perro salvaje   Brute dog = mastín    Dire wolf = lobo gigante
  *
  * 指令一律用 tú 的命令式（拉美和西班牙都通），不用 vosotros / vos。
+ * 叙述过去用简单过去时（Aguantaste / cargaste），不用完成时（Has aguantado）——
+ * 后者是西班牙用法，拉美读着别扭，而这张表两种混用过。
  * 缺键会逐键回退英文（见 index.ts 的 t()），所以这张表允许不全。
  */
 
@@ -80,11 +82,11 @@ export const es: Record<string, string> = {
   "death.report": "Causa de la muerte",
   "death.starved": "El hambre te vació. No pudiste volver a levantarte.",
   "difficulty.easy": "Fácil",
-  "difficulty.easy.blurb": "La jauría de siempre.",
-  "difficulty.insane": "Enloquecedor",
-  "difficulty.insane.blurb": "Casi el doble de asaltantes. Lobos gigantes la primera noche.",
+  "difficulty.easy.blurb": "Un ritmo de supervivencia más llevadero, clima más suave y amenazas de élite más tardías.",
+  "difficulty.insane": "Difícil",
+  "difficulty.insane.blurb": "Presión de supervivencia sin tregua, clima extremo y amenazas de élite desde la primera noche.",
   "difficulty.normal": "Normal",
-  "difficulty.normal.blurb": "Más asaltantes, lobos gigantes una noche antes.",
+  "difficulty.normal.blurb": "Un ritmo de supervivencia más exigente, cambios de clima más bruscos y presión de élite más temprana.",
   "dog.elite": "Lobo gigante",
   "dog.large": "Mastín",
   "dog.small": "Perro salvaje",
@@ -210,7 +212,7 @@ export const es: Record<string, string> = {
   "night.fire.hint": "Prende la hoguera",
   "night.fire.noWood": "No llevas leña — recoge leños durante el día",
   "night.fire.sub": "Ponte junto al hoyo y pulsa Actuar · un leño arde 95 s",
-  "night.howl": "Han salido de la guarida",
+  "night.howl": "Salieron de la guarida",
   "night.howl.sub": "El calor cae toda la noche. Solo el fuego lo sostiene",
   "night.warm": "Quédate junto al fuego",
   "night.warm.sub": "El resplandor llega a 10 m — cualquier punto del campamento vale",
@@ -234,7 +236,7 @@ export const es: Record<string, string> = {
   "msg.25": "{v0} en pie · {v1}",
   "msg.3": "Mochila llena",
   "msg.31": "Podrás enfriarte otra vez en {v0} s",
-  "msg.32": "Te has enfriado · calor −{v0}",
+  "msg.32": "Te enfriaste · calor −{v0}",
   "msg.33": "Podrás calentarte otra vez en {v0} s",
   "msg.34": "Enterrado en la arena · calor +{v0}",
   "msg.35": "El calor está bien · no hay nada que ajustar",
@@ -252,7 +254,7 @@ export const es: Record<string, string> = {
   "msg.5": "Vigor insuficiente · {v0} necesita {v1}. Quédate quieto para recuperarlo",
   "msg.6": "Mochila llena",
   "msg.7": "Ya llevas agua de sobra",
-  "msg.8": "Este pozo se ha secado",
+  "msg.8": "Este pozo se secó",
   "msg.9": "Mochila llena · el agua volvió al pozo",
   "msg.duskFireOk": "Los perros salen en tromba de la guarida · el fuego aguantará hasta el alba",
   "msg.duskFireShort": "Los perros salen en tromba de la guarida · el fuego no aguantará, aliméntalo ya",
@@ -366,8 +368,8 @@ export const es: Record<string, string> = {
   "structure.stake.blurb": "un poste que corta el paso; los perros lo destrozan primero",
   "structure.stake.build": "construir una estaca",
   "structure.stake.name": "estaca",
-  "supply.juice": "Sav",
-  "supply.meat": "Car",
+  "supply.juice": "Savia",
+  "supply.meat": "Carne",
   "supply.water": "Agua",
   "switch.cancel": "Cancelar",
   "switch.confirm": "Confirmar",
@@ -397,7 +399,7 @@ export const es: Record<string, string> = {
   "win.challenge": "Desafío {difficulty}",
   "win.chooseDifficulty": "Elige la dificultad de la próxima partida",
   "win.progress.easy": "Enhorabuena por superar la prueba de iniciación. El verdadero desafío del desierto ya está abierto; elige la dificultad de tu próxima partida.",
-  "win.progress.insane": "Enhorabuena por conquistar la prueba difícil. Has completado todos los desafíos; busca un nuevo récord en tu próxima partida.",
+  "win.progress.insane": "Enhorabuena por conquistar la prueba difícil. Completaste todos los desafíos; busca un nuevo récord en tu próxima partida.",
   "win.progress.normal": "Enhorabuena por superar la prueba normal. El desafío difícil ya está disponible; vuelve a partir cuando estés listo.",
   "win.replay": "Jugar otra vez",
   "win.summary": "El día {day} cargaste el sexto bidón y dejaste este trozo de arena por el retrovisor. {count} bajas en total.",
