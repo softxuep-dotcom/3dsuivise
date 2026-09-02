@@ -32,4 +32,67 @@ describe("第一夜教学 · 软重开", () => {
     expect(beats[2].spot()).toBe(newRun.player);
   });
 });
-
+
+/**
+ * 教学门禁按**页面会话**记，不写 localStorage。
+ *
+ * 原先看过一次就永久熄灭，前提是「玩家记得住」。而实测平均每局约 143 秒 ——
+ * 大部分人第一次根本没走完就离开了，隔几天回来那面旗还立着，于是永远看不到。
+ */
+describe("第一夜教学 · 门禁", () => {
+  const makeIntro = () => {
+    const sim = new GameSimulation(createWorld());
+    // NightIntro 用到的全部舞台方法（grep deps.stage. 得到），少一个就是 TypeError。
+    const stage = {
+      show: () => undefined, hide: () => undefined, setCaption: () => undefined,
+      setUrgent: () => undefined, setLit: () => undefined,
+      setDots: () => undefined, buildDots: () => undefined, onSkip: () => undefined,
+    } as unknown as TutorialStage;
+    const intro = new NightIntro({
+      get simulation() { return sim; },
+      stage,
+      spotlight: () => undefined,
+      focusCamera: () => undefined,
+      setHold: () => undefined,
+      setActionLabel: () => undefined,
+      isTimerFrozen: () => false,
+    });
+    return intro;
+  };
+  const NIGHT = { type: "phase", phase: "night", day: 1 } as never;
+
+  it("同一次页面里只播一次：死了重开不再播", () => {
+    const intro = makeIntro();
+    expect(intro.shouldRun()).toBe(true);
+    intro.handle(NIGHT);
+    expect(intro.active).toBe(true);
+
+    // 死了 → 软重启 → 又一次入夜。
+    intro.reset();
+    expect(intro.shouldRun()).toBe(false);
+    intro.handle(NIGHT);
+    expect(intro.active).toBe(false);
+  });
+
+  it("演到一半死掉，重开也不再播 —— 置位在 start 不在收尾", () => {
+    const intro = makeIntro();
+    intro.handle(NIGHT);
+    intro.handle({ type: "game-over" } as never);
+
+    intro.reset();
+    expect(intro.shouldRun()).toBe(false);
+    intro.handle(NIGHT);
+    expect(intro.active).toBe(false);
+  });
+
+  it("重新打开页面（新实例）会再播一次", () => {
+    const first = makeIntro();
+    first.handle(NIGHT);
+    expect(first.shouldRun()).toBe(false);
+
+    const second = makeIntro();
+    expect(second.shouldRun()).toBe(true);
+    second.handle(NIGHT);
+    expect(second.active).toBe(true);
+  });
+});

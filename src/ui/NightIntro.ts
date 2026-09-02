@@ -1,7 +1,6 @@
 import type { GameSimulation } from "../game/simulation/GameSimulation";
 import type { CampDefinition, GameEvent, LocalizedText, Vec2 } from "../game/simulation/types";
 import { t } from "../i18n";
-import { readTutorialFlag, writeTutorialFlag } from "./TutorialStage";
 import type { TutorialStage } from "./TutorialStage";
 
 /**
@@ -65,7 +64,16 @@ interface Beat {
   skip?: () => boolean;
 }
 
-const STORAGE_KEY = "desert-survivor.nightIntro.v1";
+/*
+ * 这段教学**按页面会话记，不写 localStorage**。
+ *
+ * 原先看过一次就永久熄灭（STORAGE_KEY = desert-survivor.nightIntro.v1）。
+ * 那条规则的前提是「玩家记得住」，而实测平均每局约 143 秒 —— 大部分人第一次
+ * 根本没走完就离开了，隔几天回来时那面旗还立着，于是他永远看不到这段教学。
+ *
+ *   重新打开页面   → 播
+ *   死了点重开     → 不播（同一次坐下，二十秒的教学第二遍只是打断）
+ */
 /** 第三拍要在火边站够多久才算学会。累计，不要求连续。 */
 const WARM_SECONDS = 2.6;
 /** 整段的硬上限。 */
@@ -153,8 +161,16 @@ export class NightIntro {
   }
 
   /** 这一局要不要播。和开场教学各记各的：跳过开场的人仍然会看到这一段。 */
-  static shouldRun(): boolean {
-    return !readTutorialFlag(STORAGE_KEY);
+  /**
+   * 本次页面会话里播过没有。**故意是实例字段，不是 localStorage。**
+   *
+   * 在 start() 里置位而不是收尾处：玩家完全可能在这二十秒里死掉，那时走的是
+   * game-over 早退分支，置位放在收尾里会漏掉，重开又播一遍。
+   */
+  private playedThisPageLoad = false;
+
+  shouldRun(): boolean {
+    return !this.playedThisPageLoad;
   }
 
   get active(): boolean {
@@ -188,9 +204,10 @@ export class NightIntro {
   }
 
   private start(): void {
-    if (this.running || !NightIntro.shouldRun()) return;
+    if (this.running || !this.shouldRun()) return;
     const camp = this.findHomeCamp();
     if (!camp) return;
+    this.playedThisPageLoad = true;
     this.camp = camp;
     this.running = true;
     this.index = 0;
@@ -263,7 +280,6 @@ export class NightIntro {
     this.deps.setHold(false);
     this.deps.setActionLabel(null);
     this.deps.stage.hide();
-    writeTutorialFlag(STORAGE_KEY);
   }
 
   /**
