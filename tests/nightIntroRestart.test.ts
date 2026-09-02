@@ -29,7 +29,11 @@ describe("第一夜教学 · 软重开", () => {
 
     current = newRun;
     expect(beats[1].sub()).toBe("night.fire.noWood");
-    expect(beats[2].spot()).toBe(newRun.player);
+    // 第 3 拍的 spot 原先是 () => simulation.player，兼任第二个探针；现在它改成
+    // 常量 null（镜头收回玩家之后不再压暗全场，见 NightIntro 那两段注释），
+    // 不再读 simulation，也就当不了探针 —— 上面那句 sub() 是本条不变量唯一的证据。
+    expect(beats[2].spot()).toBeNull();
+    expect(beats[1].spot()).toBeNull();
   });
 });
 

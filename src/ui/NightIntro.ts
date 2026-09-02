@@ -127,7 +127,12 @@ export class NightIntro {
         line: "night.fire",
         // 包里没柴时这一拍教的是另一件事，文案必须跟着换。
         sub: () => (hasWood() ? "night.fire.sub" : "night.fire.noWood"),
-        spot: () => this.camp,
+        /*
+         * **收灯**。第一拍的聚光会把全场环境光压到四成，那是为了让镜头推向营火时
+         * 只剩火堆亮着；而这一拍镜头已经收回玩家身上，他要**自己走过去** ——
+         * 继续压暗等于让他摸黑找路。光线恢复正常，指路交给高亮的行动键。
+         */
+        spot: () => null,
         lit: () => ["action-button"],
         focus: () => null,
         hold: true,
@@ -136,23 +141,27 @@ export class NightIntro {
         actionLabel: "ignite",
         done: () => this.deps.simulation.getNearestLitCamp() !== null,
         minSeconds: 0.9,
-        // 有柴：给足 14 秒走过去按一下。没柴：这一拍**做不到**，说完那句
-        // "白天要先捡枯木"就该放人走 —— 让他对着一颗按不出结果的键干等
-        // 十四秒，只会教会他这套教学不值得看。
-        timeoutSeconds: () => (hasWood() ? 14 : 5),
+        // 有柴 14 → 6 秒。14 是照着「走到最远的火塘」定的最坏情况，但超时的代价是
+        // 玩家对着一颗高亮的键干等，而等待本身会教他这套教学不值得看。
+        // 6 秒够从营地任意一角走到火边按一下；不够的那部分让给他自己去玩。
+        // 没柴：这一拍**做不到**，说完那句「白天要先捡枯木」就该放人走。
+        timeoutSeconds: () => (hasWood() ? 6 : 5),
       },
       {
         line: "night.warm",
         sub: () => "night.warm.sub",
-        // 这一拍照的是玩家自己：要看的是他脚下那圈取暖光环亮起来。
-        spot: () => this.deps.simulation.player,
+        // 同第 2 拍：镜头已经在玩家身上，不再压暗。取暖光环本身是亮的，
+        // 压暗反而把它和周围一起拉低，看不出「这圈光是新出现的」。
+        spot: () => null,
         lit: () => ["warmth-meter"],
         focus: () => null,
         // **放开时钟**：体温要真的往回涨，这一拍才有东西可看。
         hold: false,
         done: () => this.warmedTime >= WARM_SECONDS,
         minSeconds: 1.2,
-        timeoutSeconds: () => 16,
+        // 16 → 6 秒。done 是「累计烤够 2.6 秒」，顺利的话 2.6 秒就走完；
+        // 16 的上限只在玩家一直不靠近火时用得上，而那种情况多等十秒也教不会他。
+        timeoutSeconds: () => 6,
         // 上一拍没能把火点起来（没柴）的话，这一拍要教的东西根本不存在 ——
         // 对着一堆冷灰说"待在火边"是句假话，不如闭嘴把屏幕还给玩家。
         skip: () => this.deps.simulation.getNearestLitCamp() === null,
@@ -180,8 +189,7 @@ export class NightIntro {
   /**
    * 软重启：把这段教学退回未开始。
    *
-   * 实际上第二局起它多半根本不会跑 —— shouldRun() 查的是 localStorage 里那面旗，
-   * 看过一次就永久熄灭。但玩家完全可能在第一夜教学演到一半时死掉再重开，
+   * **不碰 playedThisPageLoad** —— 死了重开属于同一次坐下，这段推镜不该再来一遍。
    * 那时 index/beatTime 还停在半路上。
    */
   reset(): void {
